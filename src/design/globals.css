@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background-color: #F7F4EB; 
+  color: #2B1E1A;
+  font-family: "DM Sans", "Noto Sans Ethiopic", system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+
+button, input, select {
+  min-height: 44px;
+  touch-action: manipulation;
+}

@@ -1,0 +1,130 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  /* --- 1. BRAND COLORS (From your tokens) --- */
+  --color-berbere-50: #fdf0f2;
+  --color-berbere-100: #f9cdd3;
+  --color-berbere-200: #f49aa7;
+  --color-berbere-300: #e8687a;
+  --color-berbere-400: #d4394f;
+  --color-berbere-500: #8B2635; /* PRIMARY */
+  --color-berbere-600: #7a1f2d;
+  --color-berbere-700: #611926;
+  --color-berbere-800: #49131d;
+  --color-berbere-900: #310d13;
+
+  --color-gold-50: #fdf8ee;
+  --color-gold-100: #faecd0;
+  --color-gold-200: #f5d89f;
+  --color-gold-300: #efbe65;
+  --color-gold-400: #E2A03F; /* SECONDARY */
+  --color-gold-500: #c8852a;
+  --color-gold-600: #a86b20;
+  --color-gold-700: #865218;
+  --color-gold-800: #633b10;
+  --color-gold-900: #42250a;
+
+  --color-cream-50: #fdfcf8;
+  --color-cream-100: #F7F4EB; /* BACKGROUND */
+  --color-cream-200: #ede9db;
+  --color-cream-300: #ddd8c8;
+  --color-cream-400: #ccc5b0;
+
+  --color-coffee-50: #f5f0ef;
+  --color-coffee-100: #ddd0ce;
+  --color-coffee-200: #bba09c;
+  --color-coffee-300: #9b7b74;
+  --color-coffee-400: #7a5a54;
+  --color-coffee-500: #5a3e38;
+  --color-coffee-600: #3f2a24;
+  --color-coffee-700: #2B1E1A; /* TEXT PRIMARY */
+  --color-coffee-800: #1a110e;
+  --color-coffee-900: #0d0807;
+
+  /* --- 2. SEMANTIC SYSTEM --- */
+  --color-success: #1e7e4a;
+  --color-success-bg: #e8f5ee;
+  --color-warning: #c47a00;
+  --color-warning-bg: #fff8e6;
+  --color-danger: #c0392b;
+  --color-danger-bg: #fdecea;
+  --color-info: #1565c0;
+  --color-info-bg: #e3f0fc;
+
+  /* --- 3. TYPOGRAPHY SCALES --- */
+  --font-sans: "DM Sans", "Noto Sans Ethiopic", system-ui, sans-serif;
+  --font-display: "Playfair Display", serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  --text-xs: 11px;
+  --text-sm: 13px;
+  --text-base: 15px;
+  --text-md: 16px;
+  --text-lg: 18px;
+  --text-xl: 22px;
+  --text-2xl: 26px;
+  --text-3xl: 32px;
+
+  /* --- 4. SPACING, RADII, SHADOWS --- */
+  --spacing-1: 4px;
+  --spacing-2: 8px;
+  --spacing-3: 12px;
+  --spacing-4: 16px;
+  --spacing-5: 20px;
+  --spacing-6: 24px;
+  --spacing-8: 32px;
+  --spacing-10: 40px;
+  --spacing-12: 48px;
+  --spacing-16: 64px;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-full: 9999px;
+
+  --shadow-card: 0 1px 3px rgba(43,30,26,0.08), 0 1px 2px rgba(43,30,26,0.04);
+  --shadow-elevated: 0 4px 16px rgba(43,30,26,0.10);
+  --shadow-modal: 0 20px 60px rgba(43,30,26,0.18);
+
+  /* --- 5. BREAKPOINTS --- */
+  --breakpoint-sm: 390px;
+  --breakpoint-md: 430px;
+  --breakpoint-lg: 768px;
+  --breakpoint-xl: 1024px;
+
+  /* --- SHADCN VARIABLES OVERRIDES (Synchronized with your palette) --- */
+  --color-background: var(--color-cream-100);
+  --color-foreground: var(--color-coffee-700);
+  --color-card: var(--color-cream-50);
+  --color-card-foreground: var(--color-coffee-700);
+  --color-popover: var(--color-cream-50);
+  --color-popover-foreground: var(--color-coffee-700);
+  --color-primary: var(--color-berbere-500);
+  --color-primary-foreground: var(--color-cream-50);
+  --color-secondary: var(--color-gold-400);
+  --color-secondary-foreground: var(--color-coffee-700);
+  --color-border: var(--color-cream-300);
+  --color-input: var(--color-cream-300);
+  --color-ring: var(--color-berbere-300);
+}
+
+/* Base resets & touch target scaling */
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    background-color: #F7F4EB; 
+    color: #2B1E1A;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button, input, select {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+}

@@ -201,7 +201,12 @@ CREATE TABLE shifts (
   status                VARCHAR(20) DEFAULT 'open' CHECK (status IN ('open','closed','suspended')),
   is_first_shift        BOOLEAN DEFAULT FALSE,
   notes                 TEXT,
-  created_at            TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  created_at            TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+
+  opening_float         NUMERIC(10,2) DEFAULT 0.00,
+  closing_float         NUMERIC(10,2),
+  actual_cash           NUMERIC(10,2),
+  difference            NUMERIC(10,2)
 );
 
 -- ============================================

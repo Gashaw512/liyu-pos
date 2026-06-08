@@ -10,9 +10,19 @@ interface HoursStepProps {
   setCloseTime: (t: string) => void;
   onNext: () => void;
   onBack: () => void;
+  onSkip?: () => void;
 }
 
-export default function BusinessHoursStep({ isAm, openTime, setOpenTime, closeTime, setCloseTime, onNext, onBack }: HoursStepProps) {
+export default function BusinessHoursStep({ 
+  isAm, 
+  openTime, 
+  setOpenTime, 
+  closeTime, 
+  setCloseTime, 
+  onNext, 
+  onBack,
+  onSkip 
+}: HoursStepProps) {
   return (
     <div className="bg-white rounded-3xl shadow-xl border border-[#2B1E1A]/10 p-6 space-y-6 animate-fadeIn">
       <div className="text-center space-y-1">
@@ -23,12 +33,11 @@ export default function BusinessHoursStep({ isAm, openTime, setOpenTime, closeTi
           {isAm ? 'የስራ ሰዓት ማስተካከያ' : 'Business Hours'}
         </h2>
         <p className="text-sm text-[#7A6A67]">
-          {isAm ? 'ፎርም እና ሪፖርቶች እንዲስተካከሉ የእለት ተእለት መክፈቻና መዝጊያ ሰዓት ይምረጡ' : 'Select standard times when your business opens and closes'}
+          {isAm ? 'የፈረቃ ስራዎችን እና ሪፖርቶችን ለማስተካከል የመክፈቻና መዝጊያ ሰዓት ይምረጡ' : 'Select standard times when your business opens and closes'}
         </p>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        {/* Opening Box */}
         <div className="bg-[#F7F4EB] p-4 rounded-2xl border border-[#E2A03F]/20 space-y-2">
           <label className="flex items-center gap-1.5 font-bold text-xs uppercase tracking-wider text-[#7A6A67]">
             <Sun className="w-4 h-4 text-[#E2A03F]" />
@@ -42,7 +51,6 @@ export default function BusinessHoursStep({ isAm, openTime, setOpenTime, closeTi
           />
         </div>
 
-        {/* Closing Box */}
         <div className="bg-[#F7F4EB] p-4 rounded-2xl border border-[#E2A03F]/20 space-y-2">
           <label className="flex items-center gap-1.5 font-bold text-xs uppercase tracking-wider text-[#7A6A67]">
             <Moon className="w-4 h-4 text-indigo-600" />
@@ -57,20 +65,33 @@ export default function BusinessHoursStep({ isAm, openTime, setOpenTime, closeTi
         </div>
       </div>
 
-      {/* Navigation Buttons */}
-      <div className="flex gap-3 pt-2">
-        <button 
-          onClick={onBack}
-          className="w-1/3 py-3.5 font-bold text-sm rounded-xl text-[#7A6A67] hover:bg-gray-100 transition-colors"
-        >
-          {isAm ? 'ወደ ኋላ' : 'Back'}
-        </button>
-        <button 
-          onClick={onNext}
-          className="w-2/3 py-3.5 bg-[#8B2635] hover:bg-[#7a1f2d] text-white font-bold rounded-xl shadow-md transition-all active:scale-[0.99]"
-        >
-          {isAm ? 'ቀጥል ➔' : 'Continue ➔'}
-        </button>
+      <div className="flex flex-col gap-3 pt-2">
+        <div className="flex gap-3">
+          <button 
+            type="button"
+            onClick={onBack}
+            className="w-1/3 py-3.5 font-bold text-sm rounded-xl text-[#7A6A67] hover:bg-gray-100 transition-colors"
+          >
+            {isAm ? 'ወደ ኋላ' : 'Back'}
+          </button>
+          <button 
+            type="button"
+            onClick={onNext}
+            className="w-2/3 py-3.5 bg-[#8B2635] hover:bg-[#7a1f2d] text-white font-bold rounded-xl shadow-md transition-all active:scale-[0.99]"
+          >
+            {isAm ? 'ቀጥል ➔' : 'Continue ➔'}
+          </button>
+        </div>
+
+        {onSkip && (
+          <button
+            type="button"
+            onClick={onSkip}
+            className="text-xs text-center text-[#7A6A67] hover:text-[#2B1E1A] font-bold underline underline-offset-2 mt-1"
+          >
+            {isAm ? 'ይህንን ደረጃ እለፍና በቀጥታ ወደ ዳሽቦርድ ሂድ' : 'Skip setup and go directly to dashboard'}
+          </button>
+        )}
       </div>
     </div>
   )

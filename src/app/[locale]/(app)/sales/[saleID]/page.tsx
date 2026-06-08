@@ -1,115 +1,136 @@
-// # Receipt
-
 'use client'
 
-import { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { getDB } from '../../../../../lib/offline/db';
+import { useParams, useRouter } from 'next/navigation'
+import { useEffect, useState } from 'react'
+import { getDB } from '../../../../../lib/offline/db' 
+import { CheckCircle2, ShoppingCart, Printer, Coffee, Coins } from 'lucide-react'
 
-export default function ReceiptPage() {
-  const params = useParams();
-  const router = useRouter();
-  const isAm = params.locale === 'am';
-  const saleId = params.saleId as string;
+export default function SaleReceiptPage() {
+  const params = useParams()
+  const router = useRouter()
+  const isAm = params.locale === 'am'
+  const saleId = params.saleID 
 
-  // 🛠️ FIX: Use 'any' type here to safely house both PendingSale and Sale shapes without type clashing
-  const [sale, setSale] = useState<any>(null);
-  const [productCatalog, setProductCatalog] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(true);
+  const [sale, setSale] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
 
- // Replace your existing useEffect hook with this implementation:
-useEffect(() => {
-  async function locateReceiptAndCatalog() {
-    try {
-      const db = await getDB();
-      
-      const products = await db.getAll('products');
-      const catalogMap: Record<string, string> = {};
-      products.forEach((p) => {
-        catalogMap[p.id] = p.name;
-      });
-      setProductCatalog(catalogMap);
-      
-      // 🛠️ FIX: Query them using isolated, distinct local scope names
-      const historicalReceipt = await db.get('completed_sales_history', saleId);
-      
-      if (historicalReceipt) {
-        setSale(historicalReceipt);
-      } else {
-        const pendingSales = await db.getAll('pending_sales');
-        const pendingReceipt = pendingSales.find((s) => s.localId === saleId);
-        setSale(pendingReceipt || null);
+  useEffect(() => {
+    async function fetchSaleDetails() {
+      try {
+        const db = await getDB()
+        const data = await db.get('pending_sales', saleId as string)
+        setSale(data)
+      } catch (err) {
+        console.error('Error reading receipt from IndexedDB:', err)
+      } finally {
+        setLoading(false)
       }
-
-    } catch (err) {
-      console.error("Error reading receipt data:", err);
-    } finally {
-      setLoading(false);
     }
-  }
-  locateReceiptAndCatalog();
-}, [saleId]);
+    fetchSaleDetails()
+  }, [saleId])
 
-  if (loading) return <div className="p-4 text-center font-bold">...</div>;
-  if (!sale) return <div className="p-4 text-center text-rose-500 font-bold">⚠️ {isAm ? 'ማረጋገጫው አልተገኘም' : 'Receipt not found'}</div>;
+  if (loading) return <div className="p-8 text-center text-sm font-bold text-slate-500 animate-pulse">{isAm ? 'በመጫን ላይ...' : 'Loading Invoice...'}</div>
+  if (!sale) return <div className="p-8 text-center text-rose-500 font-bold">{isAm ? 'ሂሳብ አልተገኘም' : 'Sale Not Found'}</div>
 
-  // Normalize totals between schema differences
-  const finalTotal = sale.total_amount ?? sale.amount ?? 0;
-  const itemRows = sale.items ?? [];
+  // Clean numbers calculation
+  const subtotal = sale.subtotal ?? (sale.total_amount - (sale.tip_amount ?? 0))
+  const tipAmount = sale.tip_amount ?? 0
+  const tableLocation = sale.table_number || (isAm ? 'ቀጥታ መሸጫ' : 'Walk-in')
 
   return (
-    <div className="space-y-4 pb-20 max-w-sm mx-auto">
-      <button onClick={() => router.push(`/${params.locale}/sales`)} className="text-sm font-bold text-slate-500">
-        🔄 {isAm ? 'አዲስ ሽያጭ ጀምር' : 'New Transaction'}
-      </button>
+    <div className="max-w-md mx-auto p-4 space-y-4 pb-24 select-none">
+      
+      {/* 1. Success Message */}
+      <div className="text-center py-2 space-y-1">
+        <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto" />
+        <h1 className="text-xl font-black text-slate-900">{isAm ? 'ሽያጩ ተጠናቋል!' : 'Sale Completed!'}</h1>
+        <p className="text-xs font-mono text-slate-400">{sale.receipt_number}</p>
+      </div>
 
-      {/* High-Contrast Thermal Invoice Wrapper */}
-      <div className="bg-white border-2 border-dashed border-slate-300 p-5 rounded-lg space-y-4 shadow-sm font-mono text-sm text-slate-800">
-        <div className="text-center space-y-1">
-          <h2 className="font-black text-lg uppercase tracking-tight text-slate-900">LIYU POS RECEIPT</h2>
-          <div className="text-xs font-bold text-slate-400">
-            {sale.createdAt || sale.created_at ? new Date(sale.createdAt || sale.created_at).toLocaleString() : ''}
-          </div>
-          <div className="text-[10px] text-slate-500 truncate">ID: {sale.localId || sale.id}</div>
-        </div>
+      {/* 2. Table Name Display */}
+      <div className="bg-slate-900 text-white rounded-2xl p-4 flex justify-between items-center shadow-sm">
+        <span className="text-sm font-bold flex items-center gap-2">
+          <Coffee className="w-4 h-4 text-slate-300" />
+          {isAm ? 'የጠረጴዛ ስም' : 'Table Name'}
+        </span>
+        <span className="text-base font-black uppercase tracking-wider">{tableLocation}</span>
+      </div>
 
-        {/* Dynamic Itemized Rows */}
-        <div className="border-y-2 border-dashed border-slate-200 py-3 space-y-2">
-          {itemRows.map((item: any, idx: number) => {
-            // Resolve product names from either embedded properties or our local catalog map lookup
-            const resolvedName = item.product_name || productCatalog[item.product_id] || (isAm ? 'ዕቃ' : 'Item');
-            const price = item.unit_price || item.price || 0;
-            const qty = item.quantity || 0;
-
-            return (
-              <div key={idx} className="flex justify-between font-medium">
-                <div className="truncate max-w-[65%]">
-                  {resolvedName} <span className="text-xs text-slate-400">x{qty}</span>
+      {/* 3. Items Ordered Receipt Details */}
+      <div className="bg-white border border-slate-200 rounded-3xl p-5 space-y-4 shadow-sm">
+        <div className="border-b border-slate-100 pb-3">
+          <span className="text-xs font-bold text-slate-400 block mb-2">{isAm ? 'የተሸጡ ዕቃዎች' : 'Items Sold'}</span>
+          <div className="space-y-3">
+            {sale.items?.map((item: any, i: number) => (
+              <div key={i} className="flex justify-between items-center text-sm">
+                <div>
+                  <span className="font-bold text-slate-800 block">{item.product_name}</span>
+                  <span className="text-xs text-slate-400 font-mono">{item.unit_price} ETB x {item.quantity}</span>
                 </div>
-                <div className="font-bold">{price * qty} ETB</div>
+                <span className="font-mono font-black text-slate-900 text-right">{item.total_price} ETB</span>
               </div>
-            );
-          })}
-        </div>
-
-        {/* Totals Summary */}
-        <div className="space-y-1 text-right">
-          <div className="flex justify-between font-black text-base text-slate-900 pt-1">
-            <span>TOTAL BILL:</span>
-            <span>{finalTotal} ETB</span>
+            ))}
           </div>
         </div>
 
-        {/* Sync Status Badge */}
-        <div className="text-center pt-4 border-t border-slate-100">
-          <span className={`text-[11px] font-black px-3 py-1 rounded-full uppercase ${
-            sale.syncStatus === 'pending' || !sale.id ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
-          }`}>
-            {sale.syncStatus === 'pending' || !sale.id ? (isAm ? 'በስልክ ላይ የተቀመጠ' : 'OFFLINE RECORD') : (isAm ? 'የተረጋገጠ ሽያጭ' : 'SYNCED TRACE')}
+        {/* 4. Money Calculation Breakdown */}
+        <div className="space-y-2 pt-1">
+          <div className="flex justify-between text-sm text-slate-500">
+            <span>{isAm ? 'የዕቃዎች ድምር' : 'Items Subtotal'}</span>
+            <span className="font-mono font-bold">{subtotal} ETB</span>
+          </div>
+          
+          {tipAmount > 0 && (
+            <div className="flex justify-between text-sm text-emerald-600 font-bold bg-emerald-50/60 p-2 rounded-xl">
+              <span className="flex items-center gap-1">
+                <Coins className="w-4 h-4" />
+                {isAm ? 'ጉርሻ (ቲፕ)' : 'Waiter Tip'}
+              </span>
+              <span className="font-mono">+{tipAmount} ETB</span>
+            </div>
+          )}
+          
+          <div className="flex justify-between items-center pt-3 border-t-2 border-slate-950 text-slate-900">
+            <span className="font-black text-base">{isAm ? 'አጠቃላይ የተሰበሰበ' : 'Total Collected'}</span>
+            <span className="font-mono font-black text-xl text-emerald-700 bg-emerald-50 px-3 py-1 rounded-xl">
+              {sale.total_amount} ETB
+            </span>
+          </div>
+        </div>
+
+        {/* 5. How Payment Was Made */}
+        <div className="bg-slate-50 rounded-xl p-3 text-xs text-slate-500 space-y-1.5 border border-slate-100">
+          <span className="font-bold text-slate-400 block uppercase tracking-wider text-[10px]">
+            {isAm ? 'የክፍያ መንገድ' : 'Payment Method'}
           </span>
-          <p className="text-[10px] text-slate-400 font-bold mt-3">✨ አመሰግናለሁ! / Thank You! ✨</p>
+          <div className="flex flex-wrap gap-2">
+            {sale.payments?.map((p: any, idx: number) => (
+              <span key={idx} className="bg-white border border-slate-200 px-2 py-1 rounded-lg font-bold text-slate-700 capitalize">
+                {p.method}: <span className="font-mono text-slate-900">{p.amount} ETB</span>
+              </span>
+            ))}
+          </div>
         </div>
       </div>
+
+      {/* 6. Simple Layout Buttons */}
+      <div className="grid grid-cols-5 gap-3">
+        <button 
+          onClick={() => window.print()} 
+          className="col-span-1 h-14 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-2xl flex items-center justify-center active:scale-95 transition-all"
+        >
+          <Printer className="w-5 h-5" />
+        </button>
+
+        <button
+          onClick={() => router.push(`/${params.locale}/sales`)}
+          className="col-span-4 h-14 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-base flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all"
+        >
+          <ShoppingCart className="w-5 h-5" />
+          <span>{isAm ? 'ቀጣይ አዲስ ማዘዣ' : 'Next New Order'}</span>
+        </button>
+      </div>
+
     </div>
-  );
+  )
 }

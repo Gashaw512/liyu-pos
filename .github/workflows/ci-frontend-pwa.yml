@@ -1,0 +1,42 @@
+name: CI / Frontend Next.js PWA Application
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths-ignore:
+      - 'supabase/**'
+      - 'README.md'
+  pull_request:
+    branches: [ main ]
+    paths-ignore:
+      - 'supabase/**'
+
+jobs:
+  audit-and-build:
+    name: Next.js PWA Compilation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Pure Dependencies
+        run: npm ci
+
+      - name: Enforce TypeScript Type Definitions
+        run: npx tsc --noEmit
+
+      - name: Run Code Linter Rules
+        run: npm run lint
+
+      - name: Test Production PWA Bundling
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: "https://supabase.co"
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: "mock-anon-key"

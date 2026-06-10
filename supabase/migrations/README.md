@@ -72,7 +72,7 @@ scoop bucket add supabase [https://github.com/supabase/scoop-bucket.git](https:/
 scoop install supabase
 ```
 ### 2. Initialize the Local Environment
-Navigate to your project root folder and spin up the container network:
+Navigate to the project root folder and spin up the container network:
 ```bash
 # Initialize local project context configuration
 supabase init
@@ -81,10 +81,10 @@ supabase init
 supabase start
 ```
 #### Note:
-Once running, make note of the Studio URL (typically http://localhost:54323), which serves as your local visual administrative dashboard.
+Once running, make note of the Studio URL (typically http://localhost:54323), which serves as the local visual administrative dashboard.
 
 ### 3. Deploy the Migration Chain
-To clean up your local directory and ensure strict deployment tracking, distribute your SQL modules across the exact chronological files listed in the 15-stage blueprint, then run:
+To clean up the local directory and ensure strict deployment tracking, distribute the SQL modules across the exact chronological files listed in the 15-stage blueprint, then run:
 ```bash
 # Validates SQL syntax and pushes the 15-file migration chain sequentially
 supabase migration up
@@ -93,7 +93,7 @@ supabase migration up
 supabase migration list
 ```
 ### 4. Resetting & Re-building from Scratch
-If you modify schemas during local development, do not stack fix-it scripts. Execute a hard baseline reset to verify that your full migration dependency order remains completely unbroken:
+If you modify schemas during local development, do not stack fix-it scripts. Execute a hard baseline reset to verify that the full migration dependency order remains completely unbroken:
 ```bash
 supabase db reset
 ```
@@ -157,7 +157,7 @@ CREATE INDEX idx_sync_pending ON public.sync_queue(business_id, processed_status
 WHERE processed_status = 'pending';
 ```
 ### 2. High-Fidelity ERP Ledgering (Inventory Refactoring)
-Currently, your database handles stock levels by computing inline delta updates via `reduce_inventory_on_sale()`. For high-volume enterprise stores or restaurants, refactor your engine to treat core stock balances as read-only event caches, using double-entry transactional ledger entries as your single source of truth.
+Currently, the database handles stock levels by computing inline delta updates via `reduce_inventory_on_sale()`. For high-volume enterprise stores or restaurants, refactor the engine to treat core stock balances as read-only event caches, using double-entry transactional ledger entries as the single source of truth.
 
 ```mermaid
 sequenceDiagram
@@ -168,7 +168,7 @@ sequenceDiagram
     Movement Ledger->>Inventory Cache: Recalculate Stock Balance (Async Trigger)
 ```
 ### 3. Integrated SaaS Monetization Architecture
-To enable automated global subscription management and control infrastructure utilization costs, decouple your schema billing tiers and resource limits into structured lookup packages:
+To enable automated global subscription management and control infrastructure utilization costs, decouple the schema billing tiers and resource limits into structured lookup packages:
 ```sql
 CREATE TABLE public.subscription_plans (
     id VARCHAR(30) PRIMARY KEY, -- 'starter', 'business', 'pro'
@@ -188,10 +188,10 @@ CREATE TABLE public.subscriptions (
 );
 ```
 ## 🛠️ Verification & Quality Assurance Queries
-After deploying migrations locally, execute these diagnostic validation queries within the Supabase SQL Editor to confirm your database environment is running perfectly.
+After deploying migrations locally, execute these diagnostic validation queries within the Supabase SQL Editor to confirm the database environment is running perfectly.
 
 ### Check Active Schema Triggers
-Verify that your decoupled automation triggers are active, running on time, and bound across your detached schema files correctly:
+Verify that the decoupled automation triggers are active, running on time, and bound across the detached schema files correctly:
 ```sql
 SELECT 
     trigger_name, 

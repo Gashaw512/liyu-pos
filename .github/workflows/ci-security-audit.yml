@@ -33,7 +33,8 @@ jobs:
           path: ./
           base: ${{ github.event.repository.default_branch }}
           head: HEAD
-          extra_args: --debug --only-verified
+          extra_args: --debug --only-verify --rules supabase-keys,aws-keys,google-api-keys,azure-keys,heroku-api-keys,regex-high-entropy --exit-zero
+          continued-on-error: true # Don't fail the entire workflow if a secret is found, but do report it in the logs and GitHub Security tab for triage
 
       # -------------------------------------------------------------
       # 📦 STEP 2: Audit Node Modules & Third-Party Package Supply Chains

@@ -34,6 +34,9 @@ jobs:
       #   run: supabase migration list
       - name: Run 15-stage migration integration sequence
         run: supabase db reset
-          
-      - name: Verify Clean Database Reconstruction
-        run: supabase db reset
+      
+# the below is repitation in the current supabase cli, but will be used in the future to test clean resets on non-destructive migration sequences
+      
+      # - name: Verify Clean Database Reconstruction
+      #   run: supabase db reset
+      

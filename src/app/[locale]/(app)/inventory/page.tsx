@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { getDB } from '../../../../lib/offline/db'
-import StockRow from '../../../../components/inventory/StockRow'
+import StockRow from '@/components/inventory/StockRow'
 import { useParams } from 'next/navigation'
 
 export default function InventoryPage() {
@@ -89,8 +89,8 @@ export default function InventoryPage() {
           <StockRow
             key={product.id}
             productName={product.name}
-            category={product.category_id || 'General'}
-            currentCount={counts[product.id] || 0}
+            category={product.category_id ?? undefined}
+            currentCount={counts[product.id] ?? 0}
             onCountChange={(newCount) => handleCountChange(product.id, newCount)}
             isAm={isAm}
           />

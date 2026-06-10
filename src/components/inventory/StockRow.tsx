@@ -2,13 +2,15 @@
 
 interface StockRowProps {
   productName: string;
-  category: string;
+  category?: string | null;
   currentCount: number;
   onCountChange: (newCount: number) => void;
   isAm: boolean;
 }
 
 export default function StockRow({ productName, category, currentCount, onCountChange, isAm }: StockRowProps) {
+  const displayCategory = category ?? (isAm ? 'አጠቃላይ' : 'General')
+
   return (
     <div className="bg-white border border-cream-200/80 p-3 rounded-xl flex items-center justify-between shadow-sm hover:border-cream-300 transition-colors">
       
@@ -18,7 +20,7 @@ export default function StockRow({ productName, category, currentCount, onCountC
           {productName}
         </span>
         <span className="inline-block text-[9px] w-fit text-berbere-700 font-extrabold bg-berbere-50 px-1.5 py-0.5 rounded uppercase tracking-wider truncate">
-          {category}
+          {displayCategory}
         </span>
       </div>
 

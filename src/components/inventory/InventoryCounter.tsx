@@ -1,9 +1,10 @@
 'use client'
 import { useState } from 'react'
 import { useTranslations } from 'next-intl'
+import { InventoryProduct } from '../../types/inventory'
 
 interface Props {
-  product: Product
+  product: InventoryProduct
   initialCount?: number
   onChange: (productId: string, count: number) => void
 }
@@ -20,10 +21,10 @@ export function InventoryCounter({ product, initialCount = 0, onChange }: Props)
 
   return (
     <div className="flex items-center gap-3 p-3 bg-white rounded-xl border border-coffee-100">
-      <span className="text-2xl">{product.icon || '📦'}</span>
+      <span className="text-2xl">{product.category_icon || '📦'}</span>
       <div className="flex-1 min-w-0">
         <p className="font-medium text-coffee-700 truncate">{product.name}</p>
-        <p className="text-xs text-coffee-400">{product.category} · {t('opening')}: {initialCount}</p>
+        <p className="text-xs text-coffee-400">{product.category_name} · {t('opening')}: {initialCount}</p>
       </div>
       <div className="flex items-center gap-2 flex-shrink-0">
         <button

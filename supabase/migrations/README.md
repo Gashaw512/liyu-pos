@@ -156,7 +156,60 @@ CREATE TABLE public.sync_queue (
 CREATE INDEX idx_sync_pending ON public.sync_queue(business_id, processed_status) 
 WHERE processed_status = 'pending';
 ```
+### 2. High-Fidelity ERP Ledgering (Inventory Refactoring)
+Currently, your database handles stock levels by computing inline delta updates via `reduce_inventory_on_sale()`. For high-volume enterprise stores or restaurants, refactor your engine to treat core stock balances as read-only event caches, using double-entry transactional ledger entries as your single source of truth.
 
+```mermaid
+sequenceDiagram
+    participant Sale Trigger
+    participant Movement Ledger
+    participant Inventory Cache
+    Sale Trigger->>Movement Ledger: INSERT Row (Type: 'sale', Qty: -3)
+    Movement Ledger->>Inventory Cache: Recalculate Stock Balance (Async Trigger)
+```
+### 3. Integrated SaaS Monetization Architecture
+To enable automated global subscription management and control infrastructure utilization costs, decouple your schema billing tiers and resource limits into structured lookup packages:
+```sql
+CREATE TABLE public.subscription_plans (
+    id VARCHAR(30) PRIMARY KEY, -- 'starter', 'business', 'pro'
+    name VARCHAR(100) NOT NULL,
+    max_branches INT NOT NULL DEFAULT 1,
+    max_products INT NOT NULL DEFAULT 100,
+    price_monthly NUMERIC(10,2) NOT NULL
+);
+
+CREATE TABLE public.subscriptions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    business_id UUID UNIQUE NOT NULL REFERENCES public.businesses(id) ON DELETE CASCADE,
+    plan_id VARCHAR(30) NOT NULL REFERENCES public.subscription_plans(id),
+    status VARCHAR(30) NOT NULL CHECK (status IN ('active', 'past_due', 'canceled', 'trialing')),
+    current_period_end TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+## 🛠️ Verification & Quality Assurance Queries
+After deploying migrations locally, execute these diagnostic validation queries within the Supabase SQL Editor to confirm your database environment is running perfectly.
+
+### Check Active Schema Triggers
+Verify that your decoupled automation triggers are active, running on time, and bound across your detached schema files correctly:
+```sql
+SELECT 
+    trigger_name, 
+    event_object_table AS target_table, 
+    action_timing, 
+    event_manipulation AS event
+FROM information_schema.triggers 
+WHERE trigger_schema = 'public'
+ORDER BY event_object_table, trigger_name;
+```
+## Test Security Isolation Functionality
+Verify that multi-tenant structural indexes evaluate efficiently without triggering full sequential table scans or execution pipeline halts:
+```sql
+-- Evaluates the query engine execution plan without checking live data sessions
+EXPLAIN ANALYZE 
+SELECT * FROM public.products 
+WHERE business_id = public.auth_business_id();
+```
 
 ## 👨‍💻 Contributing Core Guidelines
 

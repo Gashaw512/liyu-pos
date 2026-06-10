@@ -115,8 +115,53 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ```
 
+## Multi-Tenant Rule Enforcement Patterns
+### Direct Property Isolation
+Tables tracking data via a native foreign key rely directly on tenant validation checks:
+```sql
+CREATE POLICY "Product access isolation" ON public.products
+  FOR ALL USING (business_id = public.auth_business_id());
+```
+### Relational Context Interception
+Deep transactional line items (like sale_items) traverse up through parent records via relational lookups optimized with highly efficient EXISTS predicates to ensure index utilization:
+```sql
+CREATE POLICY "Sale items line tracking isolation" ON public.sale_items
+  FOR ALL USING (EXISTS (
+    SELECT 1 FROM public.sales 
+    WHERE public.sales.id = public.sale_items.sale_id 
+      AND public.sales.business_id = public.auth_business_id()
+  ));
+```
+## 📈 Future Enhancements for Enterprise Readiness
+
+To transition this core operational engine into an enterprise-ready distributed SaaS platform, prioritize deploying the following architectural milestones:
+
+### 1. Offline-First Sync Architecture (`sync_queue`)
+To insulate physical POS terminals against local network dropouts or latency spikes, implement a multi-master replication queue to capture state changes locally before draining changes securely back to the upstream cloud database.
+
+```sql
+CREATE TABLE public.sync_queue (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    business_id UUID NOT NULL REFERENCES public.businesses(id) ON DELETE CASCADE,
+    client_mutation_id VARCHAR(100) UNIQUE NOT NULL, -- Client-side state tracking token
+    table_name VARCHAR(80) NOT NULL,
+    action_type VARCHAR(20) NOT NULL CHECK (action_type IN ('INSERT', 'UPDATE', 'DELETE')),
+    payload JSONB NOT NULL,
+    processed_status VARCHAR(20) DEFAULT 'pending' CHECK (processed_status IN ('pending', 'applied', 'conflict')),
+    conflict_resolution_strategy VARCHAR(50) DEFAULT 'client_wins',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    processed_at TIMESTAMPTZ
+);
+
+CREATE INDEX idx_sync_pending ON public.sync_queue(business_id, processed_status) 
+WHERE processed_status = 'pending';
+```
 
 
+## 👨‍💻 Contributing Core Guidelines
+
+* **Database First:** All data model adjustments must originate as sequential migration files inside `supabase/migrations/`. Never alter schema structures directly via the live online Supabase Dashboard UI to protect production environment predictability.
+* **Deterministic Generation:** Always prefix new structural updates with accurate timestamp signatures (`YYYYMMDDHHMMSS_name.sql`) to keep environment configurations perfectly synchronized across all engineering team workstations.
 
 
 

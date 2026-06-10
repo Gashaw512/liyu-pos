@@ -1,4 +1,4 @@
-{
+export default {
   "common": {
     "save": "አስቀምጥ",
     "cancel": "ሰርዝ",

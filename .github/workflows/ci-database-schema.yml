@@ -1,0 +1,38 @@
+name: CI / Database Schema Verification
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'supabase/**'
+      - '.github/workflows/ci-database-schema.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'supabase/**'
+
+jobs:
+  validate-migrations:
+    name: Postgres 15-Stage Validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install Supabase CLI
+        run: npm install -g supabase
+
+      - name: Spin Up Local Postgres Stack
+        run: |
+          supabase init
+          supabase start
+          
+      - name: Assert Transaction Sequence
+        run: supabase migration list
+          
+      - name: Verify Clean Database Reconstruction
+        run: supabase db reset

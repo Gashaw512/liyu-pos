@@ -30,4 +30,3 @@ graph TD
     012 --> 013[013_rls.sql]
     013 --> 014[014_seed_data.sql]
     014 --> 015[015_indexes.sql]
-    ```

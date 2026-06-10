@@ -10,7 +10,7 @@ The schema has been completely refactored from a monolithic migration script int
 
 ---
 
-## 🏗️ 15-Stage Migration Blueprint
+##  15-Stage Migration Blueprint
 
 To prevent schema failures during a clean database initialization, migrations must be executed in a strict, dependency-aware sequence. Parent lookups and infrastructure functions must compile before child foreign key attachments are asserted.
 
@@ -31,6 +31,7 @@ graph TD
     013 --> 014[014_seed_data.sql]
     014 --> 015[015_indexes.sql]
    ```
+## Directory Structure & Allocation
 ```Plaintext
 supabase/
 └── migrations/
@@ -49,4 +50,24 @@ supabase/
     ├── 20260610000013_013_rls.sql                 # Row-Level Security isolation rules
     ├── 20260610000014_014_seed_data.sql           # Localization structures & business lookups
     └── 20260610000015_015_indexes.sql             # Composite query optimization and indexing
+```
+## ⚡ Local Setup & Migration Execution
+
+Follow these step-by-step instructions to spin up the local environment, apply the migration sequence, and verify the multi-tenant architecture locally.
+
+### 1. Prerequisites
+Ensure you have the following toolchains installed locally:
+* **Docker Desktop** (Required for containerized database execution)
+* **Node.js LTS & npm**
+* **Supabase CLI** (Native database control harness)
+
+#### Install Supabase CLI
+
+```bash
+# MacOS via Homebrew
+brew install supabase/tap/supabase
+
+# Windows via Scoop
+scoop bucket add supabase [https://github.com/supabase/scoop-bucket.git](https://github.com/supabase/scoop-bucket.git)
+scoop install supabase
 ```

@@ -2,12 +2,12 @@ name: CI / Frontend Next.js PWA Application
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ master, main, develop ]
     paths-ignore:
       - 'supabase/**'
       - 'README.md'
   pull_request:
-    branches: [ main ]
+    branches: [ master, main, develop ]
     paths-ignore:
       - 'supabase/**'
 

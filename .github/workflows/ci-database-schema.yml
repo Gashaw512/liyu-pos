@@ -2,12 +2,12 @@ name: CI / Database Schema Verification
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ master, main, develop ]
     paths:
       - 'supabase/**'
       - '.github/workflows/ci-database-schema.yml'
   pull_request:
-    branches: [ main ]
+    branches: [ master, main, develop ]
     paths:
       - 'supabase/**'
 

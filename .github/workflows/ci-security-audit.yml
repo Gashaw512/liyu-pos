@@ -2,9 +2,9 @@ name: CI / Security & Compliance Audit
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ master, main, develop ]
   pull_request:
-    branches: [ main ]
+    branches: [master, main, develop ]
   schedule:
     # Automatically scans your repository every Sunday at midnight for newly discovered vulnerabilities
     - cron: '0 0 * * 0'

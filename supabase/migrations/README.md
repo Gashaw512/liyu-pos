@@ -71,3 +71,52 @@ brew install supabase/tap/supabase
 scoop bucket add supabase [https://github.com/supabase/scoop-bucket.git](https://github.com/supabase/scoop-bucket.git)
 scoop install supabase
 ```
+### 2. Initialize the Local Environment
+Navigate to your project root folder and spin up the container network:
+```bash
+# Initialize local project context configuration
+supabase init
+
+# Start local Supabase container cluster (PostgreSQL, Auth, Storage, Studio)
+supabase start
+```
+#### Note:
+Once running, make note of the Studio URL (typically http://localhost:54323), which serves as your local visual administrative dashboard.
+
+### 3. Deploy the Migration Chain
+To clean up your local directory and ensure strict deployment tracking, distribute your SQL modules across the exact chronological files listed in the 15-stage blueprint, then run:
+```bash
+# Validates SQL syntax and pushes the 15-file migration chain sequentially
+supabase migration up
+
+# Check status to ensure all migration blocks applied successfully
+supabase migration list
+```
+### 4. Resetting & Re-building from Scratch
+If you modify schemas during local development, do not stack fix-it scripts. Execute a hard baseline reset to verify that your full migration dependency order remains completely unbroken:
+```bash
+supabase db reset
+```
+## Security Architecture (Row-Level Security)
+Liyu POS applies a zero-trust paradigm directly at the data layer. Multi-tenant partitioning relies on session validation context using lightweight, caching security functions instead of slow application-layer filter injections.
+
+### Context Security Macro
+Rather than embedding repeated role and status validations inside every unique query target, security policies reference the optimized macro predicate ```Plaintext assert_security_context(allowed_roles):```
+
+```sql
+CREATE OR REPLACE FUNCTION public.assert_security_context(allowed_roles VARCHAR(30)[])
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN (
+    public.auth_is_profile_active() AND 
+    public.auth_has_any_role(allowed_roles)
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+```
+
+
+
+
+
+

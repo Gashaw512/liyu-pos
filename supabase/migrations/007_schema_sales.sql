@@ -1,17 +1,26 @@
--- ============================================================
+-- ============================================================================
 -- 007_schema_sales.sql
--- Domain: Sales, Items, and Payment Processing
--- Dependencies: 003, 004, 005, 008 (for shifts)
--- ============================================================
+-- Domain: Transaction Processing & POS Checkout Models
+-- Dependencies: 004_schema_users.sql, 005_schema_catalog.sql
+-- ============================================================================
 
--- ============================================
--- 1. SALES
--- ============================================
+-- CREATE TABLE public.restaurant_tables (
+--   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+--   business_id     UUID NOT NULL REFERENCES public.businesses(id) ON DELETE CASCADE,
+--   branch_id       UUID NOT NULL REFERENCES public.branches(id) ON DELETE CASCADE,
+--   name            VARCHAR(50) NOT NULL,
+--   capacity        INT DEFAULT 4,
+--   is_active       BOOLEAN DEFAULT TRUE,
+--   created_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+--   deleted_at      TIMESTAMP WITH TIME ZONE,
+--   CONSTRAINT unique_branch_table_name UNIQUE(branch_id, name)
+-- );
+
 CREATE TABLE public.sales (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   business_id     UUID NOT NULL REFERENCES public.businesses(id),
   branch_id       UUID NOT NULL REFERENCES public.branches(id),
-  shift_id        UUID, -- Constraint added in 008 to prevent migration failure
+  shift_id        UUID, -- Attached via Step 8 (Shifts) via Alterations if needed or left as UUID
   cashier_id      UUID REFERENCES public.profiles(id),
   receipt_number  VARCHAR(50) NOT NULL,
   subtotal        NUMERIC(10,2) NOT NULL DEFAULT 0.00,
@@ -25,7 +34,6 @@ CREATE TABLE public.sales (
   is_offline_sync BOOLEAN DEFAULT FALSE,
   offline_id      VARCHAR(100),
   created_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   voided_at       TIMESTAMP WITH TIME ZONE,
   voided_by       UUID REFERENCES public.profiles(id),
   deleted_at      TIMESTAMP WITH TIME ZONE,
@@ -36,15 +44,6 @@ CREATE TABLE public.sales (
 
 CREATE UNIQUE INDEX idx_sales_receipt ON public.sales(business_id, receipt_number);
 
--- Sales Timestamp Trigger
-CREATE TRIGGER trg_sales_updated
-    BEFORE UPDATE ON public.sales
-    FOR EACH ROW
-    EXECUTE FUNCTION public.update_updated_at();
-
--- ============================================
--- 2. SALE ITEMS
--- ============================================
 CREATE TABLE public.sale_items (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   sale_id         UUID NOT NULL REFERENCES public.sales(id) ON DELETE CASCADE,
@@ -59,9 +58,6 @@ CREATE TABLE public.sale_items (
   created_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- ============================================
--- 3. PAYMENTS
--- ============================================
 CREATE TABLE public.payments (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   sale_id         UUID NOT NULL REFERENCES public.sales(id) ON DELETE CASCADE,

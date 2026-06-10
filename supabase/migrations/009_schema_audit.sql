@@ -1,6 +1,6 @@
 -- ============================================================
 -- 009_schema_audit.sql
--- Domain: System-wide Audit Logging
+-- Domain: System-wide Audit Logging/Operational Security Tracking
 -- Dependencies: 003, 004
 -- ============================================================
 

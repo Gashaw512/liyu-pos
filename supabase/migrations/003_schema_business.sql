@@ -1,6 +1,6 @@
 -- ============================================================
 -- 003_schema_business.sql
--- Domain: Core Business Structure
+-- Domain: Core Business Structure/ Multi-Tenant Root Infrastructure
 -- Dependencies: 001_extensions.sql, 002_base_functions.sql
 -- ============================================================
 

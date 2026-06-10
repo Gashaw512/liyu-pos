@@ -101,7 +101,7 @@ supabase db reset
 Liyu POS applies a zero-trust paradigm directly at the data layer. Multi-tenant partitioning relies on session validation context using lightweight, caching security functions instead of slow application-layer filter injections.
 
 ### Context Security Macro
-Rather than embedding repeated role and status validations inside every unique query target, security policies reference the optimized macro predicate ```Plaintext assert_security_context(allowed_roles):```
+Rather than embedding repeated role and status validations inside every unique query target, security policies reference the optimized macro predicate ```assert_security_context(allowed_roles):```
 
 ```sql
 CREATE OR REPLACE FUNCTION public.assert_security_context(allowed_roles VARCHAR(30)[])

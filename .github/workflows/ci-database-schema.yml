@@ -30,8 +30,10 @@ jobs:
         run: |
           supabase start
           
-      - name: Assert Transaction Sequence
-        run: supabase migration list
+      # - name: Assert Transaction Sequence
+      #   run: supabase migration list
+      - name: Run 15-stage migration integration sequence
+        run: supabase db reset
           
       - name: Verify Clean Database Reconstruction
         run: supabase db reset

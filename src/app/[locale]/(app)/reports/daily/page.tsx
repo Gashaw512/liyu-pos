@@ -24,6 +24,12 @@ interface FinancialSummary {
   bankVolume: number
 }
 
+interface LocalCategoryBreakdown {
+  name: string
+  itemsSold: number
+  revenue: number
+}
+
 export default function DailyReportPage() {
   const params = useParams()
   const router = useRouter()
@@ -44,6 +50,7 @@ export default function DailyReportPage() {
     telebirrVolume: 0,
     bankVolume: 0,
   })
+  const [categoryBreakdown, setCategoryBreakdown] = useState<LocalCategoryBreakdown[]>([])
   const [missingProducts, setMissingProducts] = useState<MissingProduct[]>([])
   const [salesCount, setSalesCount] = useState(0)
 
@@ -59,7 +66,18 @@ export default function DailyReportPage() {
         const currentShift = await db.get('active_shift', 'current')
         setActiveShift(currentShift || null)
 
-        // 2. Aggregate Transactions for the Current Day
+        // 2. Load supporting structures for Category mappings
+        const [cachedProducts, cachedCategories] = await Promise.all([
+          db.getAll('products'),
+          db.getAll('categories')
+        ])
+
+        const catMap: Record<string, string> = {}
+        cachedCategories?.forEach(c => {
+          catMap[c.id] = c.name
+        })
+
+        // 3. Aggregate Transactions for the Current Day
         const history = await db.getAll('completed_sales_history')
         const pending = await db.getAll('pending_sales')
         const allDailySales = [...history, ...pending]
@@ -78,13 +96,39 @@ export default function DailyReportPage() {
           return targetDate >= startOfToday
         })
 
+        // Temporary map container to aggregate totals by normalized category names
+        const breakdownMap: Record<string, { itemsSold: number; revenue: number }> = {}
+
         targetedSales.forEach((sale: any) => {
-          // Strict ledger separation rules built straight in
           const saleSubtotal = sale.subtotal || sale.total_amount || 0
           const saleTip = sale.tip_amount || 0
 
           subtotalAccumulator += saleSubtotal
           tipAccumulator += saleTip
+
+          // Track items for category breakdowns
+          if (sale.items && Array.isArray(sale.items)) {
+            sale.items.forEach((item: any) => {
+              const rawCatName = catMap[item.category_id] || 'General'
+              
+              // Normalize names to match your unified SQL database view layout buckets
+              let normalizedName = rawCatName
+              if (['Beer', 'ቢራ'].includes(rawCatName)) normalizedName = 'Beer / ቢራ'
+              if (['Water', 'ውሃ'].includes(rawCatName)) normalizedName = 'Water / ውሃ'
+              if (['Food', 'ምግብ'].includes(rawCatName)) normalizedName = 'Food / ምግብ'
+              if (['Soft Drinks', 'ለስላሳ መጠጦች'].includes(rawCatName)) normalizedName = 'Soft Drinks / ለስላሳ'
+
+              if (!breakdownMap[normalizedName]) {
+                breakdownMap[normalizedName] = { itemsSold: 0, revenue: 0 }
+              }
+
+              const qty = Number(item.quantity || 0)
+              const price = Number(item.unit_price || item.price || 0)
+              
+              breakdownMap[normalizedName].itemsSold += qty
+              breakdownMap[normalizedName].revenue += qty * price
+            })
+          }
 
           // Drill-down logic safely parsing payments structure array
           if (sale.payments && Array.isArray(sale.payments)) {
@@ -93,16 +137,24 @@ export default function DailyReportPage() {
               const amt = parseFloat(p.amount) || 0
               if (method === 'cash') cashAccumulator += amt
               else if (method === 'telebirr') telebirrAccumulator += amt
-              else bankAccumulator += amt // Captures CBE, Wegagen, Awash, etc.
+              else bankAccumulator += amt
             })
           } else {
-            // Fallback parsing logic if payments nested object structure varies
             const fallbackAmt = sale.total_amount || 0
             if (sale.payment_method === 'cash') cashAccumulator += fallbackAmt
             else if (sale.payment_method === 'telebirr') telebirrAccumulator += fallbackAmt
             else bankAccumulator += fallbackAmt
           }
         })
+
+        // Convert the structural hashmap back into a renderable array
+        const formattedBreakdown = Object.entries(breakdownMap).map(([name, data]) => ({
+          name,
+          itemsSold: data.itemsSold,
+          revenue: data.revenue
+        }))
+
+        setCategoryBreakdown(formattedBreakdown)
 
         setFinancials({
           subtotalSales: subtotalAccumulator,
@@ -114,10 +166,9 @@ export default function DailyReportPage() {
         })
         setSalesCount(targetedSales.length)
 
-        // 3. Scan Inventory for Missing/Low-Stock Exceptions
-        if (db.objectStoreNames.contains('products')) {
-          const allProducts = await db.getAll('products')
-          const lowStockAlerts = allProducts
+        // 4. Scan Inventory for Missing/Low-Stock Exceptions
+        if (cachedProducts) {
+          const lowStockAlerts = cachedProducts
             .filter((p: any) => (p.stock_quantity !== undefined ? p.stock_quantity : p.quantity || 0) <= 5)
             .map((p: any) => ({
               id: String(p.id),
@@ -125,7 +176,7 @@ export default function DailyReportPage() {
               stock_left: p.stock_quantity !== undefined ? p.stock_quantity : p.quantity || 0,
               threshold: 5
             }))
-          setMissingProducts(lowStockAlerts.slice(0, 4)) // Surface top priority alerts
+          setMissingProducts(lowStockAlerts.slice(0, 4))
         }
       } catch (err) {
         console.error('Error generating daily analytics reporting structures:', err)
@@ -136,7 +187,6 @@ export default function DailyReportPage() {
     compileDailyReport()
   }, [])
 
-  // Calculates a logical simulated loss-audit metrics base safely
   const theoreticalRevenue = financials.subtotalSales
   const shiftDiscrepancy = activeShift?.actual_cash !== null && activeShift?.actual_cash !== undefined
     ? activeShift.actual_cash - (activeShift.opening_cash + financials.cashVolume)
@@ -233,6 +283,28 @@ export default function DailyReportPage() {
         {/* Dynamic Mode Content Switching Container */}
         {viewMode === 'overview' ? (
           <>
+            {/* Dynamic Category Volume Distribution Summary List */}
+            <div className="bg-white p-4 rounded-2xl border border-[#2B1E1A]/10 shadow-sm space-y-3">
+              <h3 className="text-xs font-black text-[#2B1E1A] uppercase tracking-wider">
+                📊 {t('Sales by Category', 'ሽያጭ በምድብ')}
+              </h3>
+              {categoryBreakdown.length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-2 bg-slate-50 rounded-xl font-medium">{t('No item lines recorded today.', 'ዛሬ የተሸጠ ምንም እቃ የለም።')}</p>
+              ) : (
+                <div className="space-y-2">
+                  {categoryBreakdown.map((row) => (
+                    <div key={row.name} className="flex justify-between items-center text-xs p-2 bg-[#F7F4EB]/40 rounded-xl border border-slate-100">
+                      <div className="flex flex-col">
+                        <span className="font-bold text-[#2B1E1A]">{row.name}</span>
+                        <span className="text-[10px] text-slate-400 font-medium">{row.itemsSold} {t('items sold', 'እቃዎች ተሽጠዋል')}</span>
+                      </div>
+                      <span className="font-mono font-black text-emerald-700">{row.revenue} ETB</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Payment Channel Volumes Grid Layout */}
             <div className="bg-white p-4 rounded-2xl border border-[#2B1E1A]/10 shadow-sm space-y-3.5">
               <h3 className="text-xs font-black text-[#2B1E1A] uppercase tracking-wider flex items-center gap-1.5">

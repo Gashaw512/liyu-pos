@@ -100,6 +100,7 @@ export interface Product {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+  quantity: number; // Virtual field populated from inventory join
 }
 
 /* ─── 6. SUPPLIERS ──────────────────────────────────────────────────────── */

@@ -78,7 +78,7 @@ export default function POSPage() {
           })))
         }
       } else {
-        const localDefaults = ['Table 1', 'Table 2', 'Table 3', 'Table 4', 'Table 5', 'Table 6', 'VIP Box']
+        const localDefaults = ['Table 1', 'Table 2', 'Table 3', 'Table 4', 'Table 5', 'Table 6', 'VIP Box1']
         setTables(localDefaults.map((name, index) => ({
           id: `fallback_${index}`,
           name: name,
@@ -280,7 +280,7 @@ export default function POSPage() {
           quantity: item.quantity,
           unit_price: item.price,
           cost_price: item.price * 0.7,
-          total_price: item.price * item.quantity
+          total_price: item.price * item.quantity,
         })),
         payments: [
           { method: 'cash', amount: splitPayments.cash },

@@ -1,9 +1,10 @@
-// AppShell.tsx
+// src/components/layout/AppShell.tsx
 'use client'
 
 import { ReactNode } from "react";
 import TopBar from "./TopBar";
 import BottomNav from "./BottomNav";
+import Sidebar from "./Sidebar";
 import SafeAreaWrapper from "./SafeAreaWrapper";
 
 interface AppShellProps {
@@ -22,26 +23,62 @@ export default function AppShell({
   businessName 
 }: AppShellProps) {
   return (
-    <div className="min-h-screen max-w-md mx-auto bg-slate-50 flex flex-col shadow-2xl relative border-x border-slate-200/60 text-slate-800 antialiased font-sans">
+    /* 
+      🔒 FIXED VIEWPORT FRAME ROOT:
+      Forces the application container to exactly match the screen space.
+      Using h-[100dvh] (Dynamic Viewport Height) prevents mobile browser search bars 
+      from breaking the bottom navigation layout tracking.
+    */
+    <div className="h-screen h-[100dvh] w-full bg-cream-100 font-sans text-coffee-700 antialiased flex overflow-hidden select-none">
       
-      {/* 📱 Mobile Top Branding Bar with System Statuses */}
-      <TopBar 
-        businessName={businessName} 
-        fullName={fullName} 
-        role={role} 
-        locale={locale} 
-      />
+      {/* 🖥️ LEFT SIDEBAR NAVIGATION VIEWPORT
+          - hidden strictly on narrow phone dimensions
+          - lg:flex -> Displays instantly on all tablets (768px+) matching your design token threshold
+          - xl:w-64 -> Fully expands structural options on standard desktop screens (1024px+)
+      */}
+      <aside className="hidden lg:flex w-20 xl:w-64 shrink-0 bg-coffee-900 border-r border-coffee-800 text-white h-full transition-all duration-300 flex-col">
+        <Sidebar 
+          businessName={businessName} 
+          fullName={fullName} 
+          role={role} 
+          locale={locale} 
+        />
+      </aside>
 
-      {/* 🚀 Dynamic UI Workspace Viewport */}
-      <SafeAreaWrapper>
-        <main className="flex-1 overflow-x-hidden overflow-y-auto px-4 pt-4 pb-24">
-          {children}
-        </main>
-      </SafeAreaWrapper>
+      {/* 📱💻 MAIN INNER APP CONTAINER FRAME */}
+      <div className="flex-1 flex flex-col h-full min-w-0 relative bg-cream-100">
+        
+        {/* 📱 STATIC TOP BAR BRANDING HEADER */}
+        <div className="w-full shrink-0 z-40">
+          <TopBar 
+            businessName={businessName} 
+            fullName={fullName} 
+            role={role} 
+            locale={locale} 
+          />
+        </div>
 
-      {/* 🎯 Sticky Tactile Bottom Tab Mobile Bar */}
-      <BottomNav locale={locale} role={role} />
+        {/* 🚀 ISOLATED SCROLLABLE CONTENT VIEWPORT
+            Instead of scrolling the whole screen, only this midsection scrolls vertically.
+            The TopBar and BottomNav stay pinned perfectly in place forever!
+        */}
+        <div className="flex-1 w-full overflow-y-auto overflow-x-hidden scrolling-touch">
+          <SafeAreaWrapper>
+            <main className="w-full px-4 pt-4 pb-24 lg:pb-6 max-w-7xl mx-auto transition-all duration-300">
+              {children}
+            </main>
+          </SafeAreaWrapper>
+        </div>
 
+        {/* 🎯 STATIC BOTTOM NAVIGATION BAR
+            - block -> Anchored tightly to the device bottom for small phone frames
+            - lg:hidden -> Gracefully drops away from view parameters the millisecond the Left Sidebar mounts
+        */}
+        <div className="block lg:hidden shrink-0 z-40">
+          <BottomNav locale={locale} role={role} />
+        </div>
+
+      </div>
     </div>
   );
 }

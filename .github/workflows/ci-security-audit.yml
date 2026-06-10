@@ -1,0 +1,62 @@
+name: CI / Security & Compliance Audit
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Automatically scans your repository every Sunday at midnight for newly discovered vulnerabilities
+    - cron: '0 0 * * 0'
+
+jobs:
+  security-scan:
+    name: Security Vulnerability Scan
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write # Allows tools to upload security alerts directly to the GitHub Security tab
+      actions: read
+      contents: read
+
+    steps:
+      - name: Checkout Code Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetches full history so deep secret-leak scans can evaluate previous commits
+
+      # -------------------------------------------------------------
+      # 🛡️ STEP 1: Scan for Secret Leaks (Supabase Service Keys, JWT Secrets, Database Passwords)
+      # -------------------------------------------------------------
+      - name: Scan Repository Secrets (TruffleHog)
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --debug --only-verified
+
+      # -------------------------------------------------------------
+      # 📦 STEP 2: Audit Node Modules & Third-Party Package Supply Chains
+      # -------------------------------------------------------------
+      - name: Set up Node.js Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Audit Production Dependencies
+        # Automatically fails the build if your production node_modules contain severe, unpatched security flaws
+        run: npm audit --audit-level=high
+
+      # -------------------------------------------------------------
+      # 🔍 STEP 3: Static Application Security Testing (SAST for Next.js Code & Postgres Logic)
+      # -------------------------------------------------------------
+      - name: Initialize CodeQL Core Analysis Engine
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+
+      - name: Execute CodeQL Static Code Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:javascript-typescript"

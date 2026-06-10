@@ -28,7 +28,6 @@ jobs:
 
       - name: Spin Up Local Postgres Stack
         run: |
-          supabase init
           supabase start
           
       - name: Assert Transaction Sequence

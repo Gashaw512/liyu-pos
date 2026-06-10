@@ -31,6 +31,7 @@ graph TD
     013 --> 014[014_seed_data.sql]
     014 --> 015[015_indexes.sql]
    ```
+```Plaintext
 supabase/
 └── migrations/
     ├── 20260610000001_001_extensions.sql          # Cryptographic & ID engine extensions

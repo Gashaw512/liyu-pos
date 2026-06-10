@@ -49,3 +49,4 @@ supabase/
     ├── 20260610000013_013_rls.sql                 # Row-Level Security isolation rules
     ├── 20260610000014_014_seed_data.sql           # Localization structures & business lookups
     └── 20260610000015_015_indexes.sql             # Composite query optimization and indexing
+```

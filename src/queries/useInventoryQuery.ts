@@ -1,3 +1,5 @@
+// src/queries/useInventoryQuery.ts
+
 // import {supabase} from '../lib/supabase/client'
 // import { InventoryProduct } from '../types/inventory'
 

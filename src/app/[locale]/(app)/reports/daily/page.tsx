@@ -1,3 +1,4 @@
+// src/app/[locale]/report/daily/page.tsx
 'use client'
 
 import { useState, useEffect } from 'react'

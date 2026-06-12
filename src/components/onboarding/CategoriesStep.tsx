@@ -70,7 +70,7 @@
 //   )
 // }
 
-
+// src/components/categories,tsx
 
 'use client'
 

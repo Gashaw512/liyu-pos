@@ -1,5 +1,4 @@
 'use client'
-
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
@@ -10,28 +9,25 @@ import {
   ArrowRight,
   ShieldCheck,
   Store,
-  Sparkles
+  Sparkles,
+  Settings
 } from 'lucide-react';
 
-// Fallback interface to handle exactly what your page.tsx is currently collecting
 interface CategoryPerformance {
   name: string;
   itemsSold: number;
   revenue: number;
 }
-
 interface LowStockItem {
   id: string;
   name: string;
   category: string;
   stock: number;
 }
-
 interface DashboardClientProps {
   locale: string;
   role: string;
   businessName: string;
-  // Matching your page's direct variable passing convention
   initialProductCount: number | null;
   initialCategoryCount: number | null;
   categoryBreakdown?: CategoryPerformance[];
@@ -51,15 +47,12 @@ export default function DashboardClientContent({
   const isAm = locale === 'am';
   const [isVoicePlaying, setIsVoicePlaying] = useState(false);
   const [activeShift, setActiveShift] = useState<'open' | 'closed'>('open');
-
   const t = (en: string, am: string) => (isAm ? am : en);
 
-  // Dynamic values calculated directly safely using fallback defaults to prevent runtime undefined crashes
   const totalProducts = initialProductCount || 0;
   const totalCategories = initialCategoryCount || 0;
   const todayRevenue = categoryBreakdown.reduce((sum, item) => sum + item.revenue, 0);
 
-  // Text-To-Speech Assist Module designed for quick, clear audio guidance
   const handleVoiceGuidance = () => {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
@@ -67,7 +60,6 @@ export default function DashboardClientContent({
         setIsVoicePlaying(false);
         return;
       }
-
       let spokenText = "";
       if (isAm) {
         if (role === 'owner' || role === 'manager') {
@@ -78,7 +70,6 @@ export default function DashboardClientContent({
       } else {
         spokenText = `Welcome back. You are viewing ${businessName} terminal workspace as an authorized ${role}.`;
       }
-
       const utterance = new SpeechSynthesisUtterance(spokenText);
       utterance.lang = isAm ? 'am-ET' : 'en-US';
       utterance.rate = 0.9;
@@ -111,7 +102,6 @@ export default function DashboardClientContent({
               {businessName} • {t(`Role: ${role}`, `የተፈቀደልዎት ሚና፦ ${role}`)}
             </p>
           </div>
-
           <button
             onClick={handleVoiceGuidance}
             type="button"
@@ -128,7 +118,7 @@ export default function DashboardClientContent({
       </div>
 
       {isOwnerOrManager ? (
-        /* 👑 EXECUTIVE DISPLAY ENGINE (Real-time Manager/Owner Data Panels) */
+        /* 👑 EXECUTIVE DISPLAY ENGINE */
         <div className="space-y-5">
           
           {/* Quick Operations Controls */}
@@ -143,19 +133,29 @@ export default function DashboardClientContent({
               </div>
             </div>
             
-            <button 
-              onClick={() => router.push(`/${locale}/sales`)}
-              className="bg-berbere-600 text-white text-xs font-black px-4 py-2.5 rounded-xl hover:bg-berbere-700 active:scale-95 transition-all flex items-center justify-center gap-1.5"
-            >
-              <span>{t('Open POS Counter', 'ወደ ሽያጭ ማሽን')}</span>
-              <ArrowRight className="h-3.5 w-3.5" />
-            </button>
+            {/* Action Buttons Container */}
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              {/* 🛠️ NEW: Inventory Management Redirect Route */}
+              <button 
+                onClick={() => router.push(`/${locale}/dashboard/inventory`)}
+                className="flex-1 sm:flex-none bg-coffee-100 text-coffee-900 text-xs font-black px-4 py-2.5 rounded-xl hover:bg-cream-200 active:scale-95 transition-all flex items-center justify-center gap-1.5 border border-cream-300"
+              >
+                <Settings className="h-3.5 w-3.5 text-coffee-700" />
+                <span>{t('Manage Stock', 'ዕቃዎች መጋዘን')}</span>
+              </button>
+
+              <button 
+                onClick={() => router.push(`/${locale}/sales`)}
+                className="flex-1 sm:flex-none bg-berbere-600 text-white text-xs font-black px-4 py-2.5 rounded-xl hover:bg-berbere-700 active:scale-95 transition-all flex items-center justify-center gap-1.5"
+              >
+                <span>{t('Open POS Counter', 'ወደ ሽያጭ ማሽን')}</span>
+                <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
           </div>
 
           {/* 4-Column Metric Summary Section */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            
-            {/* Box 1: Revenue Metric from Server Matrix */}
             <div className="bg-white p-4 rounded-2xl border border-cream-200 flex flex-col justify-between shadow-sm">
               <div>
                 <div className="flex items-center justify-between">
@@ -176,7 +176,6 @@ export default function DashboardClientContent({
               </span>
             </div>
 
-            {/* Box 2: Shift Lifecycle Operations Controller */}
             <div className="bg-white p-4 rounded-2xl border border-cream-200 flex flex-col justify-between shadow-sm">
               <div>
                 <div className="flex items-center justify-between">
@@ -200,7 +199,6 @@ export default function DashboardClientContent({
               </button>
             </div>
 
-            {/* Box 3: Total Products Passed down directly */}
             <div className="bg-white p-4 rounded-2xl border border-cream-200 shadow-sm">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-black uppercase tracking-wider text-coffee-400">{t('Products', 'እቃዎች')}</span>
@@ -214,7 +212,6 @@ export default function DashboardClientContent({
               </div>
             </div>
 
-            {/* Box 4: Total Categories Passed down directly */}
             <div className="bg-white p-4 rounded-2xl border border-cream-200 shadow-sm">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-black uppercase tracking-wider text-coffee-400">{t('Categories', 'የእቃ ምድቦች')}</span>
@@ -227,7 +224,6 @@ export default function DashboardClientContent({
                 <span className="text-[10px] text-coffee-400 font-bold block mt-1">{t('Catalog Groups', 'ክፍሎች')}</span>
               </div>
             </div>
-
           </div>
 
           {/* 📊 CATEGORIZED PERFORMANCE MAPPER */}
@@ -325,7 +321,6 @@ export default function DashboardClientContent({
               {t('Service Terminal Ready', 'ፈጣን የአገልግሎት መስኮት ገባሪ ነው')}
             </p>
           </div>
-
           <button
             onClick={() => router.push(`/${locale}/sales`)}
             type="button"

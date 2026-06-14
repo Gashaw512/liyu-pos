@@ -13,6 +13,7 @@ ALTER TABLE public.profile_roles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.staff_invitations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.category_templates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.price_groups ENABLE ROW LEVEL SECURITY; -- Bono security activation
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.suppliers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.restaurant_tables ENABLE ROW LEVEL SECURITY;
@@ -67,22 +68,27 @@ CREATE POLICY "Staff invitations accessible by business managers" ON public.staf
 
 -- CATEGORIES & TEMPLATES
 CREATE POLICY "Category access isolation" ON public.categories
-  FOR ALL USING (business_id = public.auth_business_id());
+  FOR ALL USING (business_id = public.auth_business_id() AND deleted_at IS NULL);
 
 CREATE POLICY "Global template access allowed to all authenticated accounts" ON public.category_templates
   FOR SELECT USING (auth.role() = 'authenticated');
 
+-- PRICE GROUPS (BONO)
+CREATE POLICY "Bono pricing groups isolation" ON public.price_groups
+  FOR ALL USING (business_id = public.auth_business_id() AND deleted_at IS NULL)
+  WITH CHECK (business_id = public.auth_business_id());
+
 -- PRODUCTS
 CREATE POLICY "Product access isolation" ON public.products
-  FOR ALL USING (business_id = public.auth_business_id());
+  FOR ALL USING (business_id = public.auth_business_id() AND deleted_at IS NULL);
 
 -- SUPPLIERS
 CREATE POLICY "Supplier management isolation" ON public.suppliers
-  FOR ALL USING (business_id = public.auth_business_id());
+  FOR ALL USING (business_id = public.auth_business_id() AND deleted_at IS NULL);
 
 -- RESTAURANT TABLES
 CREATE POLICY "Restaurant tables isolation" ON public.restaurant_tables
-  FOR ALL USING (business_id = public.auth_business_id());
+  FOR ALL USING (business_id = public.auth_business_id() AND deleted_at IS NULL);
 
 -- INVENTORY & MOVEMENTS
 CREATE POLICY "Inventory records isolation" ON public.inventory
@@ -93,20 +99,26 @@ CREATE POLICY "Inventory ledger movements isolation" ON public.inventory_movemen
 
 -- PURCHASES & ITEMS
 CREATE POLICY "Purchases system isolation" ON public.purchases
-  FOR ALL USING (business_id = public.auth_business_id());
+  FOR ALL USING (business_id = public.auth_business_id() AND deleted_at IS NULL);
 
 CREATE POLICY "Purchase items system isolation" ON public.purchase_items
   FOR ALL USING (EXISTS (
-    SELECT 1 FROM public.purchases WHERE public.purchases.id = public.purchase_items.purchase_id AND public.purchases.business_id = public.auth_business_id()
+    SELECT 1 FROM public.purchases 
+    WHERE public.purchases.id = public.purchase_items.purchase_id 
+      AND public.purchases.business_id = public.auth_business_id()
+      AND public.purchases.deleted_at IS NULL
   ));
 
 -- SALES, ITEMS, PAYMENTS
 CREATE POLICY "Sales transactional isolation" ON public.sales
-  FOR ALL USING (business_id = public.auth_business_id());
+  FOR ALL USING (business_id = public.auth_business_id() AND deleted_at IS NULL);
 
 CREATE POLICY "Sale items line tracking isolation" ON public.sale_items
   FOR ALL USING (EXISTS (
-    SELECT 1 FROM public.sales WHERE public.sales.id = public.sale_items.sale_id AND public.sales.business_id = public.auth_business_id()
+    SELECT 1 FROM public.sales 
+    WHERE public.sales.id = public.sale_items.sale_id 
+      AND public.sales.business_id = public.auth_business_id()
+      AND public.sales.deleted_at IS NULL
   ));
 
 CREATE POLICY "Payment ledger transaction isolation" ON public.payments
@@ -117,7 +129,7 @@ CREATE POLICY "Operational shifts tracking isolation" ON public.shifts
   FOR ALL USING (business_id = public.auth_business_id());
 
 CREATE POLICY "Operational business expenses isolation" ON public.expenses
-  FOR ALL USING (business_id = public.auth_business_id());
+  FOR ALL USING (business_id = public.auth_business_id() AND deleted_at IS NULL);
 
 -- STOCK RECONCILIATIONS
 CREATE POLICY "Stock audit reconciliations isolation" ON public.stock_reconciliations

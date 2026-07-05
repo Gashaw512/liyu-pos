@@ -1,3 +1,4 @@
+// src/components/layout/AppShell.tsx
 'use client'
 
 import React, { ReactNode, createContext, useContext, useState, useEffect } from "react"
@@ -7,9 +8,6 @@ import SafeAreaWrapper from "./SafeAreaWrapper"
 import { useOnlineStatus } from "../../hooks/useOnlineStatus"
 import { AlertCircle, RotateCcw } from "lucide-react"
 
-// ==========================================
-// 1. ERP ARCHITECTURE TYPE DEFINITIONS
-// ==========================================
 interface AppShellProps {
   children: ReactNode
   locale: string
@@ -37,9 +35,6 @@ export function useErp() {
   return context
 }
 
-// ==========================================
-// 2. PRODUCTION FAULT-TOLERANCE LAYER (ErrorBoundary)
-// ==========================================
 class ErpErrorBoundary extends React.Component<
   { children: ReactNode; isAm: boolean },
   { hasError: boolean; error: Error | null }
@@ -82,9 +77,6 @@ class ErpErrorBoundary extends React.Component<
   }
 }
 
-// ==========================================
-// 3. MASTER ENTERPRISE ERP APP SHELL
-// ==========================================
 export default function AppShell({
   children,
   locale,
@@ -95,29 +87,27 @@ export default function AppShell({
   const isAm = locale === "am"
   const { isOnline } = useOnlineStatus()
   const [isSystemLocked, setSystemLocked] = useState(false)
-  const [isCollapsed, setIsCollapsed] = useState(false) // የጎን ባር ማሳጠሪያ ስቴት (State)
+  const [isCollapsed, setIsCollapsed] = useState(false)
   const [mounted, setMounted] = useState(false)
+  const [isDesktop, setIsDesktop] = useState(false)
 
   useEffect(() => {
     setMounted(true)
+    
+    // Natively monitor exact breakpoint changes matching the theme layout context
+    const checkViewport = () => {
+      setIsDesktop(window.innerWidth >= 1024)
+    }
+    
+    checkViewport()
+    window.addEventListener("resize", checkViewport)
+    return () => window.removeEventListener("resize", checkViewport)
   }, [])
 
   return (
     <ErpContext.Provider value={{ locale, role, fullName, businessName, isSystemLocked, setSystemLocked, isCollapsed, setIsCollapsed }}>
-      <div
-        className="
-          h-[100dvh]
-          w-full
-          bg-cream-100
-          text-coffee-700
-          font-sans
-          antialiased
-          flex
-          flex-col
-          overflow-hidden
-          select-none
-        "
-      >
+      <div className="h-[100dvh] w-full bg-cream-100 text-coffee-700 font-sans antialiased flex flex-col overflow-hidden select-none">
+        
         {/* NETWORK STATUS ALERTS */}
         {mounted && !isOnline && (
           <div role="alert" className="w-full bg-berbere-600 text-white text-[11px] font-black text-center py-1.5 px-3 tracking-wide animate-slide-down shrink-0 flex items-center justify-center gap-2 shadow-inner">
@@ -142,22 +132,9 @@ export default function AppShell({
         </div>
 
         {/* 2. BODY SPLIT LAYER */}
-        <div
-          className="
-            flex-1
-            w-full
-            flex
-            flex-col
-            lg:flex-row
-            relative
-            overflow-hidden
-          "
-        >
-          {/* 
-            ትክክለኛው ማስተካከያ (The Fix)፦
-            አላስፈላጊ የነበረውን መጠቅለያ (Wrapper div) አስወግደን BottomNavን ብቻውን አስቀምጠናል።
-            ይህም በዴስክቶፕ ላይ የቦታ መደራረብ (Overlap) ችግርን ሙሉ በሙሉ ይፈታል።
-          */}
+        <div className="flex-1 w-full flex flex-col lg:flex-row relative overflow-hidden">
+          
+          {/* BOTTOM / SIDE RESPONSIVE NAV */}
           <BottomNav
             locale={locale}
             role={role}
@@ -165,40 +142,16 @@ export default function AppShell({
 
           {/* MAIN WORKSPACE CONTENT CONTAINER */}
           <div
-            className={`
-              flex-1
-              min-w-0
-              h-full
-              overflow-y-auto
-              overflow-x-hidden
-              scrolling-touch
-              bg-cream-50/40
-              transition-all
-              duration-300
-              ease-in-out
-
-              /* ዴስክቶፕ ላይ ከጎን ባሩ ስፋት ጋር ልክ በልክ የሚሰላ ማርጂን (Margin) */
-              lg:mb-0
-              ${isCollapsed ? "lg:ml-20" : "lg:ml-64"}
-            `}
+            className="flex-1 min-w-0 h-full overflow-y-auto overflow-x-hidden scrolling-touch bg-cream-50/40 transition-all duration-300 ease-in-out"
             style={{
-              paddingBottom: "calc(4rem + env(safe-area-inset-bottom))"
+              // Only inject layout push-margins if layout state registers as a desktop client context
+              marginLeft: mounted && isDesktop ? (isCollapsed ? "4rem" : "14rem") : "0rem",
+              // Safe padding space dynamic adjustment for bottom mobile action bars
+              paddingBottom: mounted && !isDesktop ? "calc(4rem + env(safe-area-inset-bottom))" : "2rem"
             }}
           >
             <SafeAreaWrapper>
-              <main
-                className="
-                  w-full
-                  max-w-7xl
-                  mx-auto
-                  px-3
-                  sm:px-4
-                  py-4
-                  lg:pb-8
-                  transition-opacity
-                  duration-200
-                "
-              >
+              <main className="w-full max-w-7xl mx-auto px-3 sm:px-4 py-4 lg:pb-8 transition-opacity duration-200">
                 <ErpErrorBoundary isAm={isAm}>
                   {children}
                 </ErpErrorBoundary>

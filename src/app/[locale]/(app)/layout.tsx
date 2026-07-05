@@ -21,13 +21,13 @@ export default async function AuthenticatedGroupLayout({
   const { locale } = await params;
   const supabase = await createClient();
 
-  // 1. Authenticate user safety state
+  // 1. የባለቤቱን/የሰራተኛውን ማንነት በከፍተኛ ጥበቃ ማረጋገጥ
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) {
-    redirect(`/${locale}/login`);
+    redirect(`/${locale}/auth/login` as any); // ወደ ትክክለኛው የ auth path መቀየር
   }
 
-  // 2. Fetch multi-tenant workspace relations matching Row-Level Security
+  // 2. ከ Row-Level Security (RLS) ጋር የተናበበ የተጠቃሚ መረጃ መሳብ
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
     .select(`
@@ -40,24 +40,30 @@ export default async function AuthenticatedGroupLayout({
     .single();
 
   if (profileError || !profile) {
-    redirect(`/${locale}/login`);
+    redirect(`/${locale}/auth/login` as any);
   }
 
-  // 3. Keep un-initialized sessions constrained to onboarding pipeline
+  // 3. የኦንቦርዲንግ (Onboarding) ሂደት ካልተጠናቀቀ መገደብ
   if (!profile.onboarding_completed) {
     redirect(`/${locale}/onboarding`);
   }
 
-  const businessData = profile.businesses as unknown as ProfileBusiness | null;
+  // Supabase Relations በተደጋጋሚ Array አድርጎ ስለሚመልሰው ደህንነቱ የተጠበቀ አያያዝ፡
+  const businessRaw = profile.businesses;
+  const businessData = Array.isArray(businessRaw) 
+    ? (businessRaw[0] as unknown as ProfileBusiness | null)
+    : (businessRaw as unknown as ProfileBusiness | null);
 
   return (
-    <AppShell
-      locale={locale}
-      role={profile.role}
-      fullName={profile.full_name}
-      businessName={businessData?.name || "Liyu POS"}
-    >
-      {children}
-    </AppShell>
+    <div className="w-full h-[100dvh] relative overflow-hidden bg-cream-100">
+      <AppShell
+        locale={locale}
+        role={profile.role}
+        fullName={profile.full_name}
+        businessName={businessData?.name || "LIYU POS"}
+      >
+        {children}
+      </AppShell>
+    </div>
   );
 }

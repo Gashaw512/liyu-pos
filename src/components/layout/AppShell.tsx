@@ -1,84 +1,213 @@
-// src/components/layout/AppShell.tsx
 'use client'
 
-import { ReactNode } from "react";
-import TopBar from "./TopBar";
-import BottomNav from "./BottomNav";
-import Sidebar from "./Sidebar";
-import SafeAreaWrapper from "./SafeAreaWrapper";
+import React, { ReactNode, createContext, useContext, useState, useEffect } from "react"
+import TopBar from "./TopBar"
+import BottomNav from "./BottomNav"
+import SafeAreaWrapper from "./SafeAreaWrapper"
+import { useOnlineStatus } from "../../hooks/useOnlineStatus"
+import { AlertCircle, RotateCcw } from "lucide-react"
 
+// ==========================================
+// 1. ERP ARCHITECTURE TYPE DEFINITIONS
+// ==========================================
 interface AppShellProps {
-  children: ReactNode;
-  locale: string;
-  role: string;
-  fullName: string;
-  businessName: string;
+  children: ReactNode
+  locale: string
+  role: string
+  fullName: string
+  businessName: string
 }
 
-export default function AppShell({ 
-  children, 
-  locale, 
-  role, 
-  fullName, 
-  businessName 
-}: AppShellProps) {
-  return (
-    /* 
-      🔒 FIXED VIEWPORT FRAME ROOT:
-      Forces the application container to exactly match the screen space.
-      Using h-[100dvh] (Dynamic Viewport Height) prevents mobile browser search bars 
-      from breaking the bottom navigation layout tracking.
-    */
-    <div className="h-screen h-[100dvh] w-full bg-cream-100 font-sans text-coffee-700 antialiased flex overflow-hidden select-none">
-      
-      {/* 🖥️ LEFT SIDEBAR NAVIGATION VIEWPORT
-          - hidden strictly on narrow phone dimensions
-          - lg:flex -> Displays instantly on all tablets (768px+) matching your design token threshold
-          - xl:w-64 -> Fully expands structural options on standard desktop screens (1024px+)
-      */}
-      <aside className="hidden lg:flex w-20 xl:w-64 shrink-0 bg-coffee-900 border-r border-coffee-800 text-white h-full transition-all duration-300 flex-col">
-        <Sidebar 
-          businessName={businessName} 
-          fullName={fullName} 
-          role={role} 
-          locale={locale} 
-        />
-      </aside>
+interface ErpStateContextType {
+  locale: string
+  role: string
+  fullName: string
+  businessName: string
+  isSystemLocked: boolean
+  setSystemLocked: (locked: boolean) => void
+  isCollapsed: boolean
+  setIsCollapsed: (collapsed: boolean) => void
+}
 
-      {/* 📱💻 MAIN INNER APP CONTAINER FRAME */}
-      <div className="flex-1 flex flex-col h-full min-w-0 relative bg-cream-100">
-        
-        {/* 📱 STATIC TOP BAR BRANDING HEADER */}
-        <div className="w-full shrink-0 z-40">
-          <TopBar 
-            businessName={businessName} 
-            fullName={fullName} 
-            role={role} 
-            locale={locale} 
+const ErpContext = createContext<ErpStateContextType | undefined>(undefined)
+
+export function useErp() {
+  const context = useContext(ErpContext)
+  if (!context) throw new Error("useErp must be wrapped within an ERP Context Provider Container")
+  return context
+}
+
+// ==========================================
+// 2. PRODUCTION FAULT-TOLERANCE LAYER (ErrorBoundary)
+// ==========================================
+class ErpErrorBoundary extends React.Component<
+  { children: ReactNode; isAm: boolean },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: ReactNode; isAm: boolean }) {
+    super(props)
+    this.state = { hasError: false, error: null }
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error }
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error("ERP Critical Component Crash Trace:", error, errorInfo)
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="w-full min-h-[50vh] flex flex-col items-center justify-center p-6 text-center bg-cream-50 border-2 border-dashed border-berbere-200 rounded-2xl my-4">
+          <AlertCircle className="w-12 h-12 text-berbere-600 mb-3 animate-pulse" />
+          <h2 className="text-lg font-black text-coffee-900 mb-1">
+            {this.props.isAm ? "ስህተት ተከስቷል" : "Application Error Detected"}
+          </h2>
+          <p className="text-xs text-coffee-500 max-w-md mb-4 leading-normal">
+            {this.state.error?.message || "An isolated UI failure crashed this module workspace dashboard panel view wrapper layer safely."}
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="h-9 px-4 rounded-xl bg-coffee-900 text-white text-xs font-black flex items-center gap-2 active:scale-95 transition"
+          >
+            <RotateCcw size={14} />
+            <span>{this.props.isAm ? "እንደገና ይጫኑ" : "Reload Core Workspace"}</span>
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
+// ==========================================
+// 3. MASTER ENTERPRISE ERP APP SHELL
+// ==========================================
+export default function AppShell({
+  children,
+  locale,
+  role,
+  fullName,
+  businessName,
+}: AppShellProps) {
+  const isAm = locale === "am"
+  const { isOnline } = useOnlineStatus()
+  const [isSystemLocked, setSystemLocked] = useState(false)
+  const [isCollapsed, setIsCollapsed] = useState(false) // የጎን ባር ማሳጠሪያ ስቴት (State)
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  return (
+    <ErpContext.Provider value={{ locale, role, fullName, businessName, isSystemLocked, setSystemLocked, isCollapsed, setIsCollapsed }}>
+      <div
+        className="
+          h-[100dvh]
+          w-full
+          bg-cream-100
+          text-coffee-700
+          font-sans
+          antialiased
+          flex
+          flex-col
+          overflow-hidden
+          select-none
+        "
+      >
+        {/* NETWORK STATUS ALERTS */}
+        {mounted && !isOnline && (
+          <div role="alert" className="w-full bg-berbere-600 text-white text-[11px] font-black text-center py-1.5 px-3 tracking-wide animate-slide-down shrink-0 flex items-center justify-center gap-2 shadow-inner">
+            <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+            <span>
+              {isAm 
+                ? "ግንኙነት ተቋርጧል! የሽያጭ መረጃዎች በአገር ውስጥ (Offline) እየተቀመጡ ነው።" 
+                : "Offline Mode Active! Transactions are currently caching safely inside local atomic browser state."
+              }
+            </span>
+          </div>
+        )}
+
+        {/* 1. FULL WIDTH GLOBAL TOP BAR */}
+        <div className="w-full h-14 shrink-0 relative z-50 shadow-sm">
+          <TopBar
+            businessName={businessName}
+            fullName={fullName}
+            role={role}
+            locale={locale}
           />
         </div>
 
-        {/* 🚀 ISOLATED SCROLLABLE CONTENT VIEWPORT
-            Instead of scrolling the whole screen, only this midsection scrolls vertically.
-            The TopBar and BottomNav stay pinned perfectly in place forever!
-        */}
-        <div className="flex-1 w-full overflow-y-auto overflow-x-hidden scrolling-touch">
-          <SafeAreaWrapper>
-            <main className="w-full px-4 pt-4 pb-24 lg:pb-6 max-w-7xl mx-auto transition-all duration-300">
-              {children}
-            </main>
-          </SafeAreaWrapper>
-        </div>
+        {/* 2. BODY SPLIT LAYER */}
+        <div
+          className="
+            flex-1
+            w-full
+            flex
+            flex-col
+            lg:flex-row
+            relative
+            overflow-hidden
+          "
+        >
+          {/* 
+            ትክክለኛው ማስተካከያ (The Fix)፦
+            አላስፈላጊ የነበረውን መጠቅለያ (Wrapper div) አስወግደን BottomNavን ብቻውን አስቀምጠናል።
+            ይህም በዴስክቶፕ ላይ የቦታ መደራረብ (Overlap) ችግርን ሙሉ በሙሉ ይፈታል።
+          */}
+          <BottomNav
+            locale={locale}
+            role={role}
+          />
 
-        {/* 🎯 STATIC BOTTOM NAVIGATION BAR
-            - block -> Anchored tightly to the device bottom for small phone frames
-            - lg:hidden -> Gracefully drops away from view parameters the millisecond the Left Sidebar mounts
-        */}
-        <div className="block lg:hidden shrink-0 z-40">
-          <BottomNav locale={locale} role={role} />
+          {/* MAIN WORKSPACE CONTENT CONTAINER */}
+          <div
+            className={`
+              flex-1
+              min-w-0
+              h-full
+              overflow-y-auto
+              overflow-x-hidden
+              scrolling-touch
+              bg-cream-50/40
+              transition-all
+              duration-300
+              ease-in-out
+
+              /* ዴስክቶፕ ላይ ከጎን ባሩ ስፋት ጋር ልክ በልክ የሚሰላ ማርጂን (Margin) */
+              lg:mb-0
+              ${isCollapsed ? "lg:ml-20" : "lg:ml-64"}
+            `}
+            style={{
+              paddingBottom: "calc(4rem + env(safe-area-inset-bottom))"
+            }}
+          >
+            <SafeAreaWrapper>
+              <main
+                className="
+                  w-full
+                  max-w-7xl
+                  mx-auto
+                  px-3
+                  sm:px-4
+                  py-4
+                  lg:pb-8
+                  transition-opacity
+                  duration-200
+                "
+              >
+                <ErpErrorBoundary isAm={isAm}>
+                  {children}
+                </ErpErrorBoundary>
+              </main>
+            </SafeAreaWrapper>
+          </div>
         </div>
 
       </div>
-    </div>
-  );
+    </ErpContext.Provider>
+  )
 }

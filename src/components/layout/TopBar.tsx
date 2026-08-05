@@ -1,124 +1,223 @@
 // src/components/layout/TopBar.tsx
 'use client'
 
-import { useEffect, useState } from "react";
-import { useOnlineStatus } from "../../hooks/useOnlineStatus";
-import { usePathname, useRouter } from "next/navigation";
-import { LogOut } from "lucide-react";
+import { useEffect, useState } from "react"
+import { useOnlineStatus } from "../../hooks/useOnlineStatus"
+import { usePathname, useRouter } from "next/navigation"
+import { LogOut, Wifi, WifiOff, Clock, Landmark } from "lucide-react"
 
 interface TopBarProps {
-  businessName: string;
-  fullName: string;
-  role: string;
-  locale: string;
+  businessName: string
+  fullName: string
+  role: string
+  locale: string
 }
 
-export default function TopBar({ businessName, fullName, role, locale }: TopBarProps) {
-  const { isOnline, pendingCount } = useOnlineStatus(); 
-  const isAm = locale === "am";
-  const pathname = usePathname();
-  const router = useRouter();
-  const [mounted, setMounted] = useState(false);
+export default function TopBar({
+  businessName,
+  fullName,
+  role,
+  locale
+}: TopBarProps) {
 
+  const router = useRouter()
+  const pathname = usePathname()
+
+  const { isOnline, pendingCount } = useOnlineStatus()
+
+  const isAm = locale === "am"
+  const [mounted, setMounted] = useState(false)
+  const [currentTime, setCurrentTime] = useState("")
+
+  // Real-time system clock synchronization 
   useEffect(() => {
-    setMounted(true);
-  }, []);
+    setMounted(true)
+    const updateTime = () => {
+      const now = new Date()
+      setCurrentTime(
+        now.toLocaleTimeString(isAm ? "am-ET" : "en-US", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: true
+        })
+      )
+    }
+    updateTime()
+    const timer = setInterval(updateTime, 1000)
+    return () => clearInterval(timer)
+  }, [isAm])
 
-  const getLocalizedRole = (rawRole: string): string => {
-    if (!isAm) return rawRole.toUpperCase();
-    const roleMap: Record<string, string> = {
+  const getRole = (value: string) => {
+    if (!isAm) return value?.toUpperCase()
+
+    const map: any = {
       owner: "ባለቤት",
       manager: "ስራ አስኪያጅ",
       cashier: "ካሺየር",
       waiter: "አስተናጋጅ",
       kitchen: "ወጥ ቤት",
-      inventory_clerk: "ክምችት ተቆጣጣሪ"
-    };
-    return roleMap[rawRole.toLowerCase()] || rawRole;
-  };
+      inventory_clerk: "ክምችት"
+    }
+
+    return map[value?.toLowerCase()] || value
+  }
 
   const toggleLanguage = () => {
-    if (!pathname) return;
-    const segments = pathname.split("/");
-    segments[1] = isAm ? "en" : "am";
-    router.push(segments.join("/") as any);
-  };
+    if (!pathname) return
+    const parts = pathname.split("/")
+    parts[1] = isAm ? "en" : "am"
+    router.push(parts.join("/") as any)
+  }
 
-  const handleLogout = () => {
-    router.push(`/${locale}/auth/login` as any);
-  };
+  const logout = () => {
+    router.push(`/${locale}/auth/login` as any)
+  }
 
   return (
-    // 🎨 WHITE & TRANSPARENT MOBILE BASELINE: Clean backdrop filter with subtle border rules
-    <header className="sticky top-0 h-14 bg-white/80 backdrop-blur-md text-coffee-900 px-3 flex items-center justify-between z-50 select-none border-b border-cream-200/80 shadow-[0_2px_8px_rgba(43,30,26,0.02)]">
-      
-      {/* 👤 LEFT PROFILE MATRICES */}
-      <div className="flex items-center space-x-2 max-w-[50%]">
-        {/* Rounded dynamic text indicator tile */}
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-cream-50 border border-cream-200 text-[10px] font-black text-coffee-700">
-          {role ? role.substring(0, 2).toUpperCase() : "U"}
-        </div>
+    <header className="
+      /* ERP EDGE-TO-EDGE GEOMETRY: Stretches full width, nested inside the shell header bracket wrapper */
+      absolute top-0 left-0 right-0 w-full
+      h-14 z-50
+      bg-white
+      border-b border-cream-200
+      shadow-sm
+      flex items-center justify-between
+      px-3 sm:px-6
+    ">
+
+      {/* LEFT: BUSINESS IDENTITY & USER PROFILE CARD */}
+      <div className="flex items-center gap-2.5 min-w-0">
         
-        <div className="flex flex-col min-w-0">
-          <span className="text-[10px] font-black tracking-wider text-berbere-600 uppercase truncate leading-none">
-            {businessName || "LIYU POS"}
-          </span>
-          <span className="text-[11px] text-coffee-800 font-bold truncate mt-1 leading-none">
-            {fullName} <span className="text-cream-300 font-medium mx-0.5">•</span> 
-            <span className="text-coffee-400 font-extrabold text-[9px] inline-block">
-              {getLocalizedRole(role)}
+        {/* User Role Avatar Token */}
+        <div className="
+          w-9 h-9
+          rounded-xl
+          bg-cream-100
+          border border-cream-200
+          flex items-center justify-center
+          text-xs font-black text-coffee-800
+          shrink-0
+          shadow-inner
+        ">
+          {(role?.slice(0, 2) || "U").toUpperCase()}
+        </div>
+
+        {/* Descriptive Branding Metadata Block */}
+        <div className="min-w-0 leading-tight">
+          <div className="
+            text-[10px] sm:text-[11px]
+            font-black uppercase tracking-wider
+            text-berbere-600
+            flex items-center gap-1
+            truncate
+          ">
+            <Landmark size={10} className="shrink-0 text-berbere-500 hidden sm:inline" />
+            <span className="truncate">{businessName || "LIYU POS"}</span>
+          </div>
+
+          <div className="
+            flex items-center gap-1.5
+            text-[11px] sm:text-xs font-bold
+            text-coffee-800
+            truncate
+            mt-0.5
+          ">
+            <span className="truncate max-w-[90px] sm:max-w-none">{fullName}</span>
+            <span className="text-cream-300 font-normal">•</span>
+            <span className="text-[9px] sm:text-[10px] text-white bg-coffee-800 font-black px-1.5 py-0.5 rounded-md uppercase tracking-tight shrink-0">
+              {getRole(role)}
             </span>
-          </span>
+          </div>
+        </div>
+
+      </div>
+
+      {/* CENTER: TELEMETRY SYSTEM REAL-TIME DATA (Hidden on small mobile devices) */}
+      <div className="hidden md:flex items-center gap-4 text-xs font-bold text-coffee-600 bg-cream-50 px-4 py-1.5 rounded-xl border border-cream-200/60">
+        <div className="flex items-center gap-1.5 font-mono text-coffee-800">
+          <Clock size={13} className="text-coffee-500" />
+          <span className="w-20 tabular-nums">{mounted ? currentTime : "--:--:--"}</span>
+        </div>
+        <span className="text-cream-300">|</span>
+        <div className="text-[10px] font-black uppercase tracking-wider text-coffee-400">
+          {isAm ? "ርዕስ መቆጣጠሪያ" : "ERP Terminal Ready"}
         </div>
       </div>
 
-      {/* 🛠️ RIGHT CONTROLS OVERLAY */}
-      <div className="flex items-center space-x-1.5">
-        
-        {/* 🌐 HIGH-CONTRAST INTERNET STATUS BADGE */}
-        <div className={`flex h-8 items-center space-x-1 px-2 rounded-xl border transition-all duration-300 ${
-          !mounted 
-            ? "bg-cream-50 border-cream-100 text-coffee-300" 
-            : isOnline 
-              ? "bg-emerald-50/60 border-emerald-200 text-emerald-700" 
-              : "bg-berbere-50/60 border-berbere-200 text-berbere-700"
-        }`}>
-          <span className={`h-1.5 w-1.5 rounded-full ${
-            !mounted ? "bg-cream-300" : isOnline ? "bg-emerald-500 animate-pulse" : "bg-berbere-500 animate-bounce"
-          }`} />
-          
-          <span className="text-[9px] font-black uppercase tracking-tight leading-none">
-            {!mounted ? (
-              "..."
-            ) : isOnline ? (
-              isAm ? "መስመር ላይ" : "Online"
-            ) : (
-              isAm ? `${pendingCount} የቆመ` : "Offline"
-            )}
+      {/* RIGHT: CONNECTIVITY DIAGNOSTICS & SYSTEM CONTROLS */}
+      <div className="flex items-center gap-1.5 shrink-0">
+
+        {/* Real-time Hardware Sync Status Badge */}
+        <div className={`
+          h-8 px-2.5
+          rounded-xl
+          flex items-center gap-1.5
+          border
+          text-[10px] font-black
+          transition-all duration-300
+          ${
+            !mounted
+              ? "bg-cream-50 border-cream-200 text-coffee-300"
+              : isOnline
+                ? "bg-green-50 border-green-200 text-green-700 shadow-sm shadow-green-100"
+                : "bg-berbere-50 border-berbere-200 text-berbere-700 shadow-sm shadow-berbere-100 animate-pulse"
+          }
+        `}>
+          {mounted && isOnline ? (
+            <Wifi size={12} className="stroke-[2.5]" />
+          ) : (
+            <WifiOff size={12} className="stroke-[2.5]" />
+          )}
+
+          <span className="hidden xs:inline">
+            {!mounted
+              ? "..."
+              : isOnline
+                ? (isAm ? "መስመር ላይ" : "Online")
+                : `${pendingCount} ${isAm ? "ቆሟል" : "Pending"}`
+            }
           </span>
         </div>
 
-        {/* 🇺🇸/🇪🇹 TEXT LANGUAGE TOGGLE */}
+        {/* Localization Switcher Button */}
         <button
           onClick={toggleLanguage}
-          type="button"
-          className="h-8 px-2 flex items-center justify-center rounded-xl bg-transparent border border-cream-200 hover:bg-cream-50 text-[10px] font-black text-coffee-700 active:scale-95 transition-all duration-150"
+          aria-label="Toggle Language"
+          className="
+            h-8 px-2.5
+            rounded-xl
+            border border-cream-200
+            bg-white
+            text-[10px] font-black text-coffee-700
+            hover:bg-cream-50 hover:border-cream-300
+            active:scale-95 transition-all
+            shadow-sm
+          "
         >
-          {isAm ? "EN" : "አማርኛ"}
+          {isAm ? "EN" : "አማ"}
         </button>
 
-        {/* 🚪 SEPARATED LOGOUT ACTION TARGET */}
-        <button 
-          onClick={handleLogout}
-          type="button"
-          title={isAm ? "ውጣ" : "Logout"}
-          className="h-8 w-8 flex items-center justify-center rounded-xl bg-transparent border border-cream-200 text-coffee-400 hover:text-berbere-600 hover:bg-berbere-50/50 hover:border-berbere-100 active:scale-95 transition-all duration-150 shrink-0"
+        {/* Secure Session Terminate Button */}
+        <button
+          onClick={logout}
+          aria-label="Terminate Session"
+          className="
+            w-8 h-8
+            rounded-xl
+            border border-cream-200
+            bg-white
+            flex items-center justify-center
+            text-coffee-400
+            hover:text-berbere-600 hover:border-berbere-200 hover:bg-berbere-50/30
+            active:scale-95 transition-all
+            shadow-sm
+          "
         >
-          <LogOut className="h-3.5 w-3.5" />
+          <LogOut size={14} className="stroke-[2.5]" />
         </button>
 
       </div>
-
     </header>
-  );
+  )
 }

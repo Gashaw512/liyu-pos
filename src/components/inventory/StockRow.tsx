@@ -1,40 +1,78 @@
-'use client'
+'use client';
 
 interface StockRowProps {
   productName: string;
   category?: string | null;
+  unitType?: string;      // 📦 Added to know IF counting in Kg, Bottle, Pcs etc.
+  systemCount?: number;   // 📊 Added to show current system stock baseline
   currentCount: number;
   onCountChange: (newCount: number) => void;
   isAm: boolean;
 }
 
-export default function StockRow({ productName, category, currentCount, onCountChange, isAm }: StockRowProps) {
-  const displayCategory = category ?? (isAm ? 'አጠቃላይ' : 'General')
+export default function StockRow({ 
+  productName, 
+  category, 
+  unitType = 'pcs', 
+  systemCount = 0, 
+  currentCount, 
+  onCountChange, 
+  isAm 
+}: StockRowProps) {
+  
+  const displayCategory = category ?? (isAm ? 'አጠቃላይ' : 'General');
+  const variance = currentCount - systemCount;
 
   return (
-    <div className="bg-white border border-cream-200/80 p-3 rounded-xl flex items-center justify-between shadow-sm hover:border-cream-300 transition-colors">
+    <div className="bg-white border border-slate-200 p-4 rounded-xl flex items-center justify-between shadow-sm transition-all hover:border-slate-300">
       
-      {/* Clear Label Info Block */}
-      <div className="flex flex-col max-w-[45%] space-y-0.5">
-        <span className="font-black text-sm tracking-tight text-coffee-950 truncate">
+      {/* 1. Left Data Panel: Product Information & Baseline Metrics */}
+      <div className="flex flex-col space-y-1 max-w-[55%]">
+        {/* Product Identity Title */}
+        <h3 className="text-sm font-bold text-slate-800 tracking-tight truncate">
           {productName}
-        </span>
-        <span className="inline-block text-[9px] w-fit text-berbere-700 font-extrabold bg-berbere-50 px-1.5 py-0.5 rounded uppercase tracking-wider truncate">
-          {displayCategory}
-        </span>
+        </h3>
+        
+        {/* Badges and System Stock Metadata Context */}
+        <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+          <span className="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded text-[11px] font-medium">
+            {displayCategory}
+          </span>
+          <span className="text-slate-300">|</span>
+          <div className="flex items-center gap-1">
+            <span className="text-slate-400">{isAm ? 'የነበረው' : 'Expected'}:</span>
+            <span className="font-mono font-bold text-slate-700">{systemCount}</span>
+            <span className="lowercase text-[10px] bg-slate-100 text-slate-600 px-1 rounded font-mono">
+              {unitType}
+            </span>
+          </div>
+        </div>
+
+        {/* Real-time Simple Offline Variance Tracker */}
+        {currentCount !== systemCount && (
+          <div className={`text-[11px] font-bold mt-1 flex items-center gap-1 ${
+            variance > 0 ? 'text-emerald-600' : 'text-rose-600'
+          }`}>
+            <span>{variance > 0 ? '➕' : '➖'}</span>
+            <span>
+              {Math.abs(variance)} {isAm ? 'ልዩነት' : 'difference'}
+            </span>
+          </div>
+        )}
       </div>
 
-      {/* Accessibility Steppers with Numeric Keyboard Safe Fallback */}
+      {/* 2. Right Data Panel: Large Actionable Touch Stepper Steppers */}
       <div className="flex items-center gap-2">
+        {/* Minus Stepper Button */}
         <button
           type="button"
           onClick={() => onCountChange(Math.max(0, currentCount - 1))}
-          className="h-10 w-11 bg-red-50 hover:bg-red-100 text-red-600 font-black border border-red-200/60 rounded-xl text-lg flex items-center justify-center active:scale-90 transition-transform select-none shadow-xs"
+          className="h-11 w-12 bg-rose-50 active:bg-rose-100 text-rose-600 font-black border border-rose-200 rounded-xl text-lg flex items-center justify-center active:scale-95 transition-transform select-none"
         >
           ➖
         </button>
         
-        {/* Input box allowing typing for large stocks */}
+        {/* Quick Keyboard Value Input Field */}
         <input 
           type="number"
           pattern="[0-9]*"
@@ -45,13 +83,14 @@ export default function StockRow({ productName, category, currentCount, onCountC
             onCountChange(isNaN(val) ? 0 : val);
           }}
           placeholder="0"
-          className="w-14 h-10 text-center font-mono font-black text-base text-coffee-900 bg-cream-50/50 border border-cream-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-berbere-500"
+          className="w-16 h-11 text-center font-mono font-black text-lg text-slate-900 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-950"
         />
 
+        {/* Plus Stepper Button */}
         <button
           type="button"
           onClick={() => onCountChange(currentCount + 1)}
-          className="h-10 w-11 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 font-black border border-emerald-200/60 rounded-xl text-lg flex items-center justify-center active:scale-90 transition-transform select-none shadow-xs"
+          className="h-11 w-12 bg-emerald-50 active:bg-emerald-100 text-emerald-600 font-black border border-emerald-200 rounded-xl text-lg flex items-center justify-center active:scale-95 transition-transform select-none"
         >
           ➕
         </button>

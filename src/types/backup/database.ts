@@ -1,3 +1,5 @@
+
+// src/types/databse.ts
 /* ─── DOMAIN VALIDATION LITERAL ENUMS ───────────────────────────────────── */
 export type BusinessPlan = 'starter' | 'business' | 'pro';
 export type BusinessVertical = 'bar_restaurant' | 'cafe_restaurant' | 'bar_traditional' | 'retail_kiosk' | 'service_hospitality' | 'other';
@@ -234,6 +236,32 @@ export interface Sale {
   voided_at: string | null;
   voided_by: string | null;
   deleted_at: string | null;
+}
+
+
+
+export interface PendingSale {
+  offline_id: string;
+  shift_id: string;
+  branch_id: string;
+  cashier_id: string;
+  receipt_number: string;
+  subtotal: number;
+  tax_amount: number;
+  discount_amount: number;
+  total_amount: number;
+  payment_method: LocalPaymentMethod;
+  reference_no: string | null;
+  customer_name: string | null;
+  customer_phone: string | null;
+  items: Array<{
+    product_id: string;
+    product_name: string;
+    quantity: number;
+    unit_price: number;
+    cost_price: number;
+    discount: number;
+  }>;
 }
 
 /* ─── 13. SALE ITEMS ────────────────────────────────────────────────────── */

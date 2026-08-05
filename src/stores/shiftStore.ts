@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { Shift } from '@/types'
+import type { Shift } from '@/types/database'
 
 interface ShiftState {
   currentShift: Shift | null

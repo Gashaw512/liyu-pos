@@ -1,3 +1,5 @@
+
+// src/app/[locale]/layout.tsx
 import React from 'react'
 
 interface LayoutProps {

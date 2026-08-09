@@ -14,13 +14,11 @@ export async function setupBusiness(supabase: SupabaseClient, payload: SetupPayl
   const { data: { user }, error: userErr } = await supabase.auth.getUser()
   if (userErr || !user) throw new Error('Unauthorized user instance configuration aborted.')
 
-  // Try parsing user metadata fields first
   let businessId = user.user_metadata?.business_id || user.app_metadata?.business_id
 
-  // 🔥 CRITICAL BYPASS: If tables return 500 due to broken RLS loop,
-  // we request the exact profile record linked via auth ID using a narrow, policy-safe query
+  // If metadata isn't set, pull from profiles table
   if (!businessId) {
-    const { data: profileRow, error: profileErr } = await supabase
+    const { data: profileRow } = await supabase
       .from('profiles')
       .select('business_id')
       .eq('id', user.id)
@@ -31,20 +29,8 @@ export async function setupBusiness(supabase: SupabaseClient, payload: SetupPayl
     }
   }
 
-  // Last mile fallback: if it's still missing, we pull the most recently created business 
-  // that matches the registered owner role to avoid blocking the user setup wizard
   if (!businessId) {
-    const { data: fallbackBiz, error: fallbackErr } = await supabase
-      .from('businesses')
-      .select('id')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    if (!fallbackBiz) {
-      throw new Error(`Workspace Resolution Deadlock: The database returned a 500 error when looking up your account. Please check your Supabase RLS policies. Technical details: ${fallbackErr?.message}`)
-    }
-    businessId = fallbackBiz.id
+    throw new Error('Workspace Resolution Deadlock: Missing a valid business UUID for this account profile.')
   }
 
   // 2. Update Business Profile operational hours safely 
@@ -112,8 +98,8 @@ export async function setupBusiness(supabase: SupabaseClient, payload: SetupPayl
       category_id: matchingCategoryRow ? matchingCategoryRow.id : null,
       name: prod.nameEn,
       name_am: prod.nameAm,
-      cost_price: prod.cost,
-      retail_price: prod.sell, 
+      cost_price: Number(prod.cost || 0),   // Matches database column configuration
+      retail_price: Number(prod.sell || 0), // Matches database column configuration
       unit_type: 'piece',
       is_active: true,
       track_inventory: true,

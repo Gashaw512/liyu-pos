@@ -88,6 +88,10 @@ export interface Product {
   deleted_at: string | null;
 
   quantity?: number;
+
+  price_group_id: string | null;
+  price_type: 'fixed' | 'group';
+  description: string | null;
 }
 
 export interface Supplier {

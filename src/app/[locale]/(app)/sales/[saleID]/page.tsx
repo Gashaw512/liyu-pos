@@ -1,3 +1,4 @@
+// src/app/[locale]/(app)/sales/[salesID]/page.tsx
 'use client'
 
 import { useParams, useRouter } from 'next/navigation'

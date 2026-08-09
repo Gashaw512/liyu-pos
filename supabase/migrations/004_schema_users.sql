@@ -63,12 +63,23 @@ CREATE TABLE public.staff_invitations (
   code                  TEXT NOT NULL UNIQUE,
   staff_name            TEXT NOT NULL,
   role_assigned         TEXT NOT NULL,
+  phone                 TEXT,
   status                TEXT NOT NULL DEFAULT 'pending',
   created_at            TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  expires_at            TIMESTAMPTZ DEFAULT (NOW() + INTERVAL '7 days'),
   used_at               TIMESTAMP WITH TIME ZONE,
   claimed_by_profile_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
-  CONSTRAINT staff_invitation_status_check CHECK (status IN ('pending', 'used'))
+  CONSTRAINT staff_invitation_status_check CHECK (status IN ('pending', 'used','expired'))
+
 );
 
-CREATE INDEX idx_staff_invitations_code ON public.staff_invitations(code) WHERE status = 'pending';
-CREATE INDEX idx_staff_invitations_business ON public.staff_invitations(business_id);
+
+CREATE INDEX idx_staff_invitations_code
+ON public.staff_invitations(code)
+WHERE status = 'pending';
+
+CREATE INDEX idx_staff_invitations_business
+ON public.staff_invitations(business_id);
+
+CREATE INDEX idx_staff_invitations_expires
+ON public.staff_invitations(expires_at);

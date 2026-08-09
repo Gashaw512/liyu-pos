@@ -1,91 +1,98 @@
-// src/app/[locale]/staff/staff/page.tsx
-import { createClient } from "../../../../lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
-import StaffWorkspaceTabs from "../../../../components/user/StaffWorkspaceTabs";
+import StaffWorkspaceTabs from "@/components/user/StaffWorkspaceTabs";
+
+import type { Profile, StaffInvitation } from "@/types/database/users";
 
 export const dynamic = "force-dynamic";
 
-interface PageProps {
+export default async function StaffManagementPage({
+  params,
+}: {
   params: Promise<{ locale: string }>;
-}
-
-export default async function StaffManagementPage({ params }: PageProps) {
+}) {
   const { locale } = await params;
   const supabase = await createClient();
 
-  // 1. Enforce Authentication Guard
-  const { data: { user } } = await supabase.auth.getUser();
+  /**
+   * =========================
+   * 1. AUTH CHECK
+   * =========================
+   */
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
   if (!user) {
     redirect(`/${locale}/auth/login` as any);
   }
 
-  // 2. Authorize Roles: Only owner or manager can enter this security view!
+  /**
+   * =========================
+   * 2. LOAD PROFILE (ROLE CONTEXT)
+   * =========================
+   */
   const { data: profile } = await supabase
     .from("profiles")
     .select("role, business_id")
     .eq("id", user.id)
     .single();
 
-  const userRole = profile?.role || "waiter";
-  const currentBusinessId = profile?.business_id;
+  const role = profile?.role;
+  const businessId = profile?.business_id;
 
-  if ((userRole !== "owner" && userRole !== "manager") || !currentBusinessId) {
+  if (!businessId || (role !== "owner" && role !== "manager")) {
     redirect(`/${locale}/dashboard`);
   }
 
-  /* 
-    3. Load data for all sub-views at once to prevent multiple page network hops
-  */
-  // A. Fetch Active Staff Directory
+  /**
+   * =========================
+   * 3. STAFF LIST (SOURCE OF TRUTH = profiles.role)
+   * =========================
+   */
   const { data: staffMembers } = await supabase
     .from("profiles")
-    .select(`
-      id,
-      full_name,
-      phone,
-      role,
-      profile_roles (
-        role_name
-      )
-    `)
-    .eq("business_id", currentBusinessId)
+    .select("id, full_name, phone, role")
+    .eq("business_id", businessId)
+    .is("deleted_at", null)
     .order("full_name", { ascending: true });
 
-  // B. Fetch Pending Invitations Queue
+  const typedStaff = (staffMembers ?? []) as Profile[];
+
+  /**
+   * =========================
+   * 4. PENDING INVITES
+   * =========================
+   */
   const { data: pendingInvites } = await supabase
     .from("staff_invitations")
     .select("*")
-    .eq("business_id", currentBusinessId)
+    .eq("business_id", businessId)
     .eq("status", "pending")
     .order("created_at", { ascending: false });
 
-  const isAm = locale === 'am';
+  const typedInvites = (pendingInvites ?? []) as StaffInvitation[];
 
+  /**
+   * =========================
+   * 5. RENDER
+   * =========================
+   */
   return (
-    <div className="space-y-4 max-w-6xl mx-auto p-3 md:p-6 font-['DM_Sans',sans-serif] pb-24">
-      
-      {/* Page Heading & Context */}
-      <div className="border-b border-[#2B1E1A]/10 pb-3">
-        <h1 className="text-xl md:text-2xl font-black text-coffee-950 tracking-tight">
-          {isAm ? 'የሰራተኞች ማስተዳደሪያ' : 'Staff Management'}
+    <div className="max-w-6xl mx-auto p-4 space-y-4 pb-24">
+      <div>
+        <h1 className="text-xl font-black">
+          {locale === "am"
+            ? "የሰራተኞች ማስተዳደሪያ"
+            : "Staff Management"}
         </h1>
-        <p className="text-[11px] md:text-xs text-coffee-500">
-          {isAm 
-            ? 'ሰራተኞችን ይጋብዙ፣ የስራ ሃላፊነት ይቆጣጠሩ፣ እና ንቁ አካውንቶችን ያስተዳድሩ።' 
-            : 'Invite your crew, audit permissions, and adjust system access parameters.'}
-        </p>
       </div>
 
-      {/* 
-        🎯 Interactive Switch Engine: 
-        Passes fetched data down to handle the dynamic layout natively across all form factors.
-      */}
-      <StaffWorkspaceTabs 
-        locale={locale} 
-        staffMembers={staffMembers || []} 
-        pendingInvites={pendingInvites || []} 
+      <StaffWorkspaceTabs
+        locale={locale}
+        staffMembers={typedStaff}
+        pendingInvites={typedInvites}
       />
-
     </div>
   );
 }

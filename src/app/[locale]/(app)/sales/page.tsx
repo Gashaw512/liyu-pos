@@ -1,10 +1,23 @@
+// src/app/[locale]/(app)/sales/page.tsx
 'use client'
 
 import { useState, useEffect } from 'react'
 import { getDB } from '../../../../lib/offline/db'
 import PaymentSelector from '../../../../components/pos/PaymentSelector'
 import { useParams, useRouter } from 'next/navigation'
-import { Coins, ArrowRight, Loader2, Plus, Minus, Receipt, LogOut, Coffee, Save } from 'lucide-react'
+import { 
+  Coins, 
+  ArrowRight, 
+  Loader2, 
+  Plus, 
+  Minus, 
+  Receipt, 
+  LogOut, 
+  Coffee, 
+  Save, 
+  ShoppingBag, 
+  Utensils 
+} from 'lucide-react'
 
 interface CartItem {
   id: string
@@ -216,6 +229,7 @@ export default function POSPage() {
   }
 
   const totalBill = cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
+  const totalItemsCount = cart.reduce((sum, item) => sum + item.quantity, 0)
 
   const handleSaveTab = async () => {
     if (!selectedTable) return
@@ -243,13 +257,10 @@ export default function POSPage() {
     }
   }
 
-  // ─── LOGICAL FINALIZE SALE WITH MANUAL TIP ───
   const handleFinalizeSale = async (splitPayments: { cash: number; telebirr: number; bank_transfer?: number; selected_bank?: string }) => {
     try {
       const db = await getDB()
       const localId = crypto.randomUUID()
-      
-      // Parse the manual tip value typed into our state input by the waiter
       const parsedTip = parseFloat(manualTip) || 0
 
       const pendingPayload = {
@@ -265,10 +276,9 @@ export default function POSPage() {
         business_id: activeShift?.business_id || 'biz_active',
         table_number: selectedTable ? selectedTable.name : 'Walk-in',
         
-        // --- CLEAN AUDITING ENTRIES ---
-        total_amount: totalBill + parsedTip, // Grand total sent by customer (Food + Tip combined)
-        subtotal: totalBill,                 // Taxable restaurant revenue (Pure total bill)
-        tip_amount: parsedTip,               // Tracked manually for owner to return to waiter at night
+        total_amount: totalBill + parsedTip,
+        subtotal: totalBill,
+        tip_amount: parsedTip,
         
         discount_amount: 0,
         tax_amount: 0,
@@ -299,7 +309,7 @@ export default function POSPage() {
       setCart([])
       setSelectedTable(null)
       setShowPayment(false)
-      setManualTip('') // Reset tips field on cleanup lifecycle
+      setManualTip('')
 
       router.push(`/${params.locale}/sales/${localId}`)
     } catch (err) {
@@ -308,18 +318,24 @@ export default function POSPage() {
     }
   }
 
-  if (loading) return <div className="p-8 text-center text-sm font-bold text-slate-500 animate-pulse">{isAm ? 'በመጫን ላይ...' : 'Loading POS Cache...'}</div>
+  if (loading) {
+    return (
+      <div className="h-screen w-screen flex items-center justify-center font-bold text-coffee-400 animate-pulse text-sm bg-cream-100">
+        {isAm ? 'በመጫን ላይ...' : 'Loading POS Cache...'}
+      </div>
+    )
+  }
 
   if (!activeShift) {
     return (
-      <div className="max-w-md mx-auto my-6 p-1">
-        <div className="bg-white rounded-3xl shadow-md border border-slate-100 overflow-hidden">
-          <div className="bg-slate-900 px-6 py-8 text-center text-white space-y-2">
-            <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center mx-auto">
-              <Coins className="w-6 h-6 text-amber-400" />
+      <div className="h-screen w-full flex items-center justify-center bg-coffee-800 p-4">
+        <div className="bg-cream-50 rounded-3xl shadow-elevated border border-cream-200 overflow-hidden w-full max-w-md">
+          <div className="bg-coffee-900 px-6 py-8 text-center text-cream-50 space-y-2">
+            <div className="w-12 h-12 rounded-full bg-cream-50/10 flex items-center justify-center mx-auto">
+              <Coins className="w-6 h-6 text-gold-400" />
             </div>
             <h1 className="font-bold text-xl">{isAm ? 'የመጀመሪያ ስራ ፈረቃዎን ይክፈቱ' : 'Open Your Shift'}</h1>
-            <p className="text-slate-400 text-xs">
+            <p className="text-cream-300 text-xs">
               {isAm ? 'ሽያጭ ለመጀመር መሳቢያዎ ውስጥ ያለውን የመነሻ መለወጫ ገንዘብ (ካሽ) ያስገቡ' : 'To start accepting sales, enter the starting cash float'}
             </p>
           </div>
@@ -331,17 +347,24 @@ export default function POSPage() {
                 value={cashFloat}
                 onChange={(e) => setCashFloat(e.target.value)}
                 placeholder="0.00"
-                className="w-full text-center font-mono font-black text-2xl text-slate-900 py-3 px-4 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none"
+                className="w-full text-center font-mono font-black text-2xl text-coffee-900 py-3 px-4 bg-cream-100 border border-cream-300 rounded-2xl focus:outline-none focus:ring-2 focus:ring-berbere-400"
               />
-              <span className="absolute right-4 top-4 font-bold text-xs text-slate-400">ETB</span>
+              <span className="absolute right-4 top-4 font-bold text-xs text-coffee-400">ETB</span>
             </div>
 
             <button
               onClick={handleOpenShift}
               disabled={openingShift}
-              className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-2xl flex items-center justify-center gap-2 text-base shadow-sm"
+              className="w-full py-4 bg-success hover:bg-success text-cream-50 font-bold rounded-2xl flex items-center justify-center gap-2 text-base shadow-card transition-colors"
             >
-              {openingShift ? <Loader2 className="w-5 h-5 animate-spin" /> : <>{isAm ? 'ፈረቃ ክፈትና ሽያጭ ጀምር' : 'Open Shift & Start Selling'}<ArrowRight className="w-5 h-5" /></>}
+              {openingShift ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <>
+                  <span>{isAm ? 'ፈረቃ ክፈትና ሽያጭ ጀምር' : 'Open Shift & Start Selling'}</span>
+                  <ArrowRight className="w-5 h-5" />
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -350,192 +373,241 @@ export default function POSPage() {
   }
 
   return (
-    <div className="flex flex-col space-y-4 pb-52 max-w-md mx-auto px-1 relative select-none">
-
-      {/* Shift Action Bar */}
-      <div className="flex justify-between items-center bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-xs font-medium text-slate-500">
-        <span className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          {isAm ? 'ፈረቃ ተከፍቷል' : 'Shift Active'}
+    <div className="h-screen w-full max-w-md mx-auto grid grid-rows-[auto_auto_1fr_auto] overflow-hidden bg-cream-100 text-coffee-700 relative select-none font-sans">
+      
+      {/* 1. Shift Action Bar Header */}
+      <div className="flex justify-between items-center bg-coffee-900 px-4 py-2 text-xs font-medium text-cream-300 shadow-card">
+        <span className="flex items-center gap-1.5 font-bold">
+          <span className="w-2 h-2 rounded-full bg-success animate-pulse" />
+          {isAm ? 'ፈረቃ ተከፍቷል' : 'SHIFT ACTIVE'}
         </span>
         <div className="flex items-center gap-2">
-          <span className="font-mono bg-white px-2 py-0.5 rounded border border-slate-200/60 font-bold">{activeShift.real_database_id || 'Local'}</span>
+          <span className="font-mono bg-coffee-800 text-gold-300 px-2 py-0.5 rounded border border-coffee-700 font-bold text-xs">
+            {activeShift.real_database_id || 'Local'}
+          </span>
           <button
             onClick={handleCloseShift}
             disabled={closingShift}
-            className="flex items-center gap-1 bg-rose-50 text-rose-600 px-2 py-0.5 rounded border border-rose-200/40 font-bold transition-all"
+            className="flex items-center gap-1 bg-danger-bg text-danger border border-danger/20 px-2.5 py-1 rounded-md font-black text-xs transition-transform active:scale-95"
           >
             {closingShift ? <Loader2 className="w-3 h-3 animate-spin" /> : <><LogOut className="w-3 h-3" /><span>{isAm ? 'ዝጋ' : 'Close'}</span></>}
           </button>
         </div>
       </div>
 
-      {/* Tables Selection Layout */}
-      {!showPayment && (
-        <div className="space-y-1.5 bg-slate-50 p-2.5 rounded-2xl border border-slate-200/60">
-          <span className="text-[11px] font-black tracking-wider text-slate-400 uppercase pl-1 block">
-            {isAm ? 'ጠረጴዛ ይምረጡ' : 'Assign / Select Table'}
-          </span>
-          
-          <div className="grid grid-cols-3 gap-2">
+      {/* 2. Live ERP KPI Overview Header Panel */}
+      <div className="bg-cream-50 border-b border-cream-300 p-3 grid grid-cols-2 gap-2 shadow-sm">
+        <div className="bg-cream-100 border border-cream-200 rounded-xl px-3 py-2 flex items-center justify-between">
+          <div>
+            <span className="text-[10px] uppercase font-black text-coffee-400 tracking-wider block">
+              {isAm ? 'የአሁኑ ጠረጴዛ' : 'Active Account'}
+            </span>
+            <span className="font-black text-sm text-coffee-700 uppercase truncate max-w-[120px] block">
+              {selectedTable ? selectedTable.name : (isAm ? 'ቀጥታ መሸጫ' : 'Walk-In')}
+            </span>
+          </div>
+          <Utensils className="w-4 h-4 text-berbere-400" />
+        </div>
+        <div className="bg-cream-100 border border-cream-200 rounded-xl px-3 py-2 flex items-center justify-between">
+          <div>
+            <span className="text-[10px] uppercase font-black text-coffee-400 tracking-wider block">
+              {isAm ? 'የእቃ ብዛት' : 'Total Basket'}
+            </span>
+            <span className="font-mono font-black text-sm text-berbere-500 block">
+              {totalItemsCount} <span className="text-[10px] font-bold text-coffee-400">items</span>
+            </span>
+          </div>
+          <ShoppingBag className="w-4 h-4 text-gold-500" />
+        </div>
+      </div>
+
+      {/* 3. Main Screen Active Scrollable View */}
+      <div className="overflow-y-auto px-3 py-4 space-y-4 subtle-scrollbar">
+        {!showPayment ? (
+          <>
+            {/* Tables Selection Layout */}
+            <div className="space-y-2 bg-cream-50 p-3 rounded-2xl border border-cream-300 shadow-sm">
+              <span className="text-[11px] font-black tracking-wider text-coffee-400 uppercase pl-0.5 block">
+                {isAm ? 'ጠረጴዛ ይምረጡ' : 'Assign / Select Table'}
+              </span>
+              
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedTable(null)}
+                  className={`h-11 px-2 text-xs font-black rounded-xl border transition-all truncate text-center ${
+                    !selectedTable 
+                      ? 'bg-berbere-500 border-berbere-500 text-cream-50 shadow-card' 
+                      : 'bg-cream-100 text-coffee-700 border-cream-300 hover:bg-cream-200'
+                  }`}
+                >
+                  {isAm ? 'ቀጥታ መሸጫ' : 'Walk-In'}
+                </button>
+
+                {tables.map((t) => {
+                  const isSelected = selectedTable?.id === t.id
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setSelectedTable(t)}
+                      className={`h-11 px-1 text-xs font-black rounded-xl border transition-all flex items-center justify-center gap-1 relative ${
+                        isSelected 
+                          ? 'bg-gold-400 border-gold-400 text-coffee-800 shadow-card' 
+                          : t.has_open_tab 
+                            ? 'bg-warning-bg border-warning text-warning font-black' 
+                            : 'bg-cream-100 text-coffee-700 border-cream-300 hover:bg-cream-200'
+                      }`}
+                    >
+                      <Coffee className={`w-3 h-3 shrink-0 ${isSelected ? 'text-coffee-800' : t.has_open_tab ? 'text-warning' : 'text-coffee-400'}`} />
+                      <span className="truncate max-w-[75px] uppercase tracking-tight">{t.name}</span>
+                      {t.has_open_tab && !isSelected && (
+                        <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-warning opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-warning"></span>
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Menu Products Grid Container */}
+            <div className="grid grid-cols-2 gap-3">
+              {products.map((product) => {
+                const cartItem = cart.find(item => item.id === product.id);
+                return (
+                  <button
+                    key={product.id}
+                    type="button"
+                    onClick={() => addToCart(product)}
+                    className={`bg-cream-50 border relative h-28 p-3 rounded-2xl flex flex-col justify-between text-left transition-all shadow-sm active:scale-95 ${
+                      cartItem ? 'border-berbere-400 ring-2 ring-berbere-200 bg-cream-50' : 'border-cream-300'
+                    }`}
+                  >
+                    {cartItem && (
+                      <span className="absolute top-2 right-2 bg-berbere-500 text-cream-50 font-mono font-black text-xs min-w-[22px] h-5.5 px-1.5 rounded-full flex items-center justify-center shadow-card animate-duration-150 animate-bounce">
+                        {cartItem.quantity}
+                      </span>
+                    )}
+                    <span className="font-bold text-coffee-700 line-clamp-2 text-sm leading-tight pr-5">{product.name}</span>
+                    <span className="font-mono text-coffee-900 font-black text-base tracking-tight">
+                      {product.retail_price} <span className="text-[10px] font-bold text-coffee-400">ETB</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        ) : (
+          /* Payment view rendering screen */
+          <div className="space-y-4 animate-in fade-in duration-200">
             <button
               type="button"
-              onClick={() => setSelectedTable(null)}
-              className={`h-11 px-2 text-xs font-black rounded-xl border transition-all truncate text-center ${
-                !selectedTable ? 'bg-slate-950 border-slate-950 text-white shadow-md' : 'bg-white text-slate-700 border-slate-200'
-              }`}
+              onClick={() => {
+                setShowPayment(false)
+                setManualTip('')
+              }}
+              className="inline-flex items-center gap-1 text-xs font-black text-coffee-700 bg-cream-50 px-3.5 py-2 rounded-xl border border-cream-300 transition-transform active:scale-95 shadow-sm"
             >
-              {isAm ? 'ቀጥታ መሸጫ' : 'Walk-In'}
+              ⬅️ {isAm ? 'ተመለስ' : 'Go Back'}
+            </button>
+            
+            {selectedTable && (
+              <div className="bg-coffee-900 text-cream-50 font-black text-xs rounded-2xl p-3.5 flex justify-between items-center shadow-md">
+                <span className="uppercase tracking-wider text-cream-300 text-[10px]">{isAm ? 'አካውንት ጠረጴዛ' : 'Active Account'}</span>
+                <span className="bg-gold-400 px-3 py-1 rounded-lg text-coffee-800 font-mono text-xs shadow-sm uppercase">{selectedTable.name}</span>
+              </div>
+            )}
+
+            {/* Manual Tip Module Layout Block */}
+            <div className="bg-cream-50 border border-cream-300 rounded-2xl p-4 space-y-2.5 shadow-sm">
+              <label className="text-xs font-black tracking-wide text-coffee-500 uppercase block">
+                {isAm ? 'ጉርሻ (የእጅ በእጅ / ማኑዋል)' : 'Manual Tip (Lump-Sum Transfer)'}
+              </label>
+              <div className="relative rounded-xl shadow-sm">
+                <input
+                  type="number"
+                  value={manualTip}
+                  onChange={(e) => setManualTip(e.target.value)}
+                  placeholder="0.00"
+                  className="w-full font-mono text-sm font-bold bg-cream-100 border border-cream-300 rounded-xl py-2.5 pl-3 pr-14 text-coffee-800 focus:outline-none focus:ring-2 focus:ring-berbere-400 focus:border-transparent"
+                />
+                <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                  <span className="text-coffee-400 text-xs font-bold font-mono">ETB</span>
+                </div>
+              </div>
+              <p className="text-[10px] text-coffee-400 font-medium leading-tight">
+                {isAm 
+                  ? '* ይህ ጉርሻ ወደ ዋናው ሂሳብ አይደመርም፤ ባለቤቱ ማታ ለዋናው አስተናጋጅ የሚመልሰውን መጠን ለመመዝገብ ብቻ ነው።'
+                  : '* This manual tip records the extra cash the owner must hand back to the waiter at night.'}
+              </p>
+            </div>
+
+            <div className="bg-cream-50 p-4 border border-cream-300 rounded-3xl shadow-sm">
+              <PaymentSelector totalBill={totalBill} onConfirmPayment={handleFinalizeSale} isAm={isAm} />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 4. Persistent Cart Item Bucket List Container & Action Controls Bar */}
+      {!showPayment && cart.length > 0 && (
+        <div className="bg-cream-50 border-t border-cream-300 p-4 shadow-elevated rounded-t-3xl space-y-3">
+          {/* Cart Item Row List Container */}
+          <div className="max-h-[130px] overflow-y-auto space-y-2 divide-y divide-cream-200 pr-1 subtle-scrollbar">
+            {cart.map((item) => (
+              <div key={item.id} className="flex items-center justify-between text-sm pt-2 first:pt-0 gap-2">
+                <div className="w-2/5 truncate">
+                  <span className="font-bold text-coffee-700 block truncate">{item.name}</span>
+                  <div className="flex gap-1 mt-1">
+                    <button type="button" onClick={() => quickIncrement(item.id, 2)} className="text-[9px] font-mono bg-cream-200 hover:bg-cream-300 text-coffee-600 font-bold px-1.5 py-0.5 rounded">+2</button>
+                    <button type="button" onClick={() => quickIncrement(item.id, 5)} className="text-[9px] font-mono bg-cream-200 hover:bg-cream-300 text-coffee-600 font-bold px-1.5 py-0.5 rounded">+5</button>
+                  </div>
+                </div>
+
+                <div className="flex items-center border border-cream-300 rounded-xl bg-cream-100 p-0.5 shadow-inner">
+                  <button type="button" onClick={() => updateQuantity(item.id, -1)} className="w-7 h-7 flex items-center justify-center bg-cream-50 text-coffee-600 rounded-lg shadow-sm border border-cream-200 active:scale-90 transition-transform"><Minus className="w-3.5 h-3.5" /></button>
+                  <span className="font-mono font-black w-8 text-center text-coffee-800">{item.quantity}</span>
+                  <button type="button" onClick={() => updateQuantity(item.id, 1)} className="w-7 h-7 flex items-center justify-center bg-cream-50 text-coffee-600 rounded-lg shadow-sm border border-cream-200 active:scale-90 transition-transform"><Plus className="w-3.5 h-3.5" /></button>
+                </div>
+
+                <span className="font-mono font-black text-coffee-700 w-20 text-right text-xs">
+                  {item.price * item.quantity} <span className="text-[10px] font-bold text-coffee-400">ETB</span>
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {/* Core POS ERP Billing Controller Summary Block */}
+          <div className="bg-cream-100 rounded-xl p-2 flex justify-between items-center border border-cream-200 font-mono text-xs font-bold text-coffee-400">
+            <span>{isAm ? 'ንዑስ ድምር' : 'Subtotal Basket Sum:'}</span>
+            <span className="font-black text-coffee-700 text-sm">{totalBill.toLocaleString()} ETB</span>
+          </div>
+
+          <div className="grid grid-cols-5 gap-2 pt-1">
+            <button
+              type="button"
+              disabled={!selectedTable || savingTab}
+              onClick={handleSaveTab}
+              className="col-span-2 h-14 bg-cream-200 hover:bg-cream-300 disabled:opacity-40 border border-cream-300 text-coffee-700 rounded-2xl font-black text-xs flex flex-col items-center justify-center gap-0.5 transition-transform active:scale-95"
+            >
+              {savingTab ? <Loader2 className="w-4 h-4 animate-spin text-coffee-700" /> : <><Save className="w-4 h-4 text-coffee-600" /><span>{isAm ? 'ትዕዛዝ አስቀምጥ' : 'Save Tab'}</span></>}
             </button>
 
-            {tables.map((t) => {
-              const isSelected = selectedTable?.id === t.id
-              return (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => setSelectedTable(t)}
-                  className={`h-11 px-1 text-xs font-black rounded-xl border transition-all flex items-center justify-center gap-1 relative ${
-                    isSelected ? 'bg-blue-600 border-blue-600 text-white shadow-md' : t.has_open_tab ? 'bg-amber-50 border-amber-300 text-amber-800' : 'bg-white text-slate-700 border-slate-200'
-                  }`}
-                >
-                  <Coffee className={`w-3 h-3 shrink-0 ${isSelected ? 'text-white' : t.has_open_tab ? 'text-amber-500' : 'text-slate-400'}`} />
-                  <span className="truncate max-w-[80px] uppercase tracking-tight">{t.name}</span>
-                  {t.has_open_tab && !isSelected && (
-                    <span className="absolute -top-1 -right-1 flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-                    </span>
-                  )}
-                </button>
-              )
-            })}
+            <button
+              type="button"
+              onClick={() => setShowPayment(true)}
+              className="col-span-3 h-14 bg-berbere-500 hover:bg-berbere-600 text-cream-50 rounded-2xl font-black text-sm flex items-center justify-between px-4 shadow-card transition-transform active:scale-95"
+            >
+              <span className="flex items-center gap-1.5"><Receipt className="w-4 h-4 text-gold-300" />{isAm ? 'ሂሳብ ዝጋ' : 'Close Bill'}</span>
+              <span className="font-mono font-black text-sm bg-berbere-700/60 text-gold-300 px-2.5 py-1 rounded-xl shadow-inner">{totalBill} ETB</span>
+            </button>
           </div>
         </div>
       )}
 
-      {/* Main Screen Active View */}
-      {!showPayment ? (
-        <>
-          <div className="grid grid-cols-2 gap-3">
-            {products.map((product) => {
-              const cartItem = cart.find(item => item.id === product.id);
-              return (
-                <button
-                  key={product.id}
-                  type="button"
-                  onClick={() => addToCart(product)}
-                  className={`bg-white border relative h-28 p-3 rounded-2xl flex flex-col justify-between text-left transition-all shadow-sm active:scale-95 ${
-                    cartItem ? 'border-blue-500 ring-2 ring-blue-500/10 bg-blue-50/5' : 'border-slate-200/80'
-                  }`}
-                >
-                  {cartItem && <span className="absolute top-2 right-2 bg-blue-600 text-white font-mono font-black text-xs min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center shadow-sm">{cartItem.quantity}</span>}
-                  <span className="font-bold text-slate-800 line-clamp-2 text-sm leading-tight pr-5">{product.name}</span>
-                  <span className="font-mono text-slate-900 font-black text-base tracking-tight">{product.retail_price} <span className="text-[10px] font-bold text-slate-400">ETB</span></span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Cart Item Drawer layout */}
-          {cart.length > 0 && (
-            <div className="bg-white border-t border-slate-200 fixed bottom-16 left-0 right-0 max-w-md mx-auto p-4 z-30 shadow-[0_-10px_30px_rgba(0,0,0,0.08)] rounded-t-3xl space-y-4">
-              <div className="max-h-[140px] overflow-y-auto space-y-2 divide-y divide-slate-100 pr-1 subtle-scrollbar">
-                {cart.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between text-sm pt-2 first:pt-0 gap-1">
-                    <div className="w-2/5 truncate">
-                      <span className="font-bold text-slate-700 block truncate">{item.name}</span>
-                      <div className="flex gap-1 mt-0.5">
-                        <button type="button" onClick={() => quickIncrement(item.id, 2)} className="text-[9px] font-mono bg-slate-100 text-slate-500 font-bold px-1 rounded">+2</button>
-                        <button type="button" onClick={() => quickIncrement(item.id, 5)} className="text-[9px] font-mono bg-slate-100 text-slate-500 font-bold px-1 rounded">+5</button>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center border border-slate-200 rounded-xl bg-slate-50 p-0.5">
-                      <button type="button" onClick={() => updateQuantity(item.id, -1)} className="w-7 h-7 flex items-center justify-center bg-white text-slate-600 rounded-lg shadow-sm border border-slate-100"><Minus className="w-3.5 h-3.5" /></button>
-                      <span className="font-mono font-black w-8 text-center text-slate-800">{item.quantity}</span>
-                      <button type="button" onClick={() => updateQuantity(item.id, 1)} className="w-7 h-7 flex items-center justify-center bg-white text-slate-600 rounded-lg shadow-sm border border-slate-100"><Plus className="w-3.5 h-3.5" /></button>
-                    </div>
-
-                    <span className="font-mono font-black text-slate-700 w-20 text-right text-xs">{(item.price * item.quantity)} <span className="text-[10px] font-bold text-slate-400">ETB</span></span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Action layout panel */}
-              <div className="grid grid-cols-5 gap-2">
-                <button
-                  type="button"
-                  disabled={!selectedTable || savingTab}
-                  onClick={handleSaveTab}
-                  className="col-span-2 h-14 bg-slate-100 border border-slate-200 text-slate-700 rounded-2xl font-bold text-xs flex flex-col items-center justify-center gap-0.5"
-                >
-                  {savingTab ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Save className="w-4 h-4" /><span>{isAm ? 'ትዕዛዝ አስቀምጥ' : 'Save Tab'}</span></>}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setShowPayment(true)}
-                  className="col-span-3 h-14 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-bold text-sm flex items-center justify-between px-3 shadow-md"
-                >
-                  <span className="flex items-center gap-1"><Receipt className="w-4 h-4" />{isAm ? 'ሂሳብ ዝጋ' : 'Close Bill'}</span>
-                  <span className="font-mono font-black text-sm bg-emerald-700/50 px-2 py-1 rounded-xl">{totalBill} ETB</span>
-                </button>
-              </div>
-            </div>
-          )}
-        </>
-      ) : (
-        /* Payment view rendering screen */
-        <div className="space-y-4 pb-24">
-          <button
-            type="button"
-            onClick={() => {
-              setShowPayment(false)
-              setManualTip('') // Reset tips if they change minds
-            }}
-            className="inline-flex items-center gap-1 text-sm font-bold text-slate-500 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200/40"
-          >
-            ⬅️ {isAm ? 'ተመለስ' : 'Go Back'}
-          </button>
-          
-          {selectedTable && (
-            <div className="bg-slate-900 text-white font-black text-xs rounded-2xl p-3 flex justify-between items-center shadow-inner">
-              <span className="uppercase tracking-wider text-slate-400 text-[10px]">{isAm ? 'አካውንት ጠረጴዛ' : 'Active Account'}</span>
-              <span className="bg-blue-600 px-2.5 py-1 rounded-lg text-white font-mono text-xs shadow-sm uppercase">{selectedTable.name}</span>
-            </div>
-          )}
-
-          {/* ─── VISUAL MANUAL TIP INJECTION BLOCK ─── */}
-          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-2">
-            <label className="text-xs font-black tracking-wide text-slate-500 uppercase block">
-              {isAm ? 'ጉርሻ (የእጅ በእጅ / ማኑዋል)' : 'Manual Tip (Lump-Sum Transfer)'}
-            </label>
-            <div className="relative rounded-xl shadow-sm">
-              <input
-                type="number"
-                value={manualTip}
-                onChange={(e) => setManualTip(e.target.value)}
-                placeholder="0.00"
-                className="w-full font-mono text-sm font-bold bg-white border border-slate-200 rounded-xl py-2.5 pl-3 pr-14 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-              <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                <span className="text-slate-400 text-xs font-bold font-mono">ETB</span>
-              </div>
-            </div>
-            <p className="text-[10px] text-slate-400 font-medium leading-tight">
-              {isAm 
-                ? '* ይህ ጉርሻ ወደ ዋናው ሂሳብ አይደመርም፤ ባለቤቱ ማታ ለዋናው አስተናጋጅ የሚመልሰውን መጠን ለመመዝገብ ብቻ ነው።'
-                : '* This manual tip records the extra cash the owner must hand back to the waiter at night.'}
-            </p>
-          </div>
-
-          <div className="bg-white p-4 border border-slate-100 rounded-3xl shadow-sm">
-            {/* The underlying onConfirmPayment triggers the dynamic handleFinalizeSale function below */}
-            <PaymentSelector totalBill={totalBill} onConfirmPayment={handleFinalizeSale} isAm={isAm} />
-          </div>
-        </div>
-      )}
     </div>
   )
 }

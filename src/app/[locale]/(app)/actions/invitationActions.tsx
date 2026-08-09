@@ -1,51 +1,105 @@
-// src/app/actions/invitationActions.ts
 'use server'
 
-import { createClient } from "../../../../lib/supabase/server";
-import { revalidatePath } from "next/cache";
+import { createClient } from "@/lib/supabase/server"
+import { revalidatePath } from "next/cache"
+import type { StaffRole } from "@/types/enum"
 
-export async function createStaffInvitation(formData: {
-  staffName: string;
-  roleAssigned: string;
-  locale: string;
-}) {
-  const supabase = await createClient();
+type CreateStaffInvitationInput = {
+  staffName: string
+  roleAssigned: StaffRole
+  locale: string
+  phone?: string | null
+}
 
-  // 1. Get current authenticated user profile session context
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Unauthorized context execution.");
+const ALLOWED_ROLES: StaffRole[] = [
+  'owner',
+  'manager',
+  'cashier',
+  'inventory_clerk',
+  'waiter',
+  'barman',
+  'kitchen'
+]
 
-  // 2. Fetch owner's business reference details
-  const { data: profile } = await supabase
+export async function createStaffInvitation(input: CreateStaffInvitationInput) {
+  const supabase = await createClient()
+
+  const { staffName, roleAssigned, locale, phone } = input
+
+  // =========================================================
+  // 1. AUTH
+  // =========================================================
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error("Unauthorized")
+
+  // =========================================================
+  // 2. PROFILE CONTEXT
+  // =========================================================
+  const { data: profile, error } = await supabase
     .from("profiles")
     .select("business_id, role")
     .eq("id", user.id)
-    .single();
+    .single()
 
-  if (!profile || (profile.role !== "owner" && profile.role !== "manager")) {
-    throw new Error("Privilege Violation: Action restricted to management tier.");
+  if (error || !profile) {
+    throw new Error("Profile not found")
   }
 
-  // 3. Generate a secure, hard-to-guess 6-digit alphanumeric code prefix
-  const secureInviteCode = `LY-${Math.floor(100000 + Math.random() * 900000)}`;
+  if (!profile.business_id) {
+    throw new Error("Missing business context")
+  }
 
-  // 4. Save into the verification registry mapping the company ID
-  const { error } = await supabase
+  // =========================================================
+  // 3. ROLE AUTHORIZATION (SECURITY LAYER)
+  // =========================================================
+  if (!["owner", "manager"].includes(profile.role)) {
+    throw new Error("Permission denied")
+  }
+
+  // =========================================================
+  // 4. ROLE VALIDATION (DB SAFETY)
+  // =========================================================
+  if (!ALLOWED_ROLES.includes(roleAssigned)) {
+    throw new Error("Invalid role assigned")
+  }
+
+  // =========================================================
+  // 5. CODE GENERATION
+  // =========================================================
+  const code = `LY-${crypto.randomUUID().slice(0, 6).toUpperCase()}`
+
+  // =========================================================
+  // 6. INSERT INVITATION
+  // =========================================================
+  const { data, error: insertError } = await supabase
     .from("staff_invitations")
     .insert({
       business_id: profile.business_id,
-      code: secureInviteCode,
-      staff_name: formData.staffName,
-      role_assigned: formData.roleAssigned,
+      staff_name: staffName,
+      role_assigned: roleAssigned,
+      phone: phone ?? null,
+      code,
       status: "pending"
-    });
+      // expires_at handled by DB default
+    })
+    .select()
+    .single()
 
-  if (error) throw new Error(`Database fault: ${error.message}`);
+  if (insertError) {
+    throw new Error(insertError.message)
+  }
 
-  revalidatePath(`/${formData.locale}/dashboard/staff`);
-  
+  // =========================================================
+  // 7. CACHE REFRESH
+  // =========================================================
+  revalidatePath(`/${locale}/staff`)
+
+  // =========================================================
+  // 8. RETURN CLEAN RESULT
+  // =========================================================
   return {
     success: true,
-    code: secureInviteCode,
-  };
+    code,
+    invitation: data
+  }
 }

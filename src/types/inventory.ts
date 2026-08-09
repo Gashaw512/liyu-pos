@@ -79,3 +79,11 @@ export interface LocalPendingStockCount {
   system_quantity: number; // Aggregated baseline at moment of capture
   notes: string | null;
 }
+
+/**
+ * Live computed stock metadata for UI rendering layer
+ */
+export interface LiveMetaData {
+  systemCount: number
+  hasPendingTransactions: boolean
+}

@@ -7,13 +7,13 @@ import { AvailableRole } from '../../services/roles'
 export interface UserProfile {
   id: string
   full_name: string
-  phone: string
-  profile_roles: { role_name: string }[]
+  phone: string | null
+  role: AvailableRole
 }
 
 interface UserRoleRowProps {
   user: UserProfile
-  onRefreshList: () => void;
+  onRefreshList: () => void
   locale: string
 }
 
@@ -27,27 +27,27 @@ const ALL_SYSTEM_ROLES: AvailableRole[] = [
   'kitchen'
 ]
 
-export const UserRoleRow: React.FC<UserRoleRowProps> = ({ user, onRefreshList, locale }) => {
-  const isAm = locale === 'am';
-  
-  // Track the primary active role safely
-  const [currentRole, setCurrentRole] = useState<string>(
-    user.profile_roles[0]?.role_name || 'waiter'
-  )
+export const UserRoleRow: React.FC<UserRoleRowProps> = ({
+  user,
+  onRefreshList,
+  locale
+}) => {
+  const isAm = locale === 'am'
+
+  /**
+   * SINGLE SOURCE OF TRUTH
+   */
+  const [currentRole, setCurrentRole] = useState<AvailableRole>(user.role)
 
   const { toggleRoleAssignment, isProcessing } = useRoleManagement({
-    onSuccess: (msg) => {
-      console.log('Success:', msg)
-      onRefreshList()
-    },
-    onError: (err) => {
-      alert(`Access Control Alert: ${err}`)
-    }
+    onSuccess: () => onRefreshList(),
+    onError: (err) => alert(`Access Control Alert: ${err}`)
   })
 
-  const getLocalizedRoleName = (rawRole: string): string => {
-    if (!isAm) return rawRole.replace('_', ' ').toUpperCase();
-    const roleMap: Record<string, string> = {
+  const getLocalizedRoleName = (role: AvailableRole): string => {
+    if (!isAm) return role.replace('_', ' ').toUpperCase()
+
+    const map: Record<AvailableRole, string> = {
       owner: "ባለቤት",
       manager: "ስራ አስኪያጅ",
       cashier: "ካሺየር",
@@ -55,59 +55,52 @@ export const UserRoleRow: React.FC<UserRoleRowProps> = ({ user, onRefreshList, l
       kitchen: "ወጥ ቤት",
       barman: "ባርማን",
       inventory_clerk: "ክምችት ተቆጣጣሪ"
-    };
-    return roleMap[rawRole.toLowerCase()] || rawRole;
-  };
+    }
+
+    return map[role]
+  }
 
   const handleRoleChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newRole = e.target.value as AvailableRole;
-    const oldRole = currentRole;
-    
-    // Optimistically update the UI view layer
-    setCurrentRole(newRole);
+    const newRole = e.target.value as AvailableRole
+    const oldRole = currentRole
 
-    // 1. Remove the old role context assignment, then bind the new one
-    const success = await toggleRoleAssignment(user.id, newRole, [oldRole]);
+    setCurrentRole(newRole)
+
+    const success = await toggleRoleAssignment(user.id, newRole, [oldRole])
+
     if (!success) {
-      // Revert state if backend database pipeline fails
-      setCurrentRole(oldRole);
+      setCurrentRole(oldRole)
     }
-  };
+  }
 
   return (
     <tr className="hover:bg-cream-50/20 transition-colors duration-150 group">
-      
-      {/* 👤 LEFT COLUMN: EMPLOYEE INFO IDENTITY (60% Width Allocated) */}
-      <td className="px-3 py-3 w-[60%] align-middle overflow-hidden">
-        <div className="text-xs font-bold text-coffee-800 group-hover:text-coffee-950 transition-colors truncate max-w-full">
+      {/* LEFT */}
+      <td className="px-3 py-3 w-[60%]">
+        <div className="text-xs font-bold text-coffee-800 truncate">
           {user.full_name}
         </div>
-        <div className="text-[10px] font-mono text-coffee-400 mt-0.5 tracking-tight truncate max-w-full">
-          {user.phone || (isAm ? 'ስልክ አልተመዘገበም' : 'No phone entry')}
+
+        <div className="text-[10px] font-mono text-coffee-400">
+          {user.phone ?? (isAm ? 'ስልክ የለም' : 'No phone')}
         </div>
       </td>
 
-      {/* ⚙️ RIGHT COLUMN: RESPONSIVE NATIVE DROP-DOWN SELECTION (40% Width Allocated) */}
-      <td className="px-3 py-3 w-[40%] text-right align-middle">
-        <div className="inline-block relative max-w-full">
-          <select
-            value={currentRole}
-            disabled={isProcessing}
-            onChange={handleRoleChange}
-            className={`text-[11px] font-black tracking-tight bg-berbere-50/60 border border-berbere-200/80 text-berbere-700 rounded-lg px-2 py-1 outline-none text-right appearance-none cursor-pointer transition-all active:scale-95
-              ${isProcessing ? 'opacity-40 pointer-events-none' : 'hover:bg-berbere-100/50'}
-            `}
-            style={{ direction: 'rtl' }} // Enforces clean native text alignment to the right side on touch layouts
-          >
-            {ALL_SYSTEM_ROLES.map((role) => (
-              <option key={role} value={role} className="bg-white text-coffee-800 text-left text-xs font-semibold">
-                {getLocalizedRoleName(role)} {currentRole === role ? '✓' : ''}
-              </option>
-            ))}
-          </select>
-        </div>
+      {/* RIGHT */}
+      <td className="px-3 py-3 w-[40%] text-right">
+        <select
+          value={currentRole}
+          disabled={isProcessing}
+          onChange={handleRoleChange}
+          className="text-[11px] font-black bg-berbere-50/60 border border-berbere-200/80 text-berbere-700 rounded-lg px-2 py-1"
+        >
+          {ALL_SYSTEM_ROLES.map((role) => (
+            <option key={role} value={role}>
+              {getLocalizedRoleName(role)}
+            </option>
+          ))}
+        </select>
       </td>
-
     </tr>
   )
 }

@@ -63,8 +63,39 @@ CREATE POLICY "Profile roles read isolation within business" ON public.profile_r
   ));
 
 -- STAFF INVITATIONS
-CREATE POLICY "Staff invitations accessible by business managers" ON public.staff_invitations
-  FOR ALL USING (business_id = public.auth_business_id() AND public.auth_has_any_role(ARRAY['owner', 'manager']));
+-- CREATE POLICY "Staff invitations accessible by business managers" ON public.staff_invitations
+--   FOR ALL USING (business_id = public.auth_business_id() AND public.auth_has_any_role(ARRAY['owner', 'manager']));
+
+
+-- DROP POLICY IF EXISTS "Staff invitations accessible by business managers"
+-- ON public.staff_invitations;
+
+-- =====================================================
+-- STAFF INVITATIONS RLS (SIMPLIFIED WORKING VERSION)
+-- =====================================================
+
+
+-- OWNER/MANAGER FULL ACCESS = Read, Update, select, delete
+CREATE POLICY "Staff invites full access"
+ON public.staff_invitations
+FOR ALL
+USING (
+  business_id = public.auth_business_id()
+  AND public.auth_has_any_role(ARRAY['owner','manager'])
+)
+WITH CHECK (
+  business_id = public.auth_business_id()
+  AND public.auth_has_any_role(ARRAY['owner','manager'])
+);
+
+-- PUBLIC CAN ONLY CHECK PENDING INVITES BY CODE
+CREATE POLICY "Public invite validation"
+ON public.staff_invitations
+FOR SELECT
+USING (
+  status = 'pending'
+);
+
 
 -- CATEGORIES & TEMPLATES
 CREATE POLICY "Category access isolation" ON public.categories
@@ -75,9 +106,16 @@ CREATE POLICY "Global template access allowed to all authenticated accounts" ON 
 
 -- PRICE GROUPS (BONO)
 CREATE POLICY "Bono pricing groups isolation" ON public.price_groups
-  FOR ALL USING (business_id = public.auth_business_id() AND deleted_at IS NULL)
-  WITH CHECK (business_id = public.auth_business_id());
-
+  FOR ALL 
+  USING (
+    business_id = public.auth_business_id() 
+    AND public.auth_has_any_role(ARRAY['owner', 'manager'])
+    AND deleted_at IS NULL
+  )
+  WITH CHECK (
+    business_id = public.auth_business_id() 
+    AND public.auth_has_any_role(ARRAY['owner', 'manager'])
+  );
 -- PRODUCTS
 CREATE POLICY "Product access isolation" ON public.products
   FOR ALL USING (business_id = public.auth_business_id() AND deleted_at IS NULL);
@@ -138,3 +176,4 @@ CREATE POLICY "Stock audit reconciliations isolation" ON public.stock_reconcilia
 -- AUDIT LOGS
 CREATE POLICY "Security audit log ledger read restriction" ON public.audit_logs
   FOR SELECT USING (business_id = public.auth_business_id() AND public.auth_has_any_role(ARRAY['owner', 'manager']));
+

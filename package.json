@@ -2,12 +2,13 @@
   "name": "liyu-pos",
   "version": "0.1.0",
   "private": true,
-  "scripts": {
+    "scripts": {
     "dev": "next dev --webpack",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint"
   },
+
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
     "@supabase/ssr": "^0.10.3",

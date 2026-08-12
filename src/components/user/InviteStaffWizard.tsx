@@ -1,159 +1,498 @@
-// src/components/dashboard/InviteStaffWizard.tsx
+// src/components/user/InviteStaffWizard.tsx
 'use client'
 
-import React, { useState } from 'react';
-import { Share2, Plus, Users, CheckCircle2, Copy } from 'lucide-react';
-import { createStaffInvitation } from '../../app/[locale]/(app)/actions/invitationActions';
+import React, { useMemo, useState } from 'react'
+import {
+  Plus,
+  Users,
+  CheckCircle2,
+  Copy,
+  Share2,
+  UserCog,
+} from 'lucide-react'
 
+import { createStaffInvitation } from '../../app/[locale]/(app)/actions/invitationActions'
+import { toast } from '@/lib/utils/toast'
+import type { StaffRole } from '@/types/enum'
+import InviteActions from './InviteActions'
 interface InviteWizardProps {
-  locale: string;
+  locale: string
 }
 
-export default function InviteStaffWizard({ locale }: InviteWizardProps) {
-  const isAm = locale === 'am';
-  const [staffName, setStaffName] = useState('');
-  const [roleAssigned, setRoleAssigned] = useState('cashier');
-  const [isLoading, setIsLoading] = useState(false);
-  
-  // Track newly registered workers to display active share targets instantly
-  const [generatedInvite, setGeneratedInvite] = useState<{ name: string; code: string } | null>(null);
+type GeneratedInvite = {
+  name: string
+  code: string
+  inviteUrl: string
+}
 
-  const t = (en: string, am: string) => isAm ? am : en;
+const ROLE_OPTIONS: {
+  value: StaffRole
+  label: string
+  labelAm: string
+  description: string
+}[] = [
+    {
+      value: 'cashier',
+      label: 'Cashier',
+      labelAm: 'ገንዘብ ተቀባይ',
+      description: 'Sales & payments',
+    },
+    {
+      value: 'manager',
+      label: 'Manager',
+      labelAm: 'አስተዳዳሪ',
+      description: 'Operations & staff',
+    },
+    {
+      value: 'inventory_clerk',
+      label: 'Stock Clerk',
+      labelAm: 'ክምችት ኃላፊ',
+      description: 'Inventory control',
+    },
+    {
+      value: 'waiter',
+      label: 'Waiter',
+      labelAm: 'አስተናጋጅ',
+      description: 'Restaurant service',
+    },
+    {
+      value: 'barman',
+      label: 'Barman',
+      labelAm: 'ባርማን',
+      description: 'Bar operations',
+    },
+    {
+      value: 'kitchen',
+      labelAm: 'ወጥ ቤት',
+      label: 'Kitchen',
+      description: 'Kitchen operations',
+    },
+  ]
 
-  const handleRegisterAndAutomatedShare = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!staffName.trim()) return;
+export default function InviteStaffWizard({
+  locale,
+}: InviteWizardProps) {
+  const isAm = locale === 'am'
 
-    setIsLoading(true);
-    setGeneratedInvite(null);
+  const [staffName, setStaffName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [roleAssigned, setRoleAssigned] =
+    useState<StaffRole>('cashier')
+
+  const [isLoading, setIsLoading] = useState(false)
+
+  const [generatedInvite, setGeneratedInvite] =
+    useState<GeneratedInvite | null>(null)
+
+  const t = (en: string, am: string) =>
+    isAm ? am : en
+
+  const selectedRole = useMemo(
+    () =>
+      ROLE_OPTIONS.find(
+        (r) => r.value === roleAssigned
+      ),
+    [roleAssigned]
+  )
+
+  const validatePhone = (value: string) => {
+    const cleaned = value.replace(/\s+/g, '')
+
+    return (
+      cleaned.startsWith('+251') ||
+      cleaned.startsWith('09')
+    )
+  }
+
+  const buildInviteMessage = (
+    name: string,
+    code: string,
+    inviteUrl: string
+  ) => {
+    return isAm
+      ? `👋 ሰላም ${name}
+
+ወደ LIYU POS ተጋብዘዋል።
+
+👤 ሚና: ${selectedRole?.labelAm ?? roleAssigned}
+
+🔑 ኮድ: ${code}
+
+🔗 ${inviteUrl}
+
+እባክዎ ሊንኩን ተጠቅመው አካውንት ይፍጠሩ።`
+      : `👋 Hi ${name}
+
+You have been invited to LIYU POS.
+
+👤 Role: ${selectedRole?.label ?? roleAssigned}
+
+🔑 Code: ${code}
+
+🔗 ${inviteUrl}
+
+Please open the link and activate your account.`
+  }
+
+  const handleShare = async (
+    message: string,
+    inviteUrl: string,
+    phoneNumber?: string
+  ) => {
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: 'LIYU POS',
+          text: message,
+          url: inviteUrl,
+        })
+
+        return
+      }
+
+      if (phoneNumber) {
+        const smsLink = `sms:${phoneNumber}?body=${encodeURIComponent(
+          message
+        )}`
+
+        window.location.href = smsLink
+        return
+      }
+
+      await navigator.clipboard.writeText(message)
+
+      toast(
+        t(
+          'ግብዣው ወደ ክሊፕቦርድ ተቀድቷል',
+          'Invitation copied to clipboard'
+        ),
+        'success'
+      )
+    } catch {
+      // silent
+    }
+  }
+
+  const handleRegisterAndShare = async (
+    e: React.FormEvent
+  ) => {
+    e.preventDefault()
+
+    const cleanName = staffName.trim()
+    const cleanPhone = phone.trim()
+
+    if (!cleanName) {
+      toast(
+        t(
+          'እባክዎ ስም ያስገቡ',
+          'Please enter staff name'
+        ),
+        'error'
+      )
+      return
+    }
+
+    if (!cleanPhone) {
+      toast(
+        t(
+          'እባክዎ ስልክ ቁጥር ያስገቡ',
+          'Please enter phone number'
+        ),
+        'error'
+      )
+      return
+    }
+
+    if (!validatePhone(cleanPhone)) {
+      toast(
+        t(
+          'ትክክለኛ ስልክ ቁጥር ያስገቡ',
+          'Please enter a valid phone number'
+        ),
+        'error'
+      )
+      return
+    }
+
+    setIsLoading(true)
 
     try {
-      // 1. Fire database record allocation over the wire network
-      const result = await createStaffInvitation({
-        staffName: staffName.trim(),
-        roleAssigned,
-        locale
-      });
+      const result =
+        await createStaffInvitation({
+          staffName: cleanName,
+          roleAssigned,
+          phone: cleanPhone,
+          locale,
+        })
 
-      if (result?.success) {
-        setGeneratedInvite({ name: staffName, code: result.code });
-        
-        // 2. Formulate multilingual messaging string
-        const inviteUrl = `https://liyupos.com/${locale}/auth/invite`;
-        
-        const messageText = isAm
-          ? `👋 ሰላም ${staffName}፣ ወደ ሊዩ POS የሽያጭ መቆጣጠሪያ መተግበሪያ ለመቀላቀል ተጋብዘዋል።\n\n` +
-            `1️⃣ አካውንትዎን ለማግበር ይህንን ሊንክ ይክፈቱ፡ ${inviteUrl}\n` +
-            `2️⃣ የእርስዎ ልዩ መግቢያ ማግበሪያ ኮድ፡ ${result.code}\n\n` +
-            `ስራችንን ቀልጣፋ እናድርግ! 🚀`
-          : `👋 Hi ${staffName}, you have been officially invited to join our store crew on LIYU POS!\n\n` +
-            `1️⃣ Open this terminal validation link to set up your profile: ${inviteUrl}\n` +
-            `2️⃣ Use your unique activation code: ${result.code}\n\n` +
-            `Let's get operational! 🚀`;
-
-        // Clear entry variables instantly to reset operational UI forms
-        setStaffName('');
-
-        // 3. Trigger Free Native Hardware Mobile Share Sheets instantly
-        if (navigator.share) {
-          await navigator.share({
-            title: t('LIYU POS ሠራተኛ ግብዣ', 'LIYU POS Crew Invitation'),
-            text: messageText,
-          });
-        } else {
-          // Fallback mechanism: Copy straight to hardware clipboard buffer if using desktop viewports
-          await navigator.clipboard.writeText(messageText);
-          alert(t('የግብዣው መልዕክት ተገልብጧል! እባክዎ በቴሌግራም ወይም በኤስኤምኤስ ለሰራተኛው ይላኩት።', 'Invitation payload copied to clipboard! Share manually via Telegram or SMS.'));
-        }
+      if (!result?.success) {
+        throw new Error(
+          'Failed to create invitation'
+        )
       }
-    } catch (err: any) {
-      alert(`Initialization Error: ${err.message}`);
+
+      const inviteUrl =
+        `${window.location.origin}/${locale}/invite?code=${result.code}`
+
+      setGeneratedInvite({
+        name: cleanName,
+        code: result.code,
+        inviteUrl,
+      })
+
+      const message = buildInviteMessage(
+        cleanName,
+        result.code,
+        inviteUrl
+      )
+
+      setStaffName('')
+      setPhone('')
+      setRoleAssigned('cashier')
+
+      toast(
+        t(
+          'ግብዣ ተፈጥሯል',
+          'Invitation created successfully'
+        ),
+        'success'
+      )
+
+      await handleShare(
+        message,
+        inviteUrl,
+        cleanPhone
+      )
+    } catch (error: any) {
+      toast(
+        error?.message ||
+        t(
+          'ስህተት ተፈጥሯል',
+          'Something went wrong'
+        ),
+        'error'
+      )
     } finally {
-      setIsLoading(false);
+      setIsLoading(false)
     }
-  };
+  }
+
+  const copyCode = async () => {
+    if (!generatedInvite) return
+
+    await navigator.clipboard.writeText(
+      generatedInvite.code
+    )
+
+    toast(
+      t(
+        'ኮዱ ተቀድቷል',
+        'Code copied'
+      ),
+      'success'
+    )
+  }
+
+  const copyLink = async () => {
+    if (!generatedInvite) return
+
+    await navigator.clipboard.writeText(
+      generatedInvite.inviteUrl
+    )
+
+    toast(
+      t(
+        'ሊንኩ ተቀድቷል',
+        'Link copied'
+      ),
+      'success'
+    )
+  }
 
   return (
-    <div className="w-full max-w-md bg-white rounded-2xl border border-cream-200/80 p-5 shadow-[0_2px_8px_rgba(43,30,26,0.02)] space-y-4">
-      
-      {/* Title Segment Block */}
-      <div className="flex items-center space-x-2.5">
-        <div className="h-8 w-8 rounded-xl bg-berbere-50 flex items-center justify-center text-berbere-600">
-          <Users className="h-4 w-4" />
+    <div className="w-full rounded-2xl border border-cream-200 bg-white p-4 space-y-4 shadow-sm">
+
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-berbere-50">
+          <Users className="h-5 w-5 text-berbere-500" />
         </div>
+
         <div>
-          <h3 className="text-xs font-black text-coffee-900 tracking-tight">
-            {t('አዲስ ሰራተኛ መጋበዣ', 'Invite Operational Crew')}
+          <h3 className="font-black text-coffee-700">
+            {t(
+              'ሰራተኛ መጋበዣ',
+              'Invite Staff'
+            )}
           </h3>
-          <p className="text-[10px] text-coffee-400">
-            {t('ሰራተኞችን በፍጥነት በመመዝገብ በቴሌግራም ወይም በኤስኤምኤስ በነፃ ኮድ ይላኩላቸው።', 'Provision permissions and dispatch access tokens instantly via free communication targets.')}
+
+          <p className="text-xs text-coffee-400">
+            {t(
+              'አዲስ ሰራተኛ ያክሉ',
+              'Invite a new team member'
+            )}
           </p>
         </div>
       </div>
 
-      {/* Main Dynamic Request Action Form Input Elements */}
-      <form onSubmit={handleRegisterAndAutomatedShare} className="space-y-3">
-        <div className="space-y-1">
-          <label className="text-[9px] font-black uppercase tracking-wider text-coffee-500">
-            {t('የሰራተኛው ሙሉ ስም', 'Staff Full Name')}
-          </label>
-          <input 
-            type="text"
-            required
-            value={staffName}
-            onChange={(e) => setStaffName(e.target.value)}
-            placeholder={t('ምሳሌ፡ ዮናስ ካሳሁን', 'e.g. Yonas Kasahun')}
-            className="w-full px-3 py-2 text-xs bg-cream-50/50 border border-cream-200/80 rounded-xl outline-none focus:border-berbere-500 text-coffee-800 transition-colors"
-          />
-        </div>
+      {/* Form */}
+      <form
+        onSubmit={handleRegisterAndShare}
+        className="space-y-4"
+      >
+        <input
+          value={staffName}
+          onChange={(e) =>
+            setStaffName(e.target.value)
+          }
+          placeholder={t(
+            'ሙሉ ስም',
+            'Full name'
+          )}
+          className="w-full rounded-xl border border-cream-200 bg-cream-50 px-3 py-3 text-sm outline-none focus:border-berbere-400"
+          required
+        />
 
-        <div className="space-y-1">
-          <label className="text-[9px] font-black uppercase tracking-wider text-coffee-500">
-            {t('የስራ ድርሻ / ሚና', 'Operational Privilege Role')}
-          </label>
-          <select
-            value={roleAssigned}
-            onChange={(e) => setRoleAssigned(e.target.value)}
-            className="w-full px-3 py-2 text-xs bg-cream-50/50 border border-cream-200/80 rounded-xl outline-none text-coffee-700 font-bold"
-          >
-            <option value="cashier">{t('ካሺየር (Cashier)', 'Cashier (ካሺየር)')}</option>
-            <option value="manager">{t('ስራ አስኪያጅ (Manager)', 'Manager (ስራ አስኪያጅ)')}</option>
-            <option value="waiter">{t('አስተናጋጅ (Waiter)', 'Waiter (አስተናጋጅ)')}</option>
-            <option value="kitchen">{t('ወጥ ቤት (Kitchen)', 'Kitchen (ወጥ ቤት)')}</option>
-            <option value="inventory_clerk">{t('ክምችት ተቆጣጣሪ (Stock Clerk)', 'Stock Clerk (ክምችት ተቆጣጣሪ)')}</option>
-          </select>
+        <input
+          value={phone}
+          onChange={(e) =>
+            setPhone(e.target.value)
+          }
+          placeholder={t(
+            'ስልክ ቁጥር (+251...)',
+            'Phone number (+251...)'
+          )}
+          className="w-full rounded-xl border border-cream-200 bg-cream-50 px-3 py-3 text-sm outline-none focus:border-berbere-400"
+          required
+        />
+
+        {/* Role Cards */}
+        <div>
+          <div className="mb-2 flex items-center gap-2">
+            <UserCog className="h-4 w-4 text-coffee-500" />
+            <span className="text-xs font-bold text-coffee-600">
+              {t(
+                'የሰራተኛ ሚና',
+                'Staff Role'
+              )}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            {ROLE_OPTIONS.map((role) => (
+              <button
+                key={role.value}
+                type="button"
+                onClick={() =>
+                  setRoleAssigned(role.value)
+                }
+                className={`rounded-xl border p-3 text-left transition-all ${roleAssigned === role.value
+                  ? 'border-berbere-500 bg-berbere-50'
+                  : 'border-cream-200 bg-white'
+                  }`}
+              >
+                <div className="text-sm font-bold text-coffee-700">
+                  {isAm
+                    ? role.labelAm
+                    : role.label}
+                </div>
+
+                <div className="mt-1 text-[11px] text-coffee-400">
+                  {role.description}
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
 
         <button
-          type="submit"
-          disabled={isLoading || !staffName.trim()}
-          className="w-full h-10 bg-coffee-900 hover:bg-coffee-950 disabled:opacity-40 text-white text-xs font-black rounded-xl flex items-center justify-center space-x-2 transition-all active:scale-[0.98]"
+          disabled={isLoading}
+          className="flex h-12 w-full items-center justify-center rounded-xl bg-berbere-500 font-black text-white disabled:opacity-60"
         >
           {isLoading ? (
-            <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
           ) : (
             <>
-              <Plus className="h-3.5 w-3.5" />
-              <span>{t('መዝግብና የግብዣ ሊንክ ላክ', 'Register & Open Share Link')}</span>
+              <Plus className="mr-2 h-4 w-4" />
+              {t(
+                'ግብዣ ላክ',
+                'Send Invitation'
+              )}
             </>
           )}
         </button>
       </form>
 
-      {/* SUCCESS STATUS POP CONTAINER CARD AND RETRY TARGETS OVERLAY */}
+      {/* Success */}
       {generatedInvite && (
-        <div className="p-3 bg-emerald-50/60 border border-emerald-200/60 rounded-xl space-y-2 animate-fadeIn">
-          <div className="flex items-center space-x-1.5 text-emerald-800 text-[11px] font-bold">
-            <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-            <span>{t(`${generatedInvite.name} በተሳካ ሁኔታ ተመዝግቧል!`, `${generatedInvite.name} successfully pre-registered!`)}</span>
+        <div className="rounded-2xl border border-green-200 bg-green-50 p-4">
+          <div className="mb-3 flex items-center gap-2 text-green-700">
+            <CheckCircle2 className="h-5 w-5" />
+            <span className="font-bold">
+              {t(
+                'ግብዣ ተፈጥሯል',
+                'Invitation Created'
+              )}
+            </span>
           </div>
-          <div className="flex items-center justify-between bg-white px-2.5 py-1.5 rounded-lg border border-emerald-100 text-[10px]">
-            <span className="text-coffee-500 font-medium">{t('የማግበሪያ ኮድ፡', 'Activation Code:')}</span>
-            <span className="font-mono font-black tracking-wider text-coffee-900 text-xs">{generatedInvite.code}</span>
+
+          <div className="mb-3 text-sm text-coffee-700">
+            {generatedInvite.name}
+          </div>
+
+          <div className="mb-3 flex items-center justify-between rounded-xl border bg-white p-3">
+            <code className="font-black text-berbere-600">
+              {generatedInvite.code}
+            </code>
+
+            <button
+              type="button"
+              onClick={copyCode}
+            >
+              <Copy className="h-4 w-4 text-coffee-500" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={copyLink}
+              className="rounded-xl border border-cream-200 bg-white py-2 text-sm font-bold"
+            >
+              Copy Link
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                const msg = buildInviteMessage(
+                  generatedInvite.name,
+                  generatedInvite.code,
+                  generatedInvite.inviteUrl
+                )
+
+                handleShare(
+                  msg,
+                  generatedInvite.inviteUrl
+                )
+              }}
+              className="flex items-center justify-center gap-2 rounded-xl bg-berbere-500 py-2 text-sm font-bold text-white"
+            >
+              <Share2 className="h-4 w-4" />
+              Share
+            </button>
           </div>
         </div>
       )}
 
+
+      {generatedInvite && (
+        <InviteActions
+          generatedInvite={generatedInvite}
+          phone={phone}
+          locale={locale}
+        />
+      )}
     </div>
-  );
+  )
 }

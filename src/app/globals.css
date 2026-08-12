@@ -128,3 +128,32 @@
     touch-action: manipulation;
   }
 }
+
+
+@theme {
+  /* Dynamic POS Theming Definitions */
+  --color-pos-sidebar-bg: var(--sidebar-background, #ffffff);
+  --color-pos-sidebar-border: var(--sidebar-border, #e2e8f0);
+  --color-pos-accent-primary: var(--primary, #2563eb);
+  --color-pos-accent-success: var(--success, #059669);
+  
+  /* Utilities for the clean scrolling inside components */
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: #cbd5e1;
+}
+
+/* Custom Scrollbar Utility Rules */
+.subtle-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.subtle-scrollbar::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+.subtle-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 9999px;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}

@@ -1,4 +1,4 @@
-// // src/components/layout/SafeAreaWrapper.tsx
+// src/components/layout/SafeAreaWrapper.tsx
 'use client'
 
 import { ReactNode } from "react";
@@ -24,4 +24,3 @@ export default function SafeAreaWrapper({ children }: { children: ReactNode }) {
     </div>
   );
 }
-

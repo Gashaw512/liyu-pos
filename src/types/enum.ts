@@ -2,7 +2,10 @@ export type StaffRole =
   | 'owner'
   | 'manager'
   | 'cashier'
-  | 'inventory_clerk';
+  | 'inventory_clerk'
+  | 'waiter'
+  | 'barman'
+  | 'kitchen';
 
   export type BusinessPlan =
   | 'starter'
@@ -24,9 +27,8 @@ export type StaffRole =
   | 'liter'
   | 'box'
   | 'pack'
-  | 'pack'
-   |'set'
-    'crate';
+  | 'set'
+  | 'crate';
 
 export type TransactionStatus =
   'completed'

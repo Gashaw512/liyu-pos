@@ -1,310 +1,282 @@
 'use client'
 
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useState } from 'react'
-import Link from 'next/link'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Eye, EyeOff, ArrowRight, CheckCircle, AlertCircle, Sparkles } from 'lucide-react'
-import createClient from '../../../../lib/supabase/client'
+import { Eye, EyeOff, CheckCircle, ArrowRight, AlertCircle } from 'lucide-react'
+import createClient from '@/lib/supabase/client'
 
-/* ─── Staff Activation Validation Schema ──────────────────────────────────── */
 const schema = z.object({
-  fullName: z.string().min(2, 'Enter your full name / ሙሉ ስምዎን ያስገቡ'),
-  inviteCode: z.string()
-    .min(5, 'Enter valid code / ትክክለኛ የጋበዣ ኮድ ያስገቡ')
-    .toUpperCase(),
-  phone: z.string()
-    .min(9, 'Enter valid Ethiopian phone / ትክክለኛ ስልክ ቁጥር')
-    .regex(/^(\+251|0)?[97]\d{8}$/, 'Use format 09xxxxxxxx or +2519xxxxxxxx'),
-  password: z.string().min(8, 'Min 8 characters / ቢያንስ 8 ቁምፊዎች'),
-  confirm: z.string(),
+  fullName: z.string().min(2),
+  inviteCode: z.string().min(5),
+  phone: z.string().min(9),
+  password: z.string().min(8),
+  confirm: z.string()
 }).refine(d => d.password === d.confirm, {
-  message: 'Passwords do not match / የሚስጥር ቃሎቹ አይዛመዱም',
-  path: ['confirm'],
+  message: 'Passwords do not match',
+  path: ['confirm']
 })
+
 type Form = z.infer<typeof schema>
 
-type Lang = 'am' | 'en'
-
-export default function StaffRegisterPage() {
+export default function InviteAcceptPage() {
   const router = useRouter()
   const params = useParams()
+  const search = useSearchParams()
   const supabase = createClient()
 
-  const routeLocale = (params?.locale as Lang) || 'am'
-  const [lang, setLang] = useState<Lang>(routeLocale)
-  const [showPw, setShowPw] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
-  const [serverErr, setServerErr] = useState<string | null>(null)
-  const [step, setStep] = useState<1 | 2>(1)
+  const locale = (params?.locale as string) || 'en'
+  const prefilledCode = search.get('code') || ''
 
-  const t = (en: string, am: string) => lang === 'am' ? am : en
+  const [step, setStep] = useState<1 | 2>(1)
+  const [loading, setLoading] = useState(false)
+  const [showPw, setShowPw] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const {
-    register, handleSubmit, trigger, watch, formState: { errors },
+    register,
+    handleSubmit,
+    trigger,
+    watch
   } = useForm<Form>({
-    resolver: zodResolver(schema),
-    defaultValues: { inviteCode: '', fullName: '', phone: '', password: '', confirm: '' }
+    defaultValues: {
+      inviteCode: prefilledCode.toUpperCase()
+    },
+    resolver: zodResolver(schema)
   })
 
-  const formatToEthiopianStandard = (phoneStr: string) => {
-    const clean = phoneStr.replace(/\s+/g, '')
-    if (clean.startsWith('0')) return '+251' + clean.substring(1)
-    if (!clean.startsWith('+')) return '+' + clean
-    return clean
-  }
+  const inputClass =
+    "w-full h-[52px] px-4 rounded-xl border border-cream-200 bg-cream-100 text-coffee-700 focus:border-berbere-500 outline-none"
 
-  const verifyInvitationStep = async () => {
-    const isValid = await trigger(['inviteCode', 'fullName', 'phone'])
-    if (!isValid) return
+  /* ───────────────────────── STEP 1 ───────────────────────── */
+  const verifyInvite = async () => {
+    const ok = await trigger(['inviteCode', 'fullName', 'phone'])
+    if (!ok) return
 
-    setIsLoading(true)
-    setServerErr(null)
+    setLoading(true)
+    setError(null)
 
     try {
-      /* 
-        🔍 Validation Rule: Look up the generated invite code to ensure 
-        it exists and hasn't been claimed by another user profile yet.
-      */
-      const { data: invite, error: inviteErr } = await supabase
+      const code = watch('inviteCode').trim().toUpperCase()
+
+      const { data: invite, error: dbError } = await supabase
         .from('staff_invitations')
-        .select('id, status')
-        .eq('code', watch('inviteCode').trim().toUpperCase())
+        .select('id, status, expires_at, code, business_id, role_assigned')
+        .eq('code', code)
+        .maybeSingle()
+
+      if (dbError) {
+        setError('Server error. Try again.')
+        return
+      }
+
+      if (!invite) {
+        setError('Invalid invitation code')
+        return
+      }
+
+      if (invite.status !== 'pending') {
+        setError('This invitation is already used or expired')
+        return
+      }
+
+      if (invite.expires_at && new Date(invite.expires_at) < new Date()) {
+        setError('This invitation has expired')
+        return
+      }
+
+      setStep(2)
+    } catch {
+      setError('Connection error. Try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  /* ───────────────────────── FINAL SUBMIT ───────────────────────── */
+  const onSubmit = async (form: Form) => {
+    setLoading(true)
+    setError(null)
+
+    try {
+      const phone = form.phone.startsWith('0')
+        ? '+251' + form.phone.slice(1)
+        : form.phone
+
+      const inviteCode = form.inviteCode.trim().toUpperCase()
+
+      // 1. Get invite again (safe + authoritative)
+      const { data: invite } = await supabase
+        .from('staff_invitations')
+        .select('id, business_id, role_assigned, status, expires_at')
+        .eq('code', inviteCode)
         .single()
 
-      if (inviteErr || !invite) {
-        setServerErr(t('Invalid invitation code.', 'የተሳሳተ የጋበዣ ኮድ ነው።'))
+      if (!invite) {
+        setError('Invalid invitation')
         return
       }
 
-      if (invite.status === 'used') {
-        setServerErr(t('This invitation has already been claimed.', 'ይህ የጋበዣ ኮድ አገልግሎት ላይ ውሏል።'))
-        return
-      }
-
-      // Invitation is active and pristine! Move to password initialization
-      setStep(2)
-    } catch (err) {
-      setServerErr(t('Connection timeout. Try again.', 'ግንኙነት ተቋርጧል። እንደገና ይሞክሩ።'))
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const onSubmit = async (data: Form) => {
-    setIsLoading(true)
-    setServerErr(null)
-
-    const formattedPhone = formatToEthiopianStandard(data.phone)
-
-    try {
-      /*
-        🚀 Standard Native Client Auth Sign-Up:
-        Your background database triggers will intercept this payload, confirm the inviteCode matches,
-        link the profile to the correct store company ID, and provision the application roles.
-      */
-      const { data: authData, error: authErr } = await supabase.auth.signUp({
-        phone: formattedPhone,
-        password: data.password,
+      // 2. Signup user
+      const { data, error: authError } = await supabase.auth.signUp({
+        phone,
+        password: form.password,
         options: {
           data: {
-            full_name: data.fullName,
-            invite_code: data.inviteCode,
-            is_staff: true
+            full_name: form.fullName,
+            invite_code: inviteCode,
+            is_staff: true,
+            business_id: invite.business_id,
+            role: invite.role_assigned
           }
-        },
+        }
       })
 
-      if (authErr) {
-        setServerErr(authErr.message)
+      if (authError) {
+        setError(authError.message)
         return
       }
 
-      if (!authData?.user) {
-        setServerErr(t('Activation failed.', 'ማግበር አልተሳካም።'))
+      if (!data.user) {
+        setError('Signup failed. Try again.')
         return
       }
 
-      // Success! Send the operational worker straight into their dashboard frame workspace
-      router.push(`/${lang}/dashboard`)
-    } catch (err) {
-      setServerErr(t('Something went wrong.', 'ችግር ተከሰተ።'))
+      // 3. Assign DEFAULT branch (safe fallback)
+      const { data: defaultBranch } = await supabase
+        .from('branches')
+        .select('id')
+        .eq('business_id', invite.business_id)
+        .eq('is_main', true)
+        .single()
+
+      const branchId = defaultBranch?.id ?? null
+
+      // 4. Create profile (IMPORTANT STEP)
+      await supabase.from('profiles').insert({
+        id: data.user.id,
+        full_name: form.fullName,
+        phone,
+        business_id: invite.business_id,
+        branch_id: branchId,
+        role: invite.role_assigned,
+        is_active: true,
+        onboarding_completed: false
+      })
+
+      // 5. Mark invite as used
+      await supabase
+        .from('staff_invitations')
+        .update({
+          status: 'used',
+          used_at: new Date().toISOString()
+        })
+        .eq('id', invite.id)
+
+      // 6. Redirect (NO onboarding for staff)
+      router.push(`/${locale}/dashboard`)
+
+    } catch {
+      setError('Something went wrong')
     } finally {
-      setIsLoading(false)
+      setLoading(false)
     }
   }
 
-  const inputCls = (hasErr: boolean) =>
-    `w-full px-4 text-[15px] text-[#2B1E1A] placeholder:text-[#9b7b74]/50 bg-[#F7F4EB]/60 
-     outline-none rounded-xl border transition-colors focus:border-[#8B2635] focus:bg-white
-     min-h-[52px] ${hasErr ? 'border-red-400 ring-1 ring-red-400' : 'border-[#2B1E1A]/15'}`
-
   return (
-    <div className="min-h-screen bg-[#F7F4EB] flex flex-col font-['DM_Sans',sans-serif]">
-      
-      {/* ─── Navigation Header ────────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-4 pt-4 pb-2 max-w-sm w-full mx-auto">
-        <span className="font-['Playfair_Display',serif] font-bold text-xl text-[#8B2635] tracking-tight">
-          ሊዩ <span className="text-[#E2A03F]">POS</span>
-        </span>
-        <button 
-          onClick={() => setLang(l => l === 'am' ? 'en' : 'am')}
-          className="text-xs font-semibold text-[#5a3e38] px-3 py-1.5 rounded-full border border-[#2B1E1A]/15 bg-white min-h-[36px] shadow-sm"
-        >
-          {lang === 'am' ? 'English' : 'አማርኛ'}
-        </button>
-      </div>
+    <div className="min-h-screen bg-cream-100 flex items-center justify-center px-4">
 
-      <main className="flex-1 flex items-start justify-center px-4 py-4">
-        <div className="w-full max-w-sm">
-          <div className="bg-white rounded-2xl border border-[#2B1E1A]/10 overflow-hidden shadow-xl">
-            
-            {/* Context Banner Top Cap */}
-            <div className="bg-[#2B1E1A] px-5 py-5 text-white">
-              <div className="flex items-center space-x-2">
-                <Sparkles className="w-4 h-4 text-[#E2A03F]" />
-                <h1 className="font-['Playfair_Display',serif] font-bold text-xl tracking-tight">
-                  {t('Staff Activation', 'የሰራተኛ ማግበሪያ')}
-                </h1>
-              </div>
-              <p className="text-white/60 text-xs mt-1">
-                {t('Activate your account using your store invitation key.', 'በድርጅትዎ የተሰጠዎትን የጋበዣ ኮድ በመጠቀም አካውንትዎን ያግብሩ።')}
-              </p>
-            </div>
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-lg border border-cream-200 p-5">
 
-            <div className="px-5 py-5">
-              {serverErr && (
-                <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 text-red-700 rounded-xl px-3 py-3 mb-4 text-xs font-medium">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-500" />
-                  <span>{serverErr}</span>
-                </div>
-              )}
+        <h1 className="text-xl font-bold text-coffee-700 mb-4">
+          Staff Activation
+        </h1>
 
-              <form onSubmit={handleSubmit(onSubmit)} noValidate>
-                
-                {/* ── STEP 1: VALIDATE INVITATION KEY ── */}
-                {step === 1 && (
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-[11px] font-bold uppercase tracking-wider text-[#5a3e38] mb-1.5">
-                        {t('Invitation Code', 'የጋበዣ ኮድ')}
-                      </label>
-                      <input 
-                        {...register('inviteCode')} 
-                        placeholder="e.g. LY-4982"
-                        className={`${inputCls(!!errors.inviteCode)} font-mono uppercase font-black tracking-widest`}
-                      />
-                      {errors.inviteCode && (
-                        <p className="text-red-500 text-[11px] mt-1 font-medium">{errors.inviteCode.message}</p>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-bold uppercase tracking-wider text-[#5a3e38] mb-1.5">
-                        {t('Your Full Name', 'የእርስዎ ሙሉ ስም')}
-                      </label>
-                      <input 
-                        {...register('fullName')} 
-                        placeholder={t('e.g. Almaz Ayana', 'ምሳሌ፡ አልማዝ አያና')}
-                        className={inputCls(!!errors.fullName)}
-                      />
-                      {errors.fullName && (
-                        <p className="text-red-500 text-[11px] mt-1 font-medium">{errors.fullName.message}</p>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-bold uppercase tracking-wider text-[#5a3e38] mb-1.5">
-                        {t('Phone Number', 'ስልክ ቁጥር')}
-                      </label>
-                      <input 
-                        {...register('phone')} 
-                        type="tel" 
-                        placeholder="0911223344"
-                        className={inputCls(!!errors.phone)}
-                      />
-                      {errors.phone && (
-                        <p className="text-red-500 text-[11px] mt-1 font-medium">{errors.phone.message}</p>
-                      )}
-                    </div>
-
-                    <button 
-                      type="button" 
-                      onClick={verifyInvitationStep}
-                      disabled={isLoading}
-                      className="w-full flex items-center justify-center gap-2 bg-[#8B2635] hover:bg-[#7a1f2d] text-white font-semibold text-[15px] rounded-xl shadow-md min-h-[52px] disabled:opacity-50"
-                    >
-                      {isLoading ? t('Verifying Link...', 'እያረጋገጠ ነው...') : t('Verify Invitation', 'ኮድ አረጋግጥ')}
-                      <ArrowRight className="w-4 h-4" />
-                    </button>
-                  </div>
-                )}
-
-                {/* ── STEP 2: ACCOUNT SECURITY PASSWORD ASSIGNMENT ── */}
-                {step === 2 && (
-                  <div className="space-y-4">
-                    <div className="p-3 bg-[#F7F4EB]/80 rounded-xl border border-[#2B1E1A]/10 text-xs">
-                      <div className="text-[#9b7b74] font-medium">{t('Verified Invite Code:', 'የተረጋገጠ ጋበዣ ኮድ፡')}</div>
-                      <div className="font-mono font-black text-sm text-[#2B1E1A] tracking-wider mt-0.5">{watch('inviteCode').toUpperCase()}</div>
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-bold uppercase tracking-wider text-[#5a3e38] mb-1.5">
-                        {t('Create Password', 'የይለፍ ቃል ይፍጠሩ')}
-                      </label>
-                      <div className="relative">
-                        <input 
-                          {...register('password')} 
-                          type={showPw ? 'text' : 'password'}
-                          placeholder="••••••••"
-                          className={inputCls(!!errors.password) + ' pr-12'}
-                        />
-                        <button 
-                          type="button" 
-                          onClick={() => setShowPw(v => !v)}
-                          className="absolute right-1 top-1/2 -translate-y-1/2 p-2 text-[#9b7b74]"
-                        >
-                          {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                        </button>
-                      </div>
-                      {errors.password && (
-                        <p className="text-red-500 text-[11px] mt-1 font-medium">{errors.password.message}</p>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-bold uppercase tracking-wider text-[#5a3e38] mb-1.5">
-                        {t('Confirm Password', 'የይለፍ ቃልዎን ያረጋግጡ')}
-                      </label>
-                      <input 
-                        {...register('confirm')} 
-                        type="password"
-                        placeholder="••••••••"
-                        className={inputCls(!!errors.confirm)}
-                      />
-                      {errors.confirm && (
-                        <p className="text-red-500 text-[11px] mt-1 font-medium">{errors.confirm.message}</p>
-                      )}
-                    </div>
-
-                    <button 
-                      type="submit" 
-                      disabled={isLoading}
-                      className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-[15px] rounded-xl shadow-md min-h-[52px]"
-                    >
-                      {isLoading ? t('Activating Profile...', 'እያነቀሳቀሰ ነው...') : t('Activate Terminal Access', 'ስራ ጀምር')}
-                      <CheckCircle className="w-4 h-4" />
-                    </button>
-                  </div>
-                )}
-
-              </form>
-            </div>
+        {error && (
+          <div className="flex gap-2 text-sm text-red-600 bg-red-50 p-3 rounded-xl mb-3">
+            <AlertCircle className="w-4 h-4" />
+            {error}
           </div>
-        </div>
-      </main>
+        )}
+
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+
+          {step === 1 && (
+            <>
+              <input
+                {...register('inviteCode')}
+                placeholder="Invite Code"
+                className={inputClass + " uppercase font-mono"}
+              />
+
+              <input
+                {...register('fullName')}
+                placeholder="Full Name"
+                className={inputClass}
+              />
+
+              <input
+                {...register('phone')}
+                placeholder="Phone (+251...)"
+                className={inputClass}
+              />
+
+              <button
+                type="button"
+                onClick={verifyInvite}
+                disabled={loading}
+                className="w-full h-[52px] bg-berbere-500 text-white rounded-xl font-bold"
+              >
+                {loading ? 'Checking...' : 'Verify Invitation'}
+                <ArrowRight className="inline ml-2 w-4 h-4" />
+              </button>
+            </>
+          )}
+
+          {step === 2 && (
+            <>
+              <div className="text-sm text-coffee-600">
+                Code: <b>{watch('inviteCode')}</b>
+              </div>
+
+              <div className="relative">
+                <input
+                  {...register('password')}
+                  type={showPw ? 'text' : 'password'}
+                  placeholder="Password"
+                  className={inputClass}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPw(!showPw)}
+                  className="absolute right-3 top-3"
+                >
+                  {showPw ? <EyeOff /> : <Eye />}
+                </button>
+              </div>
+
+              <input
+                {...register('confirm')}
+                type="password"
+                placeholder="Confirm Password"
+                className={inputClass}
+              />
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full h-[52px] bg-gold-400 text-white rounded-xl font-bold flex items-center justify-center gap-2"
+              >
+                <CheckCircle className="w-4 h-4" />
+                {loading ? 'Activating...' : 'Activate Account'}
+              </button>
+            </>
+          )}
+
+        </form>
+      </div>
     </div>
   )
 }

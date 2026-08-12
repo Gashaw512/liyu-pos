@@ -2,8 +2,12 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import type { Route } from 'next'
 import { ChevronLeft, Shield, Phone, User, Trash2 } from "lucide-react";
-import StaffUpdateRoleForm from "@/components/user/StaffWorkspaceTabs"
+// import StaffUpdateRoleForm from "@/components/user/StaffWorkspaceTabs"
+import StaffUpdateRoleForm from "@/components/user/StaffUpdateRoleForm"
+
+
 
 interface PageProps {
   params: Promise<{ locale: string; id: string }>;
@@ -15,7 +19,7 @@ export default async function StaffProfileDetailPage({ params }: PageProps) {
   const isAm = locale === 'am';
 
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect(`/${locale}/auth/login`);
+  if (!user) redirect(`/${locale}/login` as Route);
 
   // Verify authorization parameters
   const { data: currentUserProfile } = await supabase

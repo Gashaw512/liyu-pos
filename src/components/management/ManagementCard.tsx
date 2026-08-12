@@ -2,18 +2,19 @@
 
 import Link from 'next/link'
 import { ChevronRight } from 'lucide-react'
+import { Route } from 'next';
 
 interface ManagementCardProps {
   title: string;
   description: string;
-  emoji: string;
+  // emoji: string;
   route: string;
 }
 
 export default function ManagementCard({ title, description,  route }: ManagementCardProps) {
   return (
     <Link 
-      href={route}
+      href={route as Route}
       className="flex items-center justify-between p-4 hover:bg-cream-50/40 active:bg-cream-50 transition-colors group w-full text-left"
     >
       <div className="flex items-center gap-3.5 min-w-0">

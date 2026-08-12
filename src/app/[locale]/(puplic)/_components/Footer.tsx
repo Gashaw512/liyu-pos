@@ -3,6 +3,7 @@
 import React from 'react'
 import Link from 'next/link'
 import { ArrowRight, CheckCircle, Mail, Phone, MapPin } from 'lucide-react'
+import { Route } from 'next'
 
 interface FooterProps {
   lang: 'en' | 'am'
@@ -94,8 +95,8 @@ export function Footer({ lang }: { lang: 'en' | 'am' }) {
               {t('Legal', 'ህጋዊ')}
             </h4>
             <ul className="space-y-2 text-xs text-cream-100/70">
-              <li><Link href={`/${lang}/privacy`} className="hover:text-white hover:underline transition-colors">{t('Privacy Policy', 'የግላዊነት ፖሊሲ')}</Link></li>
-              <li><Link href={`/${lang}/terms`} className="hover:text-white hover:underline transition-colors">{t('Terms of Service', 'የአጠቃቀም ውሎች')}</Link></li>
+              <li><Link href={`/${lang}/privacy` as Route} className="hover:text-white hover:underline transition-colors">{t('Privacy Policy', 'የግላዊነት ፖሊሲ')}</Link></li>
+              <li><Link href={`/${lang}/terms` as Route} className="hover:text-white hover:underline transition-colors">{t('Terms of Service', 'የአጠቃቀም ውሎች')}</Link></li>
             </ul>
           </div>
 

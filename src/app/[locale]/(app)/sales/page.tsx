@@ -110,6 +110,7 @@ export default function POSPage() {
   }, [])
 
   // Auto load active items whenever a table button is pressed
+  // Auto load active items whenever a table button is pressed
   useEffect(() => {
     async function syncActiveTableTab() {
       if (!selectedTable) {
@@ -120,8 +121,20 @@ export default function POSPage() {
         const db = await getDB()
         if (db.objectStoreNames.contains('open_tabs')) {
           const existingTab = await db.get('open_tabs', selectedTable.id)
-          if (existingTab && existingTab.items) {
-            setCart(existingTab.items)
+          
+          if (existingTab && Array.isArray(existingTab.items)) {
+            // Map keys instantly to resolve TypeScript definitions without altering database entries
+            const formattedCartItems = existingTab.items.map((item: any) => ({
+              id: item.product_id || item.id,
+              name: item.product_name || item.name || '',
+              quantity: Number(item.quantity || 1),
+              price: Number(item.unit_price || item.price || 0),
+              // Preserve database keys implicitly as backup references if business rules need them
+              product_id: item.product_id || item.id,
+              product_name: item.product_name || item.name || '',
+              unit_price: Number(item.unit_price || item.price || 0)
+            }))
+            setCart(formattedCartItems)
           } else {
             setCart([]) 
           }
@@ -132,6 +145,7 @@ export default function POSPage() {
     }
     syncActiveTableTab()
   }, [selectedTable])
+
 
   const handleOpenShift = async () => {
     setOpeningShift(true)
@@ -231,18 +245,32 @@ export default function POSPage() {
   const totalBill = cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
   const totalItemsCount = cart.reduce((sum, item) => sum + item.quantity, 0)
 
-  const handleSaveTab = async () => {
+    const handleSaveTab = async () => {
     if (!selectedTable) return
     setSavingTab(true)
     try {
       const db = await getDB()
+      
+      // Map frontend cart properties back to your exact database keys
+      const formattedDatabaseItems = cart.map((item: any) => ({
+        product_id: item.id || item.product_id,
+        product_name: item.name || item.product_name || '',
+        quantity: Number(item.quantity || 1),
+        unit_price: Number(item.price || item.unit_price || 0),
+        // Keep standard keys too so no component layer breaks
+        id: item.id || item.product_id,
+        name: item.name || item.product_name || '',
+        price: Number(item.price || item.unit_price || 0)
+      }))
+
       const tabPayload = {
         id: selectedTable.id,
         table_number: selectedTable.name, 
         updated_at: new Date().toISOString(),
-        items: cart,
+        items: formattedDatabaseItems, // 👈 Uses the structurally secure array mapping
         total_accumulated: totalBill
       }
+      
       await db.put('open_tabs', tabPayload)
       
       await loadPOSData()

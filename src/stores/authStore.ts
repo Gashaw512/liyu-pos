@@ -1,6 +1,9 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { Profile, Business } from '@/types'
+import type { Business } from '@/types/database/business'
+import type { Profile } from '@/types/database/users'
+// ✅ Crucial change: Pulling the unified contract definition from your central system folder
+import { Permission } from '@/types/permissions' 
 
 interface AuthState {
   user: Profile | null
@@ -13,12 +16,18 @@ interface AuthState {
   hasPermission: (action: Permission) => boolean
 }
 
+/**
+ * 🏢 Scalable Enterprise Role-Based Access Control (RBAC) Matrix
+ * Leverages native domain wildcards directly corresponding with your POS framework
+ */
 const ROLE_PERMISSIONS: Record<string, Permission[]> = {
-  owner: ['all'],
-  manager: ['view_reports','manage_products','manage_staff',
-             'process_sales','manage_inventory','close_shifts'],
-  cashier: ['process_sales','view_own_shifts','view_products'],
-  inventory_clerk: ['manage_inventory','view_products'],
+  owner: ['*'], 
+  manager: ['sales:*', 'inventory:*', 'reports:*', 'staff:*'],
+  cashier: ['sales:create', 'sales:view'],
+  inventory_clerk: ['inventory:update'],
+  kitchen: ['sales:view'],
+  waiter: ['sales:create', 'sales:view'],
+  barman: ['sales:create', 'sales:view']
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -28,16 +37,45 @@ export const useAuthStore = create<AuthState>()(
       business: null,
       isLoading: true,
       isAuthenticated: false,
-      setUser: (user) => set({ user, isAuthenticated: !!user }),
+      
+      setUser: (user) => set({ user, isAuthenticated: !!user, isLoading: false }),
       setBusiness: (business) => set({ business }),
-      logout: () => set({ user: null, business: null, isAuthenticated: false }),
-      hasPermission: (action) => {
+      logout: () => set({ user: null, business: null, isAuthenticated: false, isLoading: false }),
+      
+      /**
+       * ⚡ Multi-Tier Enterprise Permission Evaluation Engine
+       * Safely validates absolute global wildcards, explicit actions, and custom scopes
+       */
+      hasPermission: (action: Permission): boolean => {
         const { user } = get()
-        if (!user) return false
-        const perms = ROLE_PERMISSIONS[user.role] || []
-        return perms.includes('all') || perms.includes(action)
+        if (!user || !user.role) return false
+        
+        const activeRole = String(user.role).toLowerCase().trim()
+        const assignedPermissions = ROLE_PERMISSIONS[activeRole] || []
+        
+        // Tier 1: Check absolute global admin clearance override
+        if (assignedPermissions.includes('*')) return true
+        
+        // Tier 2: Check explicit exact string match (100% legacy token safety fallback)
+        if (assignedPermissions.includes(action)) return true
+        
+        // Tier 3: Safely evaluate domain wildcard scopes (e.g., checks 'sales:*' for 'sales:create')
+        if (action.includes(':')) {
+          const [domain] = action.split(':')
+          const hasDomainWildcard = assignedPermissions.some(
+            (p) => p === '*' || p === `${domain}:*`
+          )
+          if (hasDomainWildcard) return true
+        }
+        
+        return false
       },
     }),
-    { name: 'liyu-auth' }
+    { 
+      name: 'liyu-auth',
+      onRehydrateStorage: () => (state) => {
+        if (state) state.isLoading = false
+      }
+    }
   )
 )

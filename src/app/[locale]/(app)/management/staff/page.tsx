@@ -2,6 +2,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import type { Route } from 'next'
 import { UserPlus, Clock, ShieldAlert, ArrowRight, UserCheck } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +18,7 @@ export default async function StaffDirectoryPage({ params }: PageProps) {
 
   // 1. Enforce Authentication Guard
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect(`/${locale}/auth/login`);
+  if (!user) redirect(`/${locale}/auth/login` as Route);
 
   // 2. Authorize Roles: Only owner or manager can view
   const { data: profile } = await supabase
@@ -67,7 +68,7 @@ export default async function StaffDirectoryPage({ params }: PageProps) {
       {/* 🎯 BIG TOUCH TILES FOR EASY NAVIGATION */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Link 
-          href={`/${locale}/staff/invite`}
+          href={`/${locale}/staff/invite` as Route}
           className="flex items-center justify-between p-5 bg-coffee-950 text-white rounded-2xl active:scale-[0.98] transition-transform shadow-md"
         >
           <div className="flex items-center gap-4">
@@ -114,7 +115,7 @@ export default async function StaffDirectoryPage({ params }: PageProps) {
           {staffMembers?.map((staff) => (
             <Link
               key={staff.id}
-              href={`/${locale}/staff/${staff.id}`}
+              href={`/${locale}/staff/${staff.id}` as Route}
               className="flex items-center justify-between p-4 hover:bg-cream-50/40 active:bg-cream-50 transition-colors w-full block text-left"
             >
               <div className="space-y-0.5 max-w-[70%]">

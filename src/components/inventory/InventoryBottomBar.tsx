@@ -34,7 +34,7 @@ export default function InventoryBottomBar({
       <div className="max-w-3xl mx-auto">
         <Button
           fullWidth
-          size="lg"
+          className="py-3 text-base" 
           loading={loading}
           onClick={onSave}
         >

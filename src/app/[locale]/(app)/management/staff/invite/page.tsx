@@ -2,8 +2,12 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import type { Route } from 'next'
 import { ChevronLeft } from "lucide-react";
-import InviteStaffForm from "@/components/user/StaffWorkspaceTabs";
+// import InviteStaffForm from "@/components/user/StaffWorkspaceTabs";
+// 1. Change line 7 to import the actual wizard form component:
+import InviteStaffWizard from "@/components/user/InviteStaffWizard";
+
 
 interface PageProps {
   params: Promise<{ locale: string }>;
@@ -15,7 +19,7 @@ export default async function InviteStaffPage({ params }: PageProps) {
   const isAm = locale === 'am';
 
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect(`/${locale}/auth/login`);
+  if (!user) redirect(`/${locale}/auth/login` as Route);
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -52,7 +56,7 @@ export default async function InviteStaffPage({ params }: PageProps) {
         </div>
 
         {/* Form Client Core component interaction */}
-        <InviteStaffForm locale={locale} businessId={profile.business_id} />
+        <InviteStaffWizard locale={locale} />
       </div>
 
     </div>

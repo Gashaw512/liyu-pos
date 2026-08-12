@@ -13,12 +13,12 @@ export const dynamic = 'force-dynamic';
 export default function ProductStockTakePage() {
   const params = useParams()
   const isAm = params.locale === 'am'
-  
+
   const [products, setProducts] = useState<InventoryProduct[]>([])
   const [categoriesList, setCategoriesList] = useState<{ id: string; name: string; name_am: string | null; icon?: string }[]>([])
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL')
   const [searchQuery, setSearchQuery] = useState<string>('')
-  
+
   const [counts, setCounts] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
 
@@ -28,7 +28,7 @@ export default function ProductStockTakePage() {
       try {
         const data = await getLocalInventoryProducts()
         setProducts(data)
-        
+
         // Build a unique array of categories from products to drive our layout carousel chips
         const uniqueCategoriesMap = new Map()
         data.forEach(p => {
@@ -72,11 +72,11 @@ export default function ProductStockTakePage() {
         alert(isAm ? '❌ እባክዎ መጀመሪያ ሽፍት ይክፈቱ!' : '❌ Please open a shift before counting inventory!')
         return
       }
-      
+
       const tx = db.transaction('pending_stock_reconciliations', 'readwrite')
       const store = tx.objectStore('pending_stock_reconciliations')
       const now = new Date().toISOString()
-      
+
       let changeDetected = false
 
       for (const product of products) {
@@ -87,7 +87,7 @@ export default function ProductStockTakePage() {
 
         changeDetected = true
         const uuid = crypto.randomUUID()
-        
+
         const singleStockRow: LocalPendingStockCount = {
           localId: uuid,
           createdAt: now,
@@ -122,9 +122,9 @@ export default function ProductStockTakePage() {
   const filteredProducts = useMemo(() => {
     return products.filter(product => {
       const matchesCategory = selectedCategory === 'ALL' || product.category_id === selectedCategory
-      
+
       const normalizedQuery = searchQuery.toLowerCase().trim()
-      const matchesSearch = !normalizedQuery || 
+      const matchesSearch = !normalizedQuery ||
         product.name.toLowerCase().includes(normalizedQuery) ||
         product.name_am?.toLowerCase().includes(normalizedQuery) ||
         product.barcode?.toLowerCase().includes(normalizedQuery)
@@ -147,7 +147,7 @@ export default function ProductStockTakePage() {
   return (
     // Note: 'pb-40' guarantees bottom items are scrollable above the fixed buttons
     <div className="min-h-screen bg-slate-50 pt-2 pb-40 select-none">
-      
+
       {/* Offline Status Top Ribbon Banner */}
       <div className="mx-4 mb-4 bg-slate-900 px-4 py-2.5 rounded-xl flex justify-between items-center text-white shadow-sm">
         <div className="flex items-center gap-2 text-xs font-semibold">
@@ -170,10 +170,10 @@ export default function ProductStockTakePage() {
       </div>
 
       <div className="px-4 space-y-4">
-        
+
         {/* Simple Fast Search Field Input wrapper */}
         <div className="relative">
-          <input 
+          <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -196,15 +196,14 @@ export default function ProductStockTakePage() {
             <button
               type="button"
               onClick={() => setSelectedCategory('ALL')}
-              className={`h-9 px-4 rounded-xl text-xs font-bold transition-all shrink-0 border active:scale-95 ${
-                selectedCategory === 'ALL'
+              className={`h-9 px-4 rounded-xl text-xs font-bold transition-all shrink-0 border active:scale-95 ${selectedCategory === 'ALL'
                   ? 'bg-slate-950 border-slate-950 text-white shadow-sm'
                   : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-              }`}
+                }`}
             >
               🌟 {isAm ? 'ሁሉም' : 'All'} ({products.length})
             </button>
-            
+
             {categoriesList.map((cat) => {
               const countPerCat = products.filter(p => p.category_id === cat.id).length
               return (
@@ -212,11 +211,10 @@ export default function ProductStockTakePage() {
                   key={cat.id}
                   type="button"
                   onClick={() => setSelectedCategory(cat.id)}
-                  className={`h-9 px-4 rounded-xl text-xs font-bold transition-all shrink-0 border active:scale-95 ${
-                    selectedCategory === cat.id
+                  className={`h-9 px-4 rounded-xl text-xs font-bold transition-all shrink-0 border active:scale-95 ${selectedCategory === cat.id
                       ? 'bg-slate-950 border-slate-950 text-white shadow-sm'
                       : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                  }`}
+                    }`}
                 >
                   {cat.icon || '🏷️'} {isAm && cat.name_am ? cat.name_am : cat.name} ({countPerCat})
                 </button>
@@ -241,13 +239,12 @@ export default function ProductStockTakePage() {
               const categoryBadgeColor = product.category_color || '#64748b';
 
               return (
-                <div 
-                  key={product.id} 
-                  className={`bg-white p-4 rounded-2xl border transition-all ${
-                    hasChanged 
-                      ? 'border-amber-400 ring-2 ring-amber-50 shadow-md' 
+                <div
+                  key={product.id}
+                  className={`bg-white p-4 rounded-2xl border transition-all ${hasChanged
+                      ? 'border-amber-400 ring-2 ring-amber-50 shadow-md'
                       : 'border-slate-200 shadow-sm'
-                  }`}
+                    }`}
                 >
                   <div className="flex justify-between items-start mb-4">
                     <div>
@@ -278,6 +275,8 @@ export default function ProductStockTakePage() {
                     currentCount={counts[product.id] ?? 0}
                     onCountChange={(newCount) => handleCountChange(product.id, newCount)}
                     isAm={isAm}
+                    costPrice={product.cost_price || 0}
+                    retailPrice={product.retail_price || 0}
                   />
                 </div>
               )

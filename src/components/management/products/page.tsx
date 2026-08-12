@@ -110,14 +110,20 @@ export default function ProductsManagementPage() {
         const pNameAm = p.name_am || p.name || ''
         const normalizationKey = `${pNameEn.toLowerCase().trim()}_${pNameAm.toLowerCase().trim()}`
 
+        // Calculate combined totals from all available branches
         const actualStockBalance = (rawInventory || [])
           .filter((inv) => inv.product_id === p.id)
           .reduce((sum, item) => sum + (item.quantity || 0), 0)
 
-        const catEn = p.categories?.name || (isAm ? 'መደበኛ' : 'General')
-        const catAm = p.categories?.name_am || p.categories?.name || (isAm ? 'መደበኛ' : 'General')
+        const joinedCategory: any = Array.isArray(p.categories) 
+          ? p.categories[0] 
+          : p.categories
+
+        const catEn = joinedCategory?.name || (isAm ? 'መደበኛ' : 'General')
+        const catAm = joinedCategory?.name_am || joinedCategory?.name || (isAm ? 'መደበኛ' : 'General')
 
         if (!uniqueProductMap[normalizationKey]) {
+
           uniqueProductMap[normalizationKey] = {
             id: p.id,
             nameEn: pNameEn,

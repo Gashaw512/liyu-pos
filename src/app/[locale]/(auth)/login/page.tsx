@@ -71,8 +71,7 @@ export default function LoginPage() {
         )
         return
       }
-
-      // Check structural progress state
+      
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         const { data: profile } = await supabase

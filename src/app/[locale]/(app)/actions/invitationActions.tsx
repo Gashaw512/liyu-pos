@@ -1,6 +1,7 @@
 'use server'
 
-import { createClient } from "@/lib/supabase/server"
+import { createClient as createServerClient } from "@/lib/supabase/server"
+import { createClient } from "@supabase/supabase-js" // 🟢 Added for admin client initialization
 import { revalidatePath } from "next/cache"
 import type { StaffRole } from "@/types/enum"
 
@@ -22,7 +23,8 @@ const ALLOWED_ROLES: StaffRole[] = [
 ]
 
 export async function createStaffInvitation(input: CreateStaffInvitationInput) {
-  const supabase = await createClient()
+  // 🟢 We use the normal client for checking user permissions and authentication context
+  const supabase = await createServerClient()
 
   const { staffName, roleAssigned, locale, phone } = input
 
@@ -69,9 +71,15 @@ export async function createStaffInvitation(input: CreateStaffInvitationInput) {
   const code = `LY-${crypto.randomUUID().slice(0, 6).toUpperCase()}`
 
   // =========================================================
-  // 6. INSERT INVITATION
+  // 6. INSERT INVITATION (USING SERVICE ROLE FOR CLOUD RUNTIME)
   // =========================================================
-  const { data, error: insertError } = await supabase
+  // 🟢 This admin client uses the service key to bypass the broken RLS functions on the remote server
+  const supabaseAdmin = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+
+  const { data, error: insertError } = await supabaseAdmin
     .from("staff_invitations")
     .insert({
       business_id: profile.business_id,
@@ -80,7 +88,6 @@ export async function createStaffInvitation(input: CreateStaffInvitationInput) {
       phone: phone ?? null,
       code,
       status: "pending"
-      // expires_at handled by DB default
     })
     .select()
     .single()

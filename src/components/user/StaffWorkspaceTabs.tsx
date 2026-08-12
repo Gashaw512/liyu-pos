@@ -7,14 +7,14 @@ import StaffTable from "./StaffTable";
 
 interface TabsProps {
   locale: string;
-  staffMembers: any[];
-  pendingInvites: any[];
+  staffMembers?: any[];    
+  pendingInvites?: any[];   
 }
 
 export default function StaffWorkspaceTabs({
   locale,
-  staffMembers,
-  pendingInvites,
+  staffMembers = [],     
+  pendingInvites = [],    
 }: TabsProps) {
   const isAm = locale === "am";
 
@@ -33,7 +33,7 @@ export default function StaffWorkspaceTabs({
       id: "active",
       label: isAm ? "ሰራተኞች" : "Staff",
       icon: Users,
-      count: staffMembers.length,
+      count: staffMembers?.length || 0,
     },
     {
       id: "invite",
@@ -45,7 +45,7 @@ export default function StaffWorkspaceTabs({
       id: "pending",
       label: isAm ? "ግብዣዎች" : "Invitations",
       icon: MailQuestion,
-      count: pendingInvites.length,
+      count: pendingInvites?.length || 0, 
     },
   ];
 
@@ -61,7 +61,7 @@ export default function StaffWorkspaceTabs({
           </p>
 
           <p className="text-2xl font-black text-coffee-950 mt-1">
-            {staffMembers.length}
+            {staffMembers?.length || 0} 
           </p>
         </div>
 
@@ -71,7 +71,7 @@ export default function StaffWorkspaceTabs({
           </p>
 
           <p className="text-2xl font-black text-berbere-600 mt-1">
-            {pendingInvites.length}
+            {pendingInvites?.length || 0} 
           </p>
         </div>
       </div>

@@ -95,3 +95,28 @@ export interface LocalTableConfiguration {
   table_number?: string | number;
   status?: 'vacant' | 'occupied' | 'dirty' | 'reserved';
 }
+
+
+// Add this directly to the bottom of src/types/models/pos-cart.ts
+
+/**
+ * 🛒 FRONTEND ACTIVE CART LINE ITEM INTERFACE
+ * Standardized across your state manager stores and sales layouts.
+ */
+export interface CartItem {
+  id: string;          // Maps to product_id
+  name: string;        // Maps to product_name
+  quantity: number;
+  price: number;       // Maps to unit_price
+  
+  // Implicit database backward-compatible tracking fallbacks
+  product_id?: string;
+  product_name?: string;
+  unit_price?: number;
+}
+
+/**
+ * 💳 TRANSACTION SETTLEMENT METADATA
+ * Supports robust multi-channel point-of-sale checkout modes.
+ */
+export type PaymentMethod = 'cash' | 'telebirr' | 'cbe_birr' | 'card' | 'credit';

@@ -5,6 +5,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { Eye, EyeOff, ArrowRight, WifiOff, AlertCircle, Phone } from 'lucide-react'
 import createClient from '../../../../lib/supabase/client'
+import { Route } from 'next'
 
 type Lang = 'am' | 'en'
 type Mode = 'phone' | 'pin'
@@ -71,7 +72,7 @@ export default function LoginPage() {
         )
         return
       }
-      
+
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         const { data: profile } = await supabase
@@ -234,7 +235,7 @@ export default function LoginPage() {
                       <label className="text-[11px] font-bold uppercase tracking-wider text-[#5a3e38]">
                         {t('Password', 'የሚስጥር ቃል')}
                       </label>
-                      <Link href={`/${lang}/forgot-password`} className="text-[11px] text-[#8B2635] hover:underline">
+                      <Link href={`/${lang}/forgot-password` as Route} className="text-[11px] text-[#8B2635] hover:underline">
                         {t('Forgot?', 'ረሳዎ?')}
                       </Link>
                     </div>

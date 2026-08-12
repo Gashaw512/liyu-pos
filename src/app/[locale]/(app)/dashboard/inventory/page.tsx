@@ -6,7 +6,6 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import createClient from '@/lib/supabase/client'
 import {
-  Layers,
   ShoppingBag,
   Plus,
   Trash2,
@@ -147,10 +146,16 @@ export default function DedicatedInventoryPage() {
           .filter((inv) => inv.product_id === p.id)
           .reduce((sum, item) => sum + (item.quantity || 0), 0)
 
-        const catEn = p.categories?.name || (isAm ? 'መደበኛ' : 'General')
-        const catAm = p.categories?.name_am || p.categories?.name || (isAm ? 'መደበኛ' : 'General')
+        // Handle the Supabase category relationship array or object safely
+        const joinedCategory = Array.isArray(p.categories) 
+          ? p.categories[0] 
+          : p.categories
+
+        const catEn = joinedCategory?.name || (isAm ? 'መደበኛ' : 'General')
+        const catAm = joinedCategory?.name_am || joinedCategory?.name || (isAm ? 'መደበኛ' : 'General')
 
         if (!uniqueProductMap[normalizationKey]) {
+
           uniqueProductMap[normalizationKey] = {
             id: p.id,
             nameEn: pNameEn,

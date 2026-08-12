@@ -14,6 +14,7 @@ import {
   ChevronLeft,
   ChevronRight
 } from "lucide-react"
+import { Route } from "next"
 
 interface BottomNavProps {
   locale: string
@@ -97,7 +98,7 @@ export default function BottomNav({ locale, role }: BottomNavProps) {
             return (
               <Link
                 key={tab.path}
-                href={tab.path}
+                href={tab.path as Route}
                 className={`flex flex-col items-center justify-center gap-1 select-none active:scale-95 transition-all duration-150 ${
                   active ? "text-berbere-500 font-black" : "text-coffee-400 font-bold"
                 }`}
@@ -153,7 +154,7 @@ export default function BottomNav({ locale, role }: BottomNavProps) {
           return (
             <Link
               key={tab.path}
-              href={tab.path}
+              href={tab.path as Route}
               className={`flex items-center h-12 rounded-xl transition-all duration-200 select-none w-full px-4 gap-3 border group relative overflow-hidden active:scale-[0.98] ${
                 active 
                   ? "bg-berbere-50 border-berbere-100 text-berbere-500 font-black shadow-sm" 

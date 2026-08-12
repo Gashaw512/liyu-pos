@@ -1,5 +1,6 @@
 import { ButtonHTMLAttributes } from "react";
-import clsx from "clsx";
+import { type ClassValue, clsx } from "clsx"
+import { twMerge } from "tailwind-merge"
 
 // 🟢 1. Explicitly define all layout & presentation extensions in the type system
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -8,19 +9,25 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   fullWidth?: boolean; // Protects against the inventory page property leak error
 }
 
+// 🟢 2. Build local utility directly to bypass any tsconfig path alias bottlenecks
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs))
+}
+
 export function Button({
   children,
   className,
   variant = "primary",
   loading = false,
   disabled,
-  fullWidth = false, // 🟢 2. Pull it out here so it never reaches ...props
+  fullWidth = false, // 🟢 3. Pull it out here so it never reaches ...props
   ...props
 }: ButtonProps) {
   return (
     <button
       disabled={disabled || loading}
-      className={clsx(
+      // 🟢 4. Swap 'clsx' out for 'cn' to guarantee parent tailwind override mappings work
+      className={cn(
         // Base interactive design footprint
         "min-h-[44px] px-4 rounded-xl font-bold transition-all duration-150 ease-in-out",
         "flex items-center justify-center gap-2 select-none",
@@ -42,13 +49,13 @@ export function Button({
             variant === "danger",
         },
         
-        // 🟢 3. Conditional design tokens applied directly to the class composition layer
+        // Conditional design tokens applied directly to the class composition layer
         fullWidth && "w-full",
         className
       )}
-      {...props} // 🟢 4. Now safe from leaking non-standard DOM properties!
+      {...props} // 🟢 5. Safe from leaking non-standard DOM properties!
     >
-      {/* 🟢 5. Premium loading indicator layout slot integration */}
+      {/* Premium loading indicator layout slot integration */}
       {loading ? (
         <div className="flex items-center gap-2 animate-pulse">
           <svg 

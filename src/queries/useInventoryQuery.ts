@@ -1,101 +1,51 @@
-// // src/queries/useInventoryQueries.ts
+'use client'
 
-// import { supabase } from '@/lib/supabase/client'
-// import { InventoryProduct } from '@/types/inventory'
+import { getSupabaseBrowserClient } from '@/lib/supabase/client'
+import type { InventoryProduct } from '@/types/inventory'
 
-// export async function getInventoryProducts(
-//   businessId: string,
-//   branchId: string
-// ): Promise<InventoryProduct[]> {
-//   const { data, error } = await supabase
-//     .from('products')
-//     .select(`
-//       id,
-//       name,
-//       name_am,
-//       barcode,
-//       sku,
-//       unit_type,
-//       retail_price,
-//       cost_price,
-//       low_stock_alert,
-//       category_id,
+// Raw relational payload types eliminating 'any'
+interface RawCategoryRelation {
+  id: string
+  name: string
+  name_am?: string | null
+  icon?: string | null
+  color?: string | null
+  sort_order?: number
+}
 
-//       categories (
-//         id,
-//         name,
-//         name_am,
-//         icon,
-//         color,
-//         sort_order
-//       ),
+interface RawInventoryRelation {
+  quantity: number | null
+  branch_id: string
+}
 
-//       inventory (
-//         quantity,
-//         branch_id
-//       )
-//     `)
-//     .eq('business_id', businessId)
-//     .is('deleted_at', null)
-//     .eq('is_active', true)
-//     .order('name')
+interface RawProductPayload {
+  id: string
+  name: string | null
+  name_am: string | null
+  barcode: string | null
+  sku: string | null
+  unit_type: string | null
+  retail_price: number | string | null
+  cost_price: number | string | null
+  low_stock_alert: number | string | null
+  category_id: string | null
+  categories: RawCategoryRelation | RawCategoryRelation[] | null
+  inventory: RawInventoryRelation | RawInventoryRelation[] | null
+}
 
-//   if (error) throw error
-
-//   return (data ?? []).map((product: any) => {
-//     const branchInventory = Array.isArray(product.inventory)
-//       ? product.inventory.find(
-//           (inv: any) => inv.branch_id === branchId
-//         )
-//       : product.inventory
-
-//     return {
-//       id: product.id,
-
-//       name: product.name,
-//       name_am: product.name_am,
-
-//       barcode: product.barcode,
-//       sku: product.sku,
-
-//       unit_type: product.unit_type,
-
-//       retail_price: Number(product.retail_price ?? 0),
-
-//       cost_price: Number(product.cost_price ?? 0),
-
-//       category_id: product.category_id,
-
-//       category_name:
-//         product.categories?.name ?? 'Uncategorized',
-
-//       category_name_am:
-//         product.categories?.name_am ?? 'ያልተመደበ',
-
-//       category_icon:
-//         product.categories?.icon ?? '📦',
-
-//       category_color:
-//         product.categories?.color ?? '#64748b',
-
-//       quantity:
-//         Number(branchInventory?.quantity ?? 0),
-
-//       low_stock_alert:
-//         Number(product.low_stock_alert ?? 5)
-//     }
-//   })
-// }
-
-// src/queries/useInventoryQueries.ts
-
-import { supabase } from '@/lib/supabase/client'
-import { InventoryProduct } from '@/types/inventory'
-
+/**
+ * Fetches active inventory products for a specific business and branch.
+ * Defensively handles PostgREST array/object join payloads and localizations.
+ */
 export async function getInventoryProducts(
   businessId: string,
   branchId: string
 ): Promise<InventoryProduct[]> {
+  if (!businessId) throw new Error('Business ID is required')
+  if (!branchId) throw new Error('Branch ID is required')
+
+  const supabase = getSupabaseBrowserClient()
+
   const { data, error } = await supabase
     .from('products')
     .select(`
@@ -129,36 +79,49 @@ export async function getInventoryProducts(
     .eq('is_active', true)
     .order('name')
 
-  if (error) throw error
+  if (error) {
+    console.error('[getInventoryProducts] Error:', error.message)
+    throw new Error(`Failed to fetch inventory products: ${error.message}`)
+  }
 
-  return (data ?? []).map((product: any) => {
+  const rawProducts = (data as unknown as RawProductPayload[]) ?? []
+
+  return rawProducts.map((product) => {
     // 1. Defensively handle the relational stock array matching the active branch
-    const branchInventory = Array.isArray(product.inventory)
-      ? product.inventory.find((inv: any) => inv.branch_id === branchId)
-      : product.inventory
+    let calculatedStock = 0
+    if (Array.isArray(product.inventory)) {
+      const branchInv = product.inventory.find((inv) => inv.branch_id === branchId)
+      calculatedStock = Number(branchInv?.quantity ?? 0)
+    } else if (product.inventory) {
+      const inv = product.inventory as RawInventoryRelation
+      if (inv.branch_id === branchId) {
+        calculatedStock = Number(inv.quantity ?? 0)
+      }
+    }
 
-    const calculatedStock = Number(branchInventory?.quantity ?? 0)
-
-    // 2. Defensively handle the relational category array or object safely
+    // 2. Defensively handle the relational category object or array element
     const categoryInfo = Array.isArray(product.categories)
       ? product.categories[0]
       : product.categories
 
+    const nameEn = product.name || ''
+    const nameAm = product.name_am || nameEn
+
     return {
       id: product.id,
-      name: product.name || '',
-      name_am: product.name_am || product.name || '',
+      name: nameEn,
+      name_am: nameAm,
       barcode: product.barcode || '',
       sku: product.sku || '',
       unit_type: product.unit_type || 'piece',
-      
+
       // Strict numerical normalization
       retail_price: Number(product.retail_price ?? 0),
       cost_price: Number(product.cost_price ?? 0),
       low_stock_alert: Number(product.low_stock_alert ?? 5),
-      
+
       category_id: product.category_id,
-      
+
       // Fallback logic preserving business context completely
       category_name: categoryInfo?.name ?? 'Uncategorized',
       category_name_am: categoryInfo?.name_am ?? categoryInfo?.name ?? 'ያልተመደበ',
@@ -167,7 +130,7 @@ export async function getInventoryProducts(
 
       // Dual-mapped keys satisfying standard properties and structural type schemas
       quantity: calculatedStock,
-      opening_count: calculatedStock, // 👈 Fixes the TypeScript interface mismatch
-    }
+      opening_count: calculatedStock,
+    } as InventoryProduct
   })
 }

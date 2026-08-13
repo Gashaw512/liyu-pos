@@ -13,6 +13,8 @@ import {
   ArrowLeft
 } from 'lucide-react'
 
+/* ───────────────────────── DOMAIN INTERFACES ───────────────────────── */
+
 interface InventoryProduct {
   id?: string;
   nameEn: string;
@@ -35,6 +37,33 @@ interface DbCategory {
   name: string;
   name_am: string;
 }
+
+/* ───────────────────── SUPABASE QUERY TYPE OVERRIDES ───────────────────── */
+
+interface RawProductRow {
+  id: string;
+  name: string | null;
+  name_am: string | null;
+  cost_price: number | null;
+  retail_price: number | null;
+  unit_type: string | null;
+  barcode: string | null;
+  sku: string | null;
+  low_stock_alert: number | null;
+  track_inventory: boolean | null;
+  category_id: string | null;
+  categories:
+    | { id?: string; name?: string; name_am?: string }
+    | { id?: string; name?: string; name_am?: string }[]
+    | null;
+}
+
+interface RawInventoryRow {
+  product_id: string;
+  quantity: number | null;
+}
+
+/* ───────────────────────────── COMPONENT ───────────────────────────── */
 
 export default function ProductsManagementPage() {
   const params = useParams()
@@ -74,7 +103,11 @@ export default function ProductsManagementPage() {
 
       let businessId = user.user_metadata?.business_id || user.app_metadata?.business_id;
       if (!businessId || businessId === 'undefined') {
-        const { data: profileRow } = await supabase.from('profiles').select('business_id').eq('id', user.id).maybeSingle()
+        const { data: profileRow } = await supabase
+          .from('profiles')
+          .select('business_id')
+          .eq('id', user.id)
+          .maybeSingle()
         businessId = profileRow?.business_id
       }
       if (!businessId) return
@@ -85,7 +118,7 @@ export default function ProductsManagementPage() {
         .eq('business_id', businessId)
 
       if (catErr) throw catErr
-      setDbCategories(liveCategories || [])
+      setDbCategories((liveCategories as DbCategory[]) || [])
 
       const { data: rawProducts, error: prodError } = await supabase
         .from('products')
@@ -105,17 +138,21 @@ export default function ProductsManagementPage() {
 
       const uniqueProductMap: Record<string, InventoryProduct> = {}
 
-      rawProducts?.forEach((p) => {
+      // Explicitly type raw response arrays to prevent implicit 'any' inferences
+      const productsList = (rawProducts as unknown as RawProductRow[]) || []
+      const inventoryList = (rawInventory as unknown as RawInventoryRow[]) || []
+
+      productsList.forEach((p: RawProductRow) => {
         const pNameEn = p.name || ''
         const pNameAm = p.name_am || p.name || ''
         const normalizationKey = `${pNameEn.toLowerCase().trim()}_${pNameAm.toLowerCase().trim()}`
 
         // Calculate combined totals from all available branches
-        const actualStockBalance = (rawInventory || [])
-          .filter((inv) => inv.product_id === p.id)
-          .reduce((sum, item) => sum + (item.quantity || 0), 0)
+        const actualStockBalance = inventoryList
+          .filter((inv: RawInventoryRow) => inv.product_id === p.id)
+          .reduce((sum: number, item: RawInventoryRow) => sum + (item.quantity || 0), 0)
 
-        const joinedCategory: any = Array.isArray(p.categories) 
+        const joinedCategory = Array.isArray(p.categories) 
           ? p.categories[0] 
           : p.categories
 
@@ -147,7 +184,7 @@ export default function ProductsManagementPage() {
 
       const cleanedProductsList = Object.values(uniqueProductMap)
       const parsedCategoryLabels = Array.from(
-        new Set((liveCategories || []).map(c => isAm ? c.name_am || c.name : c.name).filter(Boolean))
+        new Set(((liveCategories as DbCategory[]) || []).map(c => isAm ? c.name_am || c.name : c.name).filter(Boolean))
       )
 
       setProducts(cleanedProductsList)
@@ -178,7 +215,7 @@ export default function ProductsManagementPage() {
 
         if (insErr) throw insErr
         if (newCat) {
-          setDbCategories(prev => [...prev, newCat])
+          setDbCategories(prev => [...prev, newCat as DbCategory])
           setCategories(prev => [...prev, trimmed])
           if (!selectedCategory) setSelectedCategory(trimmed)
         }

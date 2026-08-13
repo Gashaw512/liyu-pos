@@ -1,8 +1,10 @@
-// Server client
-
-import { createServerClient, type CookieOptions } from '@supabase/ssr'
+import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
+/**
+ * Modern Enterprise Server Client Factory
+ * Aligned with the latest batch cookie handling protocols to eliminate token desyncs.
+ */
 export async function createClient() {
   const cookieStore = await cookies()
 
@@ -11,25 +13,26 @@ export async function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value
+        /**
+         *  High-Speed Batch Cookie Fetch
+         * Grabs all cookies in a single pass to minimize internal rendering overhead.
+         */
+        getAll() {
+          return cookieStore.getAll()
         },
-        set(name: string, value: string, options: CookieOptions) {
+        /**
+         * Safe Batch Cookie Setter
+         * Mutates response headers securely. Wrapped inside a protective try/catch block
+         * since Next.js restricts Cookie mutations during pure Server Component read operations.
+         */
+        setAll(cookiesToSet) {
           try {
-            cookieStore.set({ name, value, ...options })
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set({ name, value, ...options })
+            )
           } catch (error) {
-            // The `set` method was called from a Server Component.
-            // This can be ignored if you have middleware refreshing
-            // user sessions.
-          }
-        },
-        remove(name: string, options: CookieOptions) {
-          try {
-            cookieStore.set({ name, value: '', ...options })
-          } catch (error) {
-            // The `remove` method was called from a Server Component.
-            // This can be ignored if you have middleware refreshing
-            // user sessions.
+            // Safe to ignore on static/read-only Server Components as long as 
+            // your proxy/middleware handles background token refreshes cleanly.
           }
         },
       },

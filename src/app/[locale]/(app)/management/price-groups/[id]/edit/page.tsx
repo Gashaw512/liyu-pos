@@ -1,4 +1,4 @@
-// src/app/[locale]/(app)/management/price-group/[id]/edit/page.tsx
+// src/app/[locale]/(app)/management/price-groups/[id]/edit/page.tsx
 
 'use client'
 
@@ -19,6 +19,14 @@ import {
   Coins
 } from 'lucide-react'
 
+// Strongly-typed DTO for products queried in price group editing
+interface ProductRow {
+  id: string
+  name: string
+  name_am: string | null
+  price_group_id: string | null
+}
+
 export default function EditPriceGroupPage() {
   const router = useRouter()
   const params = useParams()
@@ -32,7 +40,7 @@ export default function EditPriceGroupPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
-  const [products, setProducts] = useState<any[]>([])
+  const [products, setProducts] = useState<ProductRow[]>([])
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([])
 
   const [formData, setFormData] = useState({
@@ -75,12 +83,14 @@ export default function EditPriceGroupPage() {
 
       if (prodError) throw prodError
 
-      setProducts(prods || [])
+      // Type-cast the raw query result
+      const productsData = (prods as unknown as ProductRow[]) || []
+      setProducts(productsData)
 
       // 3. Preselect linked products
-      const linked = (prods || [])
-        .filter(p => p.price_group_id === id)
-        .map(p => p.id)
+      const linked = productsData
+        .filter((p: ProductRow) => p.price_group_id === id)
+        .map((p: ProductRow) => p.id)
 
       setSelectedProductIds(linked)
 
@@ -107,7 +117,7 @@ export default function EditPriceGroupPage() {
   /* ───────────────────── MVP INTELLIGENCE ───────────────────── */
 
   const selectedProducts = useMemo(
-    () => products.filter(p => selectedProductIds.includes(p.id)),
+    () => products.filter((p: ProductRow) => selectedProductIds.includes(p.id)),
     [products, selectedProductIds]
   )
 
@@ -120,7 +130,7 @@ export default function EditPriceGroupPage() {
 
   const conflicts = useMemo(() => {
     return products.filter(
-      p =>
+      (p: ProductRow) =>
         selectedProductIds.includes(p.id) &&
         p.price_group_id &&
         p.price_group_id !== id
@@ -281,7 +291,7 @@ export default function EditPriceGroupPage() {
         {/* PRODUCTS */}
         <div className="border rounded-xl bg-white max-h-[260px] overflow-auto divide-y">
 
-          {products.map(p => {
+          {products.map((p: ProductRow) => {
             const checked = selectedProductIds.includes(p.id)
             const conflict = p.price_group_id && p.price_group_id !== id
 
@@ -289,9 +299,8 @@ export default function EditPriceGroupPage() {
               <div
                 key={p.id}
                 onClick={() => toggleProduct(p.id)}
-                className={`flex items-center gap-3 p-3 cursor-pointer ${
-                  conflict ? 'bg-yellow-50' : ''
-                }`}
+                className={`flex items-center gap-3 p-3 cursor-pointer ${conflict ? 'bg-yellow-50' : ''
+                  }`}
               >
                 {checked ? (
                   <CheckSquare className="w-5 h-5 text-berbere-500" />

@@ -1,3 +1,5 @@
+// src/app/[locale]/(app)/management/products/new/page.tsx
+
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -10,7 +12,6 @@ import {
   Package,
   Coins,
   User,
-  Image as ImageIcon
 } from 'lucide-react'
 
 import createClient from '@/lib/supabase/client'
@@ -18,6 +19,19 @@ import { createProduct } from '@/queries/useProductsQuery'
 import { getBusinessId } from '@/lib/auth/getBusinessId'
 
 type PriceType = 'group' | 'fixed'
+
+interface CategoryOption {
+  id: string
+  name: string
+  name_am: string | null
+}
+
+interface PriceGroupOption {
+  id: string
+  name: string
+  name_am: string | null
+  amount: number
+}
 
 export default function NewProductPage() {
   const router = useRouter()
@@ -31,8 +45,8 @@ export default function NewProductPage() {
   const [loading, setLoading] = useState(false)
   const [dataLoading, setDataLoading] = useState(true)
 
-  const [categories, setCategories] = useState<any[]>([])
-  const [priceGroups, setPriceGroups] = useState<any[]>([])
+  const [categories, setCategories] = useState<CategoryOption[]>([])
+  const [priceGroups, setPriceGroups] = useState<PriceGroupOption[]>([])
 
   const [priceType, setPriceType] = useState<PriceType>('group')
 
@@ -70,8 +84,8 @@ export default function NewProductPage() {
       if (catsRes.error) throw catsRes.error
       if (groupsRes.error) throw groupsRes.error
 
-      setCategories(catsRes.data || [])
-      setPriceGroups(groupsRes.data || [])
+      setCategories((catsRes.data as CategoryOption[]) || [])
+      setPriceGroups((groupsRes.data as PriceGroupOption[]) || [])
     } catch (err) {
       console.error('Load data error:', err)
     } finally {
@@ -127,7 +141,8 @@ export default function NewProductPage() {
         retail_price = selectedGroup.amount
       }
 
-      const { error } = await createProduct({
+      // createProduct resolves to Product directly or throws an error on failure
+      await createProduct({
         business_id: businessId,
         category_id: form.category_id,
         name: form.name.trim(),
@@ -138,12 +153,11 @@ export default function NewProductPage() {
         image_url: form.image_url || null
       })
 
-      if (error) throw error
-
       router.push(`/${locale}/management/products`)
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err)
-      alert(err.message || 'Failed to create product')
+      const message = err instanceof Error ? err.message : 'Failed to create product'
+      alert(message)
     } finally {
       setLoading(false)
     }

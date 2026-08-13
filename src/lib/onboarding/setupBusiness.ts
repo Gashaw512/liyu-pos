@@ -1,5 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js'
-import { BusinessType, TemplateProduct } from './categoryTemplates'
+// ⚠️ unified modern templates module
+import { BusinessType, TemplateProduct, getSectorTemplatePackage } from './templates'
 
 // =========================================================
 // ENTERPRISE TYPES & CONFIGURATION INTERFACES
@@ -8,7 +9,7 @@ export interface SetupPayload {
   businessType: BusinessType;
   openTime: string;
   closeTime: string;
-  categories: string[];
+  categories: string[]; // Explicit categories chosen by merchant or defaulted
   products: TemplateProduct[];
 }
 
@@ -17,18 +18,13 @@ export interface OnboardingContext {
   payload: SetupPayload;
   businessId: string;
   branchId?: string;
-  fullCategoryCatalog?: Array<{ id: string; name: string }>;
+  fullCategoryCatalog?: Array<{ id: string; name: string; name_am: string }>;
   createdProducts?: Array<{ id: string }>;
   logs: string[];
 }
 
-// Highly extensible middleware-style pipeline step layout
 export type OnboardingStepHook = (ctx: OnboardingContext) => Promise<void>;
 
-/**
- * Enterprise Orchestration Options
- * Use these settings to switch core behaviors on the fly without changing runtime code blocks
- */
 const ONBOARDING_CONFIG = {
   defaultBranchName: 'ዋናው ቅርንጫፍ (Main Branch)',
   defaultUnitType: 'piece',
@@ -38,7 +34,7 @@ const ONBOARDING_CONFIG = {
 };
 
 // =========================================================
-// PLUGGABLE PIPELINE STEPS (ADD AND CONFIGURE LATER)
+// PLUGGABLE PIPELINE STEPS
 // =========================================================
 
 /**
@@ -89,24 +85,29 @@ const resolveBranchStep: OnboardingStepHook = async (ctx) => {
 };
 
 /**
- * Step 3: Scans and processes default template categories safely
+ * Step 3: Scans and processes default template categories cleanly
  */
 const provisionCategoriesStep: OnboardingStepHook = async (ctx) => {
   const { data: existingCategories, error: fetchErr } = await ctx.supabase
     .from('categories')
-    .select('id, name')
+    .select('id, name, name_am')
     .eq('business_id', ctx.businessId);
 
   if (fetchErr) throw new Error(`Existing category scan failed: ${fetchErr.message}`);
 
   const existingCatNames = new Set((existingCategories || []).map(c => c.name.toLowerCase()));
+  const seedPackage = getSectorTemplatePackage(ctx.payload.businessType);
 
+  // Match selected string back onto the template package array to find rich translations
   const categoriesPayload = ctx.payload.categories
-    .filter(catName => !existingCatNames.has(catName.toLowerCase()))
-    .map((catName) => ({
+    .map(catLabel => seedPackage.categories.find(c => c.name === catLabel || c.name_am === catLabel))
+    .filter((cat): cat is NonNullable<typeof cat> => !!cat && !existingCatNames.has(cat.name.toLowerCase()))
+    .map((cat) => ({
       business_id: ctx.businessId,
-      name: catName,
-      name_am: catName,
+      name: cat.name,
+      name_am: cat.name_am,
+      icon: cat.icon || '📦',
+      color: cat.color || '#64748b',
       is_active: true
     }));
 
@@ -117,7 +118,7 @@ const provisionCategoriesStep: OnboardingStepHook = async (ctx) => {
 
   const { data: fullCatalog, error: catFetchErr } = await ctx.supabase
     .from('categories')
-    .select('id, name')
+    .select('id, name, name_am')
     .eq('business_id', ctx.businessId);
 
   if (catFetchErr || !fullCatalog) throw new Error(`Reconciling categories footprint failed: ${catFetchErr?.message}`);
@@ -142,25 +143,25 @@ const provisionProductsStep: OnboardingStepHook = async (ctx) => {
   const existingProdNames = new Set((existingProducts || []).map(p => p.name.toLowerCase()));
 
   const productsPayload = ctx.payload.products
-    .filter(prod => !existingProdNames.has(prod.nameEn.toLowerCase()))
+    .filter(prod => !existingProdNames.has(prod.name.toLowerCase()))
     .map((prod) => {
+      // Robust multi-lingual string match check
       const matchedCat = ctx.fullCategoryCatalog!.find(
-        (c) => c.name.toLowerCase() === prod.categoryAm?.toLowerCase() || 
-               c.name.toLowerCase() === prod.categoryEn?.toLowerCase()
+        (c) => c.name.toLowerCase() === prod.category_name?.toLowerCase() || 
+               c.name_am.toLowerCase() === prod.category_name?.toLowerCase()
       );
 
       return {
         business_id: ctx.businessId,
-        branch_id: ctx.branchId!,
         category_id: matchedCat ? matchedCat.id : null,
-        name: prod.nameEn,
-        name_am: prod.nameAm,
-        cost_price: Number(prod.cost || 0),
-        retail_price: Number(prod.sell || 0),
-        unit_type: ONBOARDING_CONFIG.defaultUnitType,
+        name: prod.name,
+        name_am: prod.name_am,
+        cost_price: Number(prod.cost_price || 0),
+        retail_price: Number(prod.retail_price || 0),
+        unit_type: prod.unit_type || ONBOARDING_CONFIG.defaultUnitType,
         is_active: true,
-        track_inventory: ONBOARDING_CONFIG.trackInventoryDefault,
-        low_stock_alert: ONBOARDING_CONFIG.defaultLowStockAlert 
+        track_inventory: prod.track_inventory ?? ONBOARDING_CONFIG.trackInventoryDefault,
+        low_stock_alert: prod.low_stock_alert || ONBOARDING_CONFIG.defaultLowStockAlert 
       };
     });
 
@@ -201,14 +202,11 @@ const initializeInventoryStep: OnboardingStepHook = async (ctx) => {
 };
 
 /**
- * 🟢 BACKEND HOOKS FOR COLD EXTENSION (Add feature extensions here easily)
- * Put notification dispatches, cloud analytics pipelines, or stripe updates here
+ * Step 6: Post-provisioning telemetry hooks
  */
 const postProvisioningExtensionStep: OnboardingStepHook = async (ctx) => {
   if (!ONBOARDING_CONFIG.enablePostProvisioningHooks) return;
-  
   try {
-    // Example: await ctx.supabase.from('audit_logs').insert({ event: 'tenant_onboarded', business_id: ctx.businessId })
     ctx.logs.push('Post-provisioning extension step telemetry ran cleanly.');
   } catch (err) {
     console.error('Non-blocking extension task failure: ', err);

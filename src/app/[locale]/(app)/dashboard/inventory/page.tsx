@@ -1,5 +1,4 @@
-
-// src/[locale]/(aoo)/dashboardds/inventory
+// src/[locale]/(app)/dashboard/inventory/page.tsx
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -18,6 +17,27 @@ import {
   ArrowDownToLine,
   Boxes
 } from 'lucide-react'
+
+// DTOs for the raw Supabase query results
+interface RawProductRow {
+  id: string;
+  name: string | null;
+  name_am: string | null;
+  cost_price: number | null;
+  retail_price: number | null;
+  unit_type: string | null;
+  barcode: string | null;
+  sku: string | null;
+  low_stock_alert: number | null;
+  track_inventory: boolean | null;
+  category_id: string | null;
+  categories: { id: string; name: string; name_am: string | null } | { id: string; name: string; name_am: string | null }[] | null;
+}
+
+interface RawInventoryRow {
+  product_id: string;
+  quantity: number | null;
+}
 
 interface InventoryProduct {
   id?: string;
@@ -108,7 +128,7 @@ export default function DedicatedInventoryPage() {
       setDbCategories(liveCategories || [])
 
       // 2. Query master product definitions with relational inner joins
-      const { data: rawProducts, error: prodError } = await supabase
+      const { data: rawProductsData, error: prodError } = await supabase
         .from('products')
         .select(`
           id,
@@ -128,34 +148,39 @@ export default function DedicatedInventoryPage() {
 
       if (prodError) throw prodError
 
+      // Type cast the raw product dataset to prevent 'implicit any' errors
+      const rawProducts = (rawProductsData as unknown as RawProductRow[]) || []
+
       // 3. Extract dynamic balances directly from the inventory ledger tables
-      const { data: rawInventory } = await supabase
+      const { data: rawInventoryData } = await supabase
         .from('inventory')
         .select('product_id, quantity')
         .eq('business_id', businessId)
 
+      // Type cast the raw inventory dataset
+      const rawInventory = (rawInventoryData as unknown as RawInventoryRow[]) || []
+
       const uniqueProductMap: Record<string, InventoryProduct> = {}
 
-      rawProducts?.forEach((p) => {
+      rawProducts.forEach((p: RawProductRow) => {
         const pNameEn = p.name || ''
         const pNameAm = p.name_am || p.name || ''
         const normalizationKey = `${pNameEn.toLowerCase().trim()}_${pNameAm.toLowerCase().trim()}`
 
         // Calculate combined totals from all available branches
-        const actualStockBalance = (rawInventory || [])
-          .filter((inv) => inv.product_id === p.id)
+        const actualStockBalance = rawInventory
+          .filter((inv: RawInventoryRow) => inv.product_id === p.id)
           .reduce((sum, item) => sum + (item.quantity || 0), 0)
 
         // Handle the Supabase category relationship array or object safely
-        const joinedCategory = Array.isArray(p.categories) 
-          ? p.categories[0] 
+        const joinedCategory = Array.isArray(p.categories)
+          ? p.categories[0]
           : p.categories
 
         const catEn = joinedCategory?.name || (isAm ? 'መደበኛ' : 'General')
         const catAm = joinedCategory?.name_am || joinedCategory?.name || (isAm ? 'መደበኛ' : 'General')
 
         if (!uniqueProductMap[normalizationKey]) {
-
           uniqueProductMap[normalizationKey] = {
             id: p.id,
             nameEn: pNameEn,
@@ -178,8 +203,14 @@ export default function DedicatedInventoryPage() {
       })
 
       const cleanedProductsList = Object.values(uniqueProductMap)
-      const parsedCategoryLabels = Array.from(
-        new Set((liveCategories || []).map(c => isAm ? c.name_am || c.name : c.name).filter(Boolean))
+
+      // Guarantee a string[] output from .map() so .filter() receives strict string items
+      const parsedCategoryLabels: string[] = Array.from(
+        new Set(
+          liveCategories
+            .map((c: DbCategory): string => (isAm ? c.name_am || c.name : c.name) || '')
+            .filter((name: string) => name.trim().length > 0)
+        )
       )
 
       setProducts(cleanedProductsList)
@@ -190,6 +221,8 @@ export default function DedicatedInventoryPage() {
       setLoading(false)
     }
   }
+
+  // Component JSX continues below...
 
   const handleCreateCategory = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -227,8 +260,8 @@ export default function DedicatedInventoryPage() {
 
     const categoryHasProducts = products.some(p => p.category_id === matchedRow.id)
     if (categoryHasProducts) {
-      alert(isAm 
-        ? 'በዚህ ምድብ ስር ያሉ ዕቃዎች ስላሉ መሰረዝ አይችሉም! አስቀድመው ዕቃዎቹን ያዛውሩ ወይም ያጥፉ።' 
+      alert(isAm
+        ? 'በዚህ ምድብ ስር ያሉ ዕቃዎች ስላሉ መሰረዝ አይችሉም! አስቀድመው ዕቃዎቹን ያዛውሩ ወይም ያጥፉ።'
         : 'Cannot remove category! Active product definitions are currently mapped to this relational layer.'
       )
       return
@@ -492,11 +525,10 @@ export default function DedicatedInventoryPage() {
               <div
                 key={idx}
                 onClick={() => setSelectedCategory(cat)}
-                className={`p-4 rounded-xl border text-left cursor-pointer transition-all relative flex flex-col justify-between min-h-[85px] active:scale-[0.97] ${
-                  isSelected 
-                    ? 'bg-berbere-600 text-white border-berbere-600 shadow-md ring-2 ring-berbere-200' 
-                    : 'bg-white text-coffee-900 border-cream-200 hover:border-berbere-500 shadow-sm'
-                }`}
+                className={`p-4 rounded-xl border text-left cursor-pointer transition-all relative flex flex-col justify-between min-h-[85px] active:scale-[0.97] ${isSelected
+                  ? 'bg-berbere-600 text-white border-berbere-600 shadow-md ring-2 ring-berbere-200'
+                  : 'bg-white text-coffee-900 border-cream-200 hover:border-berbere-500 shadow-sm'
+                  }`}
               >
                 <div className="flex items-start justify-between gap-1">
                   <span className="font-black text-xs tracking-tight truncate max-w-[85%]">{cat}</span>
@@ -543,7 +575,7 @@ export default function DedicatedInventoryPage() {
               {isAm ? `የምርቶች ዝርዝር፡ ${selectedCategory}` : `Products under: ${selectedCategory}`}
             </h2>
           </div>
-          
+
           <div className="flex items-center gap-2 shrink-0">
             <span className="text-[10px] font-bold text-coffee-400">{isAm ? 'የጋራ ቦኖ መሸጫ ዋጋ:' : 'Flat Bono Price:'}</span>
             <div className="relative flex items-center max-w-[90px]">
@@ -590,7 +622,7 @@ export default function DedicatedInventoryPage() {
 
               return (
                 <div key={index} className={`p-3 rounded-xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white hover:shadow-sm ${isLowStock ? 'border-red-200 bg-red-50/10' : 'border-cream-100'}`}>
-                  
+
                   {/* Left Column: Actions and Text Metadata Fields */}
                   <div className="flex-1 min-w-0 flex items-start gap-2.5">
                     <button
@@ -749,7 +781,7 @@ export default function DedicatedInventoryPage() {
                 <ArrowDownToLine className="w-4 h-4 text-emerald-600" />
                 {isAm ? 'አዲስ ገቢ ዕቃ መመዝገቢያ (Stock In)' : 'Receive Inbound Stock'}
               </h3>
-              <button 
+              <button
                 onClick={() => setShowReceiveModal(false)}
                 className="p-1 rounded-lg hover:bg-cream-100 text-coffee-400 transition-colors"
               >

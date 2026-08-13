@@ -2,11 +2,11 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 /**
- * 🔒 Enterprise Supabase Session Pipeline Helper
- * Updated to accept an optional secondary response object to merge with localization routing context.
+ * Enterprise Supabase Session Pipeline Helper
+ * Efficiently manages background token refreshes without breaking localization routing contexts.
  */
 export async function updateSession(request: NextRequest, responseContext?: NextResponse) {
-  // If an existing response was passed (like from next-intl), mutate that directly; otherwise make a fresh one
+  // Use the incoming localization response context or fall back to a fresh layout branch
   let supabaseResponse = responseContext || NextResponse.next({
     request,
   })
@@ -20,15 +20,11 @@ export async function updateSession(request: NextRequest, responseContext?: Next
           return request.cookies.getAll()
         },
         setAll(cookiesToSet) {
-          // 1. Sync the incoming requests
+          // 1. Synchronize the incoming request cookies instantly
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
           
-          // 2. Retain the original incoming response context if it exists, or generate a fresh fall-through step
-          supabaseResponse = responseContext || NextResponse.next({
-            request,
-          })
-          
-          // 3. Inject cookie modifications natively onto the headers
+          // 2. ⚡ ROBUST CHANGE: Safely inject cookie modifications onto the active response context
+          // This modifies cookies natively without recreating the object, preserving all next-intl configurations!
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options)
           )
@@ -37,8 +33,16 @@ export async function updateSession(request: NextRequest, responseContext?: Next
     }
   )
 
-  // This refreshes the session token automatically if it has expired
-  await supabase.auth.getUser()
+  /**
+   * Background Token Guard
+   * Calling getUser() automatically refreshes the underlying session if expired.
+   * Wrapped in a try/catch block so a network timeout won't crash your entire POS login router.
+   */
+  try {
+    await supabase.auth.getUser()
+  } catch (err) {
+    console.error('Supabase automated proxy token refresh intercepted an error:', err)
+  }
 
   return supabaseResponse
 }

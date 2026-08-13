@@ -70,17 +70,16 @@
 //   )
 // }
 
-// src/components/categories,tsx
-
 'use client'
 
 import { useState } from 'react'
 import { Layers, Plus, X } from 'lucide-react'
+import { TemplateCategory } from '../../lib/onboarding/templates'
 
 interface CategoriesStepProps {
   isAm: boolean;
-  categories: string[];
-  setCategories: React.Dispatch<React.SetStateAction<string[]>>;
+  categories: TemplateCategory[];
+  setCategories: React.Dispatch<React.SetStateAction<TemplateCategory[]>>;
   onNext: () => void;
   onBack: () => void;
   onSkip?: () => void;
@@ -88,7 +87,7 @@ interface CategoriesStepProps {
 
 export default function CategoriesStep({ 
   isAm, 
-  categories, 
+  categories = [], 
   setCategories, 
   onNext, 
   onBack,
@@ -101,14 +100,27 @@ export default function CategoriesStep({
     const trimmed = newCat.trim()
     if (!trimmed) return
     
-    if (!categories.includes(trimmed)) {
-      setCategories([...categories, trimmed])
+    // Check duplication cleanly against the relational name anchor index
+    const exists = categories.some(
+      cat => cat.name.toLowerCase() === trimmed.toLowerCase() || 
+             cat.name_am.toLowerCase() === trimmed.toLowerCase()
+    )
+
+    if (!exists) {
+      const freshCategory: TemplateCategory = {
+        name: trimmed,
+        name_am: trimmed, // Keeps text uniform during inline adjustments
+        icon: '📁',
+        color: '#8B2635',
+        sort_order: categories.length + 1
+      }
+      setCategories([...categories, freshCategory])
     }
     setNewCat('')
   }
 
-  const handleRemoveCategory = (target: string) => {
-    setCategories(categories.filter(cat => cat !== target))
+  const handleRemoveCategory = (targetName: string) => {
+    setCategories(categories.filter(cat => cat.name !== targetName))
   }
 
   return (
@@ -155,11 +167,12 @@ export default function CategoriesStep({
                 key={idx}
                 className="bg-white text-sm font-bold text-[#2B1E1A] pl-3.5 pr-2 py-1.5 rounded-xl border border-[#2B1E1A]/10 shadow-sm flex items-center gap-2"
               >
-                <span className="w-1.5 h-1.5 rounded-full bg-[#8B2635]" />
-                {cat}
+                <span>{cat.icon || '📁'}</span>
+                {/* 🌟 CRITICAL FIX: Render the primitive string field instead of the full object */}
+                <span>{isAm ? cat.name_am : cat.name}</span>
                 <button
                   type="button"
-                  onClick={() => handleRemoveCategory(cat)}
+                  onClick={() => handleRemoveCategory(cat.name)}
                   className="p-0.5 rounded-md text-[#7A6A67] hover:bg-red-50 hover:text-red-500 transition-colors"
                 >
                   <X className="w-3.5 h-3.5" />

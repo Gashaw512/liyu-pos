@@ -77,11 +77,12 @@
 
 import { useState } from 'react'
 import { ShoppingBag, Plus, Trash2 } from 'lucide-react'
-import { TemplateProduct } from '../../lib/onboarding/categoryTemplates'
+// 🌟 Pointing directly to your unified enterprise contracts file
+import { TemplateProduct, TemplateCategory } from '../../lib/onboarding/templates'
 
 interface ProductsStepProps {
   isAm: boolean;
-  categories: string[];
+  categories: TemplateCategory[]; // 🌟 Refactored to pass down full structured objects
   products: TemplateProduct[];
   setProducts: React.Dispatch<React.SetStateAction<TemplateProduct[]>>;
   onNext: () => void;
@@ -103,24 +104,22 @@ export default function ProductsStep({
   
   // States for adding a brand new custom item
   const [newItemName, setNewItemName] = useState('')
-  const [selectedCategory, setSelectedCategory] = useState(categories[0] || '')
+  // Default selection tracking utilizes the English database master index 'name'
+  const [selectedCategory, setSelectedCategory] = useState(categories[0]?.name || '')
 
-  const updateProductValue = (index: number, key: keyof TemplateProduct, value: string | number) => {
+  const updateProductValue = (index: number, key: keyof TemplateProduct, value: string | number | boolean) => {
     const updated = [...products]
     updated[index] = { ...updated[index], [key]: value }
     setProducts(updated)
   }
 
-  const handleBonoChange = (categoryName: string, flatPrice: number) => {
-    setBonoPrices(prev => ({ ...prev, [categoryName]: flatPrice }))
+  const handleBonoChange = (categoryIndexName: string, flatPrice: number) => {
+    setBonoPrices(prev => ({ ...prev, [categoryIndexName]: flatPrice }))
     
     const updatedProducts = products.map((prod) => {
-      const isMatch = isAm 
-        ? prod.categoryAm === categoryName 
-        : prod.categoryEn === categoryName
-
-      if (isMatch) {
-        return { ...prod, sell: flatPrice }
+      // 🌟 Matches relationship using the master category relational anchor index
+      if (prod.category_name === categoryIndexName) {
+        return { ...prod, retail_price: flatPrice }
       }
       return prod
     })
@@ -132,16 +131,19 @@ export default function ProductsStep({
     e.preventDefault()
     if (!newItemName.trim() || !selectedCategory) return
 
-    const fallbackCategory = categories[0] || ''
+    const fallbackCategory = categories[0]?.name || ''
     const activeCategory = selectedCategory || fallbackCategory
 
+    // 🌟 Uses structural fields specified in your contracts schema
     const freshProduct: TemplateProduct = {
-      nameEn: newItemName.trim(),
-      nameAm: newItemName.trim(), // Keep uniform translation safe during setup
-      categoryEn: activeCategory,
-      categoryAm: activeCategory,
-      cost: 0,
-      sell: bonoPrices[activeCategory] || 0
+      name: newItemName.trim(),
+      name_am: newItemName.trim(), 
+      cost_price: 0,
+      retail_price: bonoPrices[activeCategory] || 0,
+      unit_type: 'piece', // Defaults safely to literal string domain limit
+      low_stock_alert: 0,
+      track_inventory: false,
+      category_name: activeCategory
     }
 
     setProducts(prev => [freshProduct, ...prev])
@@ -153,7 +155,7 @@ export default function ProductsStep({
     setProducts(prev => prev.filter((_, idx) => idx !== indexToRemove))
   }
 
-  return (
+    return (
     <div className="bg-white rounded-3xl shadow-xl border border-[#2B1E1A]/10 p-6 space-y-5 animate-fadeIn">
       
       {/* Header Info Banner */}
@@ -192,7 +194,9 @@ export default function ProductsStep({
               className="px-3 py-2 text-xs bg-white rounded-xl border border-[#2B1E1A]/15 outline-none font-bold text-[#2B1E1A] max-w-[140px] truncate"
             >
               {categories.map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
+                <option key={cat.name} value={cat.name}>
+                  {isAm ? cat.name_am : cat.name}
+                </option>
               ))}
             </select>
           )}
@@ -210,17 +214,16 @@ export default function ProductsStep({
       {/* Dynamic Products Category Lists */}
       <div className="space-y-6 max-h-[340px] overflow-y-auto pr-1 border border-[#2B1E1A]/10 p-3 rounded-2xl bg-slate-50/50">
         {(categories || []).map((cat) => {
-          const matchingProducts = (products || []).filter(p => 
-            isAm ? p.categoryAm === cat : p.categoryEn === cat
-          )
+          // Relates directly to product relational anchor schema
+          const matchingProducts = (products || []).filter(p => p.category_name === cat.name)
 
           return (
-            <div key={cat} className="space-y-2 bg-white p-3 rounded-xl border border-[#2B1E1A]/5 shadow-sm">
+            <div key={cat.name} className="space-y-2 bg-white p-3 rounded-xl border border-[#2B1E1A]/5 shadow-sm">
               
               {/* Category Bar Heading */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-[#2B1E1A]/5 gap-2">
                 <span className="font-extrabold text-sm text-[#8B2635] tracking-tight truncate uppercase">
-                  📁 {cat}
+                  {cat.icon || '📁'} {isAm ? cat.name_am : cat.name}
                 </span>
                 
                 {/* Global Category Bono Pricing Container */}
@@ -232,8 +235,8 @@ export default function ProductsStep({
                     <input 
                       type="number"
                       placeholder="0"
-                      value={bonoPrices[cat] || ''}
-                      onChange={(e) => handleBonoChange(cat, Number(e.target.value))}
+                      value={bonoPrices[cat.name] || ''}
+                      onChange={(e) => handleBonoChange(cat.name, Number(e.target.value))}
                       className="w-full text-right pr-8 pl-2 py-1 text-xs font-bold bg-[#E2A03F]/10 text-[#2B1E1A] rounded-md border border-[#E2A03F]/30 outline-none focus:bg-white"
                     />
                     <span className="absolute right-1.5 text-[9px] font-bold text-[#7A6A67]">ETB</span>
@@ -249,7 +252,6 @@ export default function ProductsStep({
                   </div>
                 ) : (
                   matchingProducts.map((prod) => {
-                    // Match unique record using fallback indicators securely
                     const originalIndex = products.findIndex(p => p === prod)
                     if (originalIndex === -1) return null
 
@@ -270,40 +272,42 @@ export default function ProductsStep({
                           <div className="flex-1 min-w-0">
                             <input 
                               type="text"
-                              value={isAm ? prod.nameAm : prod.nameEn}
-                              onChange={(e) => updateProductValue(originalIndex, isAm ? 'nameAm' : 'nameEn', e.target.value)}
-                              className="font-bold text-xs text-[#2B1E1A] bg-transparent border-b border-transparent hover:border-gray-300 focus:border-[#8B2635] outline-none w-full py-0.5 truncate transition-colors"
+                              value={isAm ? prod.name_am : prod.name}
+                              onChange={(e) => updateProductValue(originalIndex, isAm ? 'name_am' : 'name', e.target.value)}
+                              className="w-full bg-transparent text-xs font-bold text-[#2B1E1A] border-b border-transparent hover:border-gray-200 focus:border-[#8B2635] outline-none py-0.5"
                             />
-                            
-                            {/* Buying Cost Parameter Field */}
-                            <div className="text-[11px] text-gray-400 flex items-center gap-1 mt-0.5">
-                              <span>{isAm ? 'የመግዣ ዋጋ (ከርክብ):' : 'Buying Cost:'}</span>
-                              <input 
-                                type="number" 
-                                value={prod.cost || 0}
-                                onChange={(e) => updateProductValue(originalIndex, 'cost', Number(e.target.value))}
-                                className="w-14 bg-transparent border-b border-gray-200 focus:border-gray-400 font-bold text-left text-gray-600 outline-none px-0.5"
-                              />
-                              <span>ETB</span>
+                            <div className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold">
+                              Unit: {prod.unit_type}
                             </div>
                           </div>
                         </div>
 
-                        {/* Public Selling Price Box Context */}
-                        <div className="flex flex-col items-end gap-0.5 shrink-0">
-                          <span className="text-[9px] font-bold text-[#8B2635] uppercase tracking-wide">
-                            {isAm ? 'መሸጫ ዋጋ' : 'Selling Price'}
-                          </span>
-                          <div className="relative flex items-center max-w-[100px]">
-                            <input
-                              type="number"
-                              value={prod.sell || 0}
-                              onChange={(e) => updateProductValue(originalIndex, 'sell', Number(e.target.value))}
-                              className="w-full text-right pr-8 pl-2 py-1.5 text-xs font-extrabold text-[#8B2635] bg-[#8B2635]/5 rounded-lg border border-transparent focus:border-[#8B2635] focus:bg-white transition-all outline-none"
-                            />
-                            <span className="absolute right-2 text-[10px] font-extrabold text-[#8B2635]/70 pointer-events-none">
-                              ETB
-                            </span>
+                        {/* Buying and Selling Prices Configuration */}
+                        <div className="flex items-center gap-2 shrink-0">
+                          {/* Cost Price */}
+                          <div className="flex flex-col items-end">
+                            <span className="text-[9px] text-gray-400 font-bold">{isAm ? 'መግዣ' : 'Cost'}</span>
+                            <div className="relative flex items-center max-w-[75px]">
+                              <input 
+                                type="number"
+                                value={prod.cost_price || ''}
+                                onChange={(e) => updateProductValue(originalIndex, 'cost_price', Number(e.target.value))}
+                                className="w-full text-right pr-1 pl-1 py-0.5 text-xs font-semibold bg-gray-50 rounded border border-gray-200 outline-none"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Retail Price */}
+                          <div className="flex flex-col items-end">
+                            <span className="text-[9px] text-emerald-600 font-bold">{isAm ? 'መሸጫ' : 'Sell'}</span>
+                            <div className="relative flex items-center max-w-[80px]">
+                              <input 
+                                type="number"
+                                value={prod.retail_price || ''}
+                                onChange={(e) => updateProductValue(originalIndex, 'retail_price', Number(e.target.value))}
+                                className="w-full text-right pr-1 pl-1 py-0.5 text-xs font-bold bg-emerald-50 text-emerald-700 rounded border border-emerald-200 outline-none"
+                              />
+                            </div>
                           </div>
                         </div>
 
@@ -317,36 +321,37 @@ export default function ProductsStep({
         })}
       </div>
 
-      {/* Lower Wizard Actions Panel Controls */}
-      <div className="flex flex-col gap-3 pt-1">
-        <div className="flex gap-3">
-          <button 
-            type="button"
-            onClick={onBack}
-            className="w-1/3 py-3.5 font-bold text-sm rounded-xl text-[#7A6A67] hover:bg-gray-100 transition-colors"
-          >
-            {isAm ? 'ወደ ኋላ' : 'Back'}
-          </button>
-          <button 
-            type="button"
-            onClick={onNext}
-            className="w-2/3 py-3.5 bg-[#8B2635] hover:bg-[#7a1f2d] text-white font-bold rounded-xl shadow-md transition-all active:scale-[0.99]"
-          >
-            {isAm ? 'ለመጨረሻ ክለሳ ➔' : 'Review Setup ➔'}
-          </button>
-        </div>
+      {/* Navigation Footer Action Controls */}
+      <div className="flex items-center justify-between pt-2 border-t border-[#2B1E1A]/5 text-xs">
+        <button
+          type="button"
+          onClick={onBack}
+          className="px-4 py-2 font-bold text-[#7A6A67] hover:text-[#2B1E1A] transition-colors"
+        >
+          {isAm ? 'ተመለስ' : 'Back'}
+        </button>
 
-        {onSkip && (
+        <div className="flex items-center gap-2">
+          {onSkip && (
+            <button
+              type="button"
+              onClick={onSkip}
+              className="px-4 py-2 font-semibold text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              {isAm ? 'ዝለል' : 'Skip All'}
+            </button>
+          )}
           <button
             type="button"
-            onClick={onSkip}
-            className="text-xs text-center text-[#7A6A67] hover:text-[#2B1E1A] font-bold underline underline-offset-2 mt-1"
+            onClick={onNext}
+            className="bg-[#2B1E1A] hover:bg-[#1f1512] text-white px-5 py-2 rounded-xl font-bold transition-colors shadow-sm"
           >
-            {isAm ? 'ይህንን ደረጃ እለፍና በቀጥታ ወደ ዳሽቦርድ ሂድ' : 'Skip setup and go directly to dashboard'}
+            {isAm ? 'ቀጥል' : 'Continue'}
           </button>
-        )}
+        </div>
       </div>
 
     </div>
   )
 }
+

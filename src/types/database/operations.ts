@@ -127,3 +127,83 @@ export interface StockCount {
 
   created_at: string
 }
+
+export interface LowStockItem {
+  id: string
+  productId: string
+
+  name: string
+  nameAm: string | null
+
+  category: string | null
+
+  quantity: number
+  alertLevel: number
+
+  shortage: number
+}
+
+
+export interface InventorySummary {
+  totalProducts: number
+  totalCategories: number
+
+  lowStockCount: number
+  outOfStockCount: number
+
+  totalInventoryUnits: number
+}
+
+export interface ExpenseSummary {
+  total: number
+  transactions: number
+}
+
+export interface ProfitSummary {
+  revenue: number
+  grossProfit: number
+  expenses: number
+  netProfit: number
+
+  grossMargin: number
+  netMargin: number
+}
+
+export interface DashboardReport {
+  sales: {
+    revenue: number
+    transactions: number
+    itemsSold: number
+
+    grossProfit: number
+    grossMargin: number
+
+    discounts: number
+    tax: number
+
+    averageSale: number
+  }
+
+  expenses: ExpenseSummary
+
+  profit: ProfitSummary
+
+  inventory: InventorySummary
+
+  lowStock: LowStockItem[]
+
+  activeShift: Shift | null
+
+  pendingOfflineSales: number
+
+  categories: {
+    categoryId: string | null
+    name: string
+    nameAm: string | null
+
+    itemsSold: number
+    revenue: number
+    grossProfit: number
+  }[]
+}
+

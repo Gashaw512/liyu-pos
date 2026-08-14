@@ -37,6 +37,13 @@ export type TransactionStatus =
 | 'refunded'
 
 
+export type SaleStatus =
+  | 'completed'
+  | 'voided'
+  | 'refunded'
+  | 'pending'
+
+
 export type ShiftLabel = 'Morning' | 'Afternoon' | 'Evening' | 'Night' | 'Full Day';
 export type ShiftStatus = 'open' | 'closed' | 'suspended';
 

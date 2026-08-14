@@ -24,7 +24,7 @@ export default async function AuthenticatedGroupLayout({
   // 1. የባለቤቱን/የሰራተኛውን ማንነት በከፍተኛ ጥበቃ ማረጋገጥ
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) {
-    redirect(`/${locale}/auth/login` as any); // ወደ ትክክለኛው የ auth path መቀየር
+    redirect(`/${locale}/login` as any); // ወደ ትክክለኛው የ auth path መቀየር
   }
 
   // 2. ከ Row-Level Security (RLS) ጋር የተናበበ የተጠቃሚ መረጃ መሳብ
@@ -40,7 +40,7 @@ export default async function AuthenticatedGroupLayout({
     .single();
 
   if (profileError || !profile) {
-    redirect(`/${locale}/auth/login` as any);
+    redirect(`/${locale}/login` as any);
   }
 
   // 3. የኦንቦርዲንግ (Onboarding) ሂደት ካልተጠናቀቀ መገደብ

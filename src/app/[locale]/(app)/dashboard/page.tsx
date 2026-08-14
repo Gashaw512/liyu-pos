@@ -1,81 +1,185 @@
-import { createClient } from "../../../../lib/supabase/server";
-import { redirect } from "next/navigation";
-import DashboardClientContent from "./DashboardClientContent";
+import { createClient } from '../../../../lib/supabase/server'
+import { redirect } from 'next/navigation'
+import { Route } from 'next'
 
-export const dynamic = "force-dynamic";
+import DashboardClientContent from './DashboardClientContent'
+
+import {
+  getDashboardReport,
+} from '@/queries/dashboardReport'
+
+export const dynamic = 'force-dynamic'
 
 interface PageProps {
-  params: Promise<{ locale: string }>;
+  params: Promise<{
+    locale: string
+  }>
 }
 
-export default async function DashboardOverviewPage({ params }: PageProps) {
-  const { locale } = await params;
-  const supabase = await createClient();
+export default async function DashboardOverviewPage({
+  params,
+}: PageProps) {
+  const { locale } = await params
 
-  // 1. Verify user authentication context
-  const { data: { user } } = await supabase.auth.getUser();
+  const supabase = await createClient()
+
+  // ============================================================
+  // 1. AUTHENTICATION
+  // ============================================================
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
   if (!user) {
-    redirect(`/${locale}/auth/login` as any);
+    redirect(`/${locale}/auth/login` as Route)
   }
 
-  // Fallback to your offline mock token fallback "biz_active" if metadata isn't written yet
-  const businessId = user.user_metadata?.business_id || user.app_metadata?.business_id || "biz_active";
-  const businessName = user.user_metadata?.business_name || "Liyu POS Backend";
+ // ------------------------------------------------------------
+// 2. USER / BUSINESS CONTEXT
+// ------------------------------------------------------------
 
-  // 2. Fetch baseline metadata metrics concurrently from cloud database
-  const [
-    productsResponse, 
-    categoriesResponse, 
-    profileResponse,
-    salesResponse
-  ] = await Promise.all([
-    supabase
-      .from("products")
-      .select("*", { count: "exact", head: true })
-      .eq("business_id", businessId),
-    
-    supabase
-      .from("categories")
-      .select("*", { count: "exact", head: true })
-      .eq("business_id", businessId),
-    
-    supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single(),
+const { data: profile } = await supabase
+  .from('profiles')
+  .select('role, business_id')
+  .eq('id', user.id)
+  .is('deleted_at', null)
+  .maybeSingle()
 
-    supabase
-      .from("sales_by_category_summary") 
-      .select("category_name, items_sold, gross_revenue")
-      .eq("business_id", businessId)
-  ]);
+if (!profile) {
+  redirect(`/${locale}/onboarding` as Route)
+}
 
-  // Log fetch metrics safely 
-  if (salesResponse.error) console.info("Note: No live sales records found on server view yet.");
+const businessId =
+  profile.business_id ??
+  user.user_metadata?.business_id ??
+  user.app_metadata?.business_id
 
-  const productCount = productsResponse.count || 0;
-  const categoryCount = categoriesResponse.count || 0;
-  const userRole = profileResponse.data?.role || user.user_metadata?.role || "owner";
+if (!businessId) {
+  redirect(`/${locale}/onboarding` as Route)
+}
 
-  // Format category sales summary arrays (Will safely empty array [] if offline rows haven't synced yet)
-  const categoryBreakdown = (salesResponse.data || []).map(row => ({
-    name: row.category_name || "Uncategorized",
-    itemsSold: Number(row.items_sold || 0),
-    revenue: Number(row.gross_revenue || 0)
-  }));
+// ------------------------------------------------------------
+// 3. USER ROLE
+// ------------------------------------------------------------
 
-  // 3. Render client layout dashboard securely populated with cloud infrastructure states
+const userRole =
+  profile.role ??
+  user.user_metadata?.role ??
+  'owner'
+
+  // ============================================================
+  // 4. TODAY RANGE
+  // ============================================================
+
+  const now = new Date()
+
+  const from = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+  ).toISOString()
+
+  const to = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate() + 1,
+  ).toISOString()
+
+  // ============================================================
+  // 5. DASHBOARD REPORT
+  // ============================================================
+
+  const report = await getDashboardReport({
+    businessId,
+    from,
+    to,
+  })
+
+  // ============================================================
+  // 6. BUSINESS NAME
+  // ============================================================
+
+  const businessName =
+    user.user_metadata?.business_name ??
+    'Liyu POS'
+
+  // ============================================================
+  // 7. RENDER
+  // ============================================================
+
   return (
-    <DashboardClientContent 
-      locale={locale} 
-      role={userRole} 
+    <DashboardClientContent
+      locale={locale}
+      role={userRole}
       businessName={businessName}
-      initialProductCount={productCount}
-      initialCategoryCount={categoryCount}
-      categoryBreakdown={categoryBreakdown}
-      lowStockAlerts={[]} // Kept safe until your cloud syncing mechanism populates products
-      
+
+      initialProductCount={
+        report.inventory.totalProducts
+      }
+
+      initialCategoryCount={
+        report.inventory.totalCategories
+      }
+
+      categoryBreakdown={
+        report.categories.map((item) => ({
+          name: item.name,
+          itemsSold: item.itemsSold,
+          revenue: item.revenue,
+          grossProfit: item.grossProfit,
+        }))
+      }
+
+      lowStockAlerts={
+        report.lowStock.map((item) => ({
+          id: item.id,
+          name: item.name,
+          category:
+            item.category ?? 'Uncategorized',
+          stock: item.quantity,
+        }))
+      }
+
+      todayRevenue={
+        report.sales.revenue
+      }
+
+      todayTransactionCount={
+        report.sales.transactions
+      }
+
+      todayGrossProfit={
+        report.sales.grossProfit
+      }
+
+      todayExpenses={
+        report.expenses.total
+      }
+
+      todayNetProfit={
+        report.profit.netProfit
+      }
+
+      todayDiscounts={
+        report.sales.discounts
+      }
+
+      todayTax={
+        report.sales.tax
+      }
+
+      averageTicketSize={
+        report.sales.averageSale
+      }
+
+      pendingSyncCount={
+        report.pendingOfflineSales
+      }
+
+      hasActiveShift={
+        report.activeShift !== null
+      }
     />
-  );
+  )
 }

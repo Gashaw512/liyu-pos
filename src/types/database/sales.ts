@@ -6,7 +6,8 @@
 
 import type {
   PaymentMethod,
-  TransactionStatus
+  TransactionStatus,
+  SaleStatus
 } from '../enum'
 
 /* ============================================================================
@@ -111,4 +112,88 @@ export interface Payment {
     | 'refunded'
 
   created_at: string
+}
+
+
+/**
+ * Lightweight sale used by dashboard/report queries.
+ */
+export interface SaleSummary {
+  id: string
+  receipt_number: string
+  total_amount: number
+  subtotal: number
+  tax_amount: number
+  discount_amount: number
+  status: SaleStatus
+  is_offline_sync: boolean
+  shift_id: string | null
+  cashier_id: string | null
+  created_at: string
+}
+
+/**
+ * Dashboard-level sales KPIs.
+ */
+export interface SalesSummary {
+  revenue: number
+  transactions: number
+  itemsSold: number
+
+  grossProfit: number
+  grossMargin: number
+
+  averageSale: number
+
+  discounts: number
+  tax: number
+}
+
+/**
+ * Category performance shown on dashboard/reports.
+ */
+export interface CategoryPerformance {
+  categoryId: string | null
+  name: string
+  nameAm: string | null
+
+  itemsSold: number
+  revenue: number
+  grossProfit: number
+}
+
+/**
+ * Product performance.
+ */
+export interface ProductPerformance {
+  productId: string
+  productName: string
+
+  quantitySold: number
+  revenue: number
+  grossProfit: number
+}
+
+/**
+ * Payment method summary.
+ */
+export interface PaymentMethodSummary {
+  method: PaymentMethod
+  amount: number
+  transactions: number
+}
+
+/**
+ * Complete sales report.
+ */
+export interface SalesReport {
+  summary: SalesSummary
+
+  categories: CategoryPerformance[]
+
+  products: ProductPerformance[]
+
+  paymentMethods: PaymentMethodSummary[]
+
+  pendingOfflineSales: number
 }

@@ -1,174 +1,433 @@
-'use client';
+'use client'
 
-import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { Sparkles, ArrowRight, ShieldCheck } from 'lucide-react';
+import React, { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { ArrowRight } from 'lucide-react'
 
-import { VoiceAssistCard } from '@/components/dashboard/VoiceAssistCard';
-import { OwnerActionHeader } from '@/components/dashboard/OwnerActionHeader';
-import { MetricSummaryGrid } from '@/components/dashboard/MetricSummaryGrid';
-import { CategoryPerformanceTable } from '@/components/dashboard/CategoryPerformanceTable';
-import { LowStockWarningsTable } from '@/components/dashboard/LowStockWarningsTable';
+import { DashboardHeader } from '@/components/dashboard/DashboardHeader'
+import { OwnerActionHeader } from '@/components/dashboard/OwnerActionHeader'
+import { MetricSummaryGrid } from '@/components/dashboard/MetricSummaryGrid'
+import { CategoryPerformanceTable } from '@/components/dashboard/CategoryPerformanceTable'
+import { LowStockWarningsTable } from '@/components/dashboard/LowStockWarningsTable'
 
 interface CategoryPerformance {
-  name: string;
-  itemsSold: number;
-  revenue: number;
+  name: string
+  itemsSold: number
+  revenue: number
+  grossProfit?: number
 }
 
 interface LowStockItem {
-  id: string;
-  name: string;
-  category: string;
-  stock: number;
+  id: string
+  name: string
+  category: string
+  stock: number
 }
 
 interface DashboardClientProps {
-  locale: string;
-  role: string;
-  businessName: string;
-  initialProductCount: number | null;
-  initialCategoryCount: number | null;
-  categoryBreakdown?: CategoryPerformance[];
-  lowStockAlerts?: LowStockItem[];
+  locale: string
+  role: string
+  businessName: string
+
+  initialProductCount: number
+  initialCategoryCount: number
+
+  categoryBreakdown: CategoryPerformance[]
+  lowStockAlerts: LowStockItem[]
+
+  todayRevenue: number
+  todayTransactionCount: number
+
+  todayGrossProfit: number
+  todayExpenses: number
+  todayNetProfit: number
+
+  todayDiscounts: number
+  todayTax: number
+  averageTicketSize: number
+
+  pendingSyncCount: number
+  hasActiveShift: boolean
 }
 
 export default function DashboardClientContent({
   locale,
   role,
   businessName,
+
   initialProductCount,
   initialCategoryCount,
-  categoryBreakdown = [],
-  lowStockAlerts = []
-}: DashboardClientProps) {
-  const router = useRouter();
-  const isAm = locale === 'am';
-  const [isVoicePlaying, setIsVoicePlaying] = useState(false);
-  const [activeShift, setActiveShift] = useState<'open' | 'closed'>('open');
-  const t = (en: string, am: string) => (isAm ? am : en);
 
-  const totalProducts = initialProductCount || 0;
-  const totalCategories = initialCategoryCount || 0;
-  
-  // Securely derived metrics
-  const todayRevenue = categoryBreakdown.reduce((sum, item) => sum + item.revenue, 0);
-  const totalTransactionsCount = categoryBreakdown.reduce((sum, item) => sum + item.itemsSold, 0);
-  const averageTicketSize = totalTransactionsCount > 0 ? Math.round(todayRevenue / totalTransactionsCount) : 0;
+  categoryBreakdown,
+  lowStockAlerts,
 
-  const handleVoiceGuidance = () => {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      if (isVoicePlaying) {
-        setIsVoicePlaying(false);
-        return;
-      }
-      let spokenText = "";
-      if (isAm) {
-        if (role === 'owner' || role === 'manager') {
-          spokenText = `እንኳን ደህና መጡ። የ${businessName} ጠቅላላ የሽያጭ መጠን ${todayRevenue.toLocaleString()} ብር ደርሷል።`;
-        } else {
-          spokenText = "እንኳን ደህና መጡ። ሽያጭ ለመጀመር ወይም ትዕዛዝ ለመመዝገብ የሽያጭ ቁልፉን ይጫኑ።";
-        }
-      } else {
-        spokenText = `Welcome back. Today's total revenue is ${todayRevenue.toLocaleString()} ETB.`;
-      }
-      const utterance = new SpeechSynthesisUtterance(spokenText);
-      utterance.lang = isAm ? 'am-ET' : 'en-US';
-      utterance.rate = 0.9;
-      
-      utterance.onend = () => setIsVoicePlaying(false);
-      setIsVoicePlaying(true);
-      window.speechSynthesis.speak(utterance);
+  todayRevenue,
+  todayTransactionCount,
+
+  todayGrossProfit,
+  todayExpenses,
+  todayNetProfit,
+
+  todayDiscounts,
+  todayTax,
+  averageTicketSize,
+
+  pendingSyncCount,
+  hasActiveShift,
+}: DashboardClientProps)  {
+  const router = useRouter()
+
+  const isAm = locale === 'am'
+
+  const [isVoicePlaying, setIsVoicePlaying] =
+    useState(false)
+
+  const t = (en: string, am: string) =>
+    isAm ? am : en
+
+  /*
+   * ----------------------------------------------------
+   * BASIC CATALOG METRICS
+   * ----------------------------------------------------
+   */
+
+  const totalProducts =
+  initialProductCount
+
+const totalCategories =
+  initialCategoryCount
+
+const totalTransactionsCount =
+  todayTransactionCount
+
+  /*
+   * ----------------------------------------------------
+   * VOICE BRIEFING
+   * ----------------------------------------------------
+   */
+
+ const handleVoiceGuidance = () => {
+  if (!('speechSynthesis' in window)) {
+    return
+  }
+
+  window.speechSynthesis.cancel()
+
+  if (isVoicePlaying) {
+    setIsVoicePlaying(false)
+    return
+  }
+
+  let spokenText = ''
+
+  if (isAm) {
+    spokenText =
+      `እንኳን ደህና መጡ። ` +
+      `ዛሬ ${todayRevenue.toLocaleString()} ብር ` +
+      `የሽያጭ ገቢ አለዎት። ` +
+      `${totalTransactionsCount} ሽያጮች ተመዝግበዋል።`
+
+    if (lowStockAlerts.length > 0) {
+      spokenText +=
+        ` ${lowStockAlerts.length} ` +
+        `እቃዎች ዝቅተኛ ክምችት አላቸው።`
     }
-  };
+
+    if (pendingSyncCount > 0) {
+      spokenText +=
+        ` ${pendingSyncCount} ` +
+        `ሽያጮች ለማመሳሰል እየጠበቁ ነው።`
+    }
+  } else {
+    spokenText =
+      `Welcome back. ` +
+      `Today you have made ` +
+      `${todayRevenue.toLocaleString()} ETB ` +
+      `from ${totalTransactionsCount} sales.`
+
+    if (lowStockAlerts.length > 0) {
+      spokenText +=
+        ` ${lowStockAlerts.length} ` +
+        `items are running low on stock.`
+    }
+
+    if (pendingSyncCount > 0) {
+      spokenText +=
+        ` ${pendingSyncCount} ` +
+        `sales are waiting to sync.`
+    }
+  }
+
+  const utterance =
+    new SpeechSynthesisUtterance(
+      spokenText
+    )
+
+  utterance.lang =
+    isAm ? 'am-ET' : 'en-US'
+
+  utterance.rate = 0.9
+
+  utterance.onend = () =>
+    setIsVoicePlaying(false)
+
+  utterance.onerror = () =>
+    setIsVoicePlaying(false)
+
+  setIsVoicePlaying(true)
+
+  window.speechSynthesis.speak(
+    utterance
+  )
+}
+
+  /*
+   * ----------------------------------------------------
+   * CLEANUP SPEECH
+   * ----------------------------------------------------
+   */
 
   useEffect(() => {
     return () => {
-      if ('speechSynthesis' in window) window.speechSynthesis.cancel();
-    };
-  }, []);
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel()
+      }
+    }
+  }, [])
 
-  const isOwnerOrManager = role === 'owner' || role === 'manager';
+  /*
+   * ----------------------------------------------------
+   * ROLE
+   * ----------------------------------------------------
+   */
+
+  const isOwnerOrManager =
+    role === 'owner' ||
+    role === 'manager'
+
+  /*
+   * ----------------------------------------------------
+   * RENDER
+   * ----------------------------------------------------
+   */
 
   return (
-    <div className="space-y-5 max-w-4xl mx-auto pb-6 px-2 select-none">
-      
-      {/* 🔊 Voice Assist Card */}
-      <VoiceAssistCard 
+    <div
+      className="
+        mx-auto
+        max-w-4xl
+        space-y-5
+        px-2
+        pb-6
+        select-none
+      "
+    >
+
+      {/* =================================================
+          1. DASHBOARD HEADER
+          ================================================= */}
+
+      <DashboardHeader
         businessName={businessName}
-        role={role}
         isAm={isAm}
         isVoicePlaying={isVoicePlaying}
         onToggleVoice={handleVoiceGuidance}
+
+        todayRevenue={todayRevenue}
+
+        transactionCount={
+          totalTransactionsCount
+        }
+
+        lowStockCount={
+          lowStockAlerts.length
+        }
+
+        pendingSyncCount={
+          pendingSyncCount
+        }
+
+        activeShift={
+          hasActiveShift
+        }
       />
 
-      {isOwnerOrManager ? (
-        /* 👑 EXECUTIVE DISPLAY ENGINE (Modular Components) */
-        <div className="space-y-5">
-          <OwnerActionHeader locale={locale} />
+      {/* =================================================
+          2. OWNER / MANAGER DASHBOARD
+          ================================================= */}
 
-          <MetricSummaryGrid 
-            todayRevenue={todayRevenue}
-            activeShift={activeShift}
-            onToggleShift={() => setActiveShift(activeShift === 'open' ? 'closed' : 'open')}
-            totalProducts={totalProducts}
-            totalCategories={totalCategories}
-            totalTransactionsCount={totalTransactionsCount}
-            averageTicketSize={averageTicketSize}
+      {isOwnerOrManager ? (
+        <div className="space-y-5">
+
+          <OwnerActionHeader
             locale={locale}
           />
 
-          <CategoryPerformanceTable categoryBreakdown={categoryBreakdown} locale={locale} />
+          <MetricSummaryGrid
+            todayRevenue={todayRevenue}
 
-          <LowStockWarningsTable lowStockAlerts={lowStockAlerts} locale={locale} />
+            activeShift={
+              hasActiveShift
+                ? 'open'
+                : 'closed'
+            }
+
+            onToggleShift={() => {
+              router.push(
+                `/${locale}/shifts`
+              )
+            }}
+
+            totalProducts={
+              totalProducts
+            }
+
+            totalCategories={
+              totalCategories
+            }
+
+            totalTransactionsCount={
+              totalTransactionsCount
+            }
+
+            locale={locale}
+          />
+
+          <CategoryPerformanceTable
+            categoryBreakdown={
+              categoryBreakdown
+            }
+            locale={locale}
+          />
+
+          <LowStockWarningsTable
+            lowStockAlerts={
+              lowStockAlerts
+            }
+            locale={locale}
+          />
+
         </div>
       ) : (
-        /* ─── OPERATIONAL STAFF/WAITER VIEWPORT ─── */
-        <div className="space-y-3">
-          <div className="bg-cream-50 border border-cream-200 rounded-xl p-3 flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-gold-500 shrink-0" />
-            <p className="text-xs text-coffee-800 font-bold">
-              {t('Service Terminal Ready', 'ፈጣን የአገልግሎት መስኮት ገባሪ ነው')}
-            </p>
-          </div>
-          <button
-            onClick={() => router.push(`/${locale}/sales`)}
-            type="button"
-            className="w-full flex items-center justify-between p-5 rounded-2xl bg-gradient-to-br from-coffee-800 to-coffee-900 text-cream-50 shadow-sm hover:from-coffee-900 hover:to-black transition-all active:scale-98 text-left border border-coffee-950"
-          >
-            <div className="flex items-center gap-4">
-              <div className="h-11 w-11 rounded-xl bg-white/10 flex items-center justify-center text-lg">🛍️</div>
-              <div>
-                <h3 className="font-black text-sm tracking-tight">{t('Open Point of Sale', 'አዲስ መሸጫ ክፈት (POS)')}</h3>
-                <p className="text-xs text-coffee-300 mt-0.5">{t('Click here to process customer sales receipts', 'ትዕዛዞችን ለመመዝገብ እና ደረሰኝ ለማውጣት እዚህ ይጫኑ')}</p>
-              </div>
-            </div>
-            <ArrowRight className="h-5 w-5 text-gold-400 shrink-0" />
-          </button>
-        </div>
-      )}
 
-      {/* 🔐 TENANT BOUNDARY VALIDATION BANNER */}
-      <div className="bg-white rounded-2xl border border-cream-200 p-4 shadow-sm">
-        <div className="flex items-start gap-3">
-          <div className="mt-0.5 p-1.5 bg-emerald-50 rounded-lg text-emerald-600 shrink-0 border border-emerald-100">
-            <ShieldCheck className="h-4 w-4" />
-          </div>
-          <div className="space-y-0.5">
-            <h3 className="text-xs font-black text-coffee-900">
-              {t('Tenant Boundary Isolation Engine', 'የውሂብ መነጠል ማረጋገጫ (RLS Secure)')}
-            </h3>
-            <p className="text-[11px] text-coffee-400 font-medium leading-normal">
+        /* =================================================
+           3. OPERATIONAL STAFF / WAITER
+           ================================================= */
+
+        <div className="space-y-3">
+
+          <div
+            className="
+              rounded-xl
+              border
+              border-cream-200
+              bg-cream-50
+              p-3
+            "
+          >
+            <p
+              className="
+                text-xs
+                font-bold
+                text-coffee-800
+              "
+            >
               {t(
-                'Cryptographic multi-tenant record isolation fully validated. Operational data pipelines are restricted to your authenticated branch terminal.',
-                'የኢንተርፕራይዝ ደህንነት መዋቅር የተጠበቀ ነው። የስራ መረጃዎችዎ እና የሽያጭ መዝገቦችዎ በአስተማማኝ ሁኔታ ተለይተው ተቀምጠዋል።'
+                'Service Terminal Ready',
+                'ፈጣን የአገልግሎት መስኮት ገባሪ ነው'
               )}
             </p>
           </div>
+
+          <button
+            onClick={() => {
+              router.push(
+                `/${locale}/sales`
+              )
+            }}
+            type="button"
+            className="
+              flex
+              w-full
+              items-center
+              justify-between
+              rounded-2xl
+              border
+              border-coffee-800
+              bg-coffee-800
+              p-5
+              text-left
+              text-cream-50
+              shadow-sm
+              transition
+              active:scale-[0.98]
+              hover:bg-coffee-700
+            "
+          >
+
+            <div className="flex items-center gap-4">
+
+              <div
+                className="
+                  flex
+                  h-11
+                  w-11
+                  items-center
+                  justify-center
+                  rounded-xl
+                  bg-berbere-500
+                  text-lg
+                "
+              >
+                🛍️
+              </div>
+
+              <div>
+
+                <h3
+                  className="
+                    text-sm
+                    font-black
+                    tracking-tight
+                  "
+                >
+                  {t(
+                    'Open Point of Sale',
+                    'አዲስ መሸጫ ክፈት'
+                  )}
+                </h3>
+
+                <p
+                  className="
+                    mt-0.5
+                    text-xs
+                    text-cream-300
+                  "
+                >
+                  {t(
+                    'Process customer sales and receipts',
+                    'የደንበኛ ሽያጭ እና ደረሰኝ ይመዝግቡ'
+                  )}
+                </p>
+
+              </div>
+
+            </div>
+
+            <ArrowRight
+              className="
+                h-5
+                w-5
+                shrink-0
+                text-cream-300
+              "
+            />
+
+          </button>
+
         </div>
-      </div>
+      )}
 
     </div>
-  );
+  )
 }

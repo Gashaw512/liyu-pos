@@ -8,8 +8,13 @@ import type {
   Shift,
 } from '@/types/database/operations'
 
-interface DashboardReportOptions {
+/* ============================================================
+   TYPES
+   ============================================================ */
+
+export interface DashboardReportOptions {
   businessId: string
+  userId: string
   branchId?: string | null
   from: string
   to: string
@@ -21,10 +26,10 @@ interface ExpenseRow {
 }
 
 interface InventoryCategoryRow {
+  id?: string
   name: string
   name_am: string | null
 }
-
 
 interface InventoryProductRow {
   id: string
@@ -33,6 +38,7 @@ interface InventoryProductRow {
   low_stock_alert: number | string | null
   is_active: boolean
   deleted_at: string | null
+
   category:
     | InventoryCategoryRow
     | InventoryCategoryRow[]
@@ -43,16 +49,65 @@ interface RawInventoryRow {
   id: string
   product_id: string
   quantity: number | string | null
+
   product:
     | InventoryProductRow
     | InventoryProductRow[]
     | null
 }
 
+interface CategorySaleRow {
+  quantity: number | string | null
+  total_amount: number | string | null
+  gross_profit: number | string | null
+
+  product:
+    | {
+        category:
+          | {
+              id: string
+              name: string
+              name_am: string | null
+            }
+          | {
+              id: string
+              name: string
+              name_am: string | null
+            }[]
+          | null
+      }
+    | {
+        category:
+          | {
+              id: string
+              name: string
+              name_am: string | null
+            }
+          | {
+              id: string
+              name: string
+              name_am: string | null
+            }[]
+          | null
+      }[]
+    | null
+}
+
+interface SalesRow {
+  id: string
+  total_amount: number | string | null
+}
+
+/* ============================================================
+   HELPERS
+   ============================================================ */
+
 const toNumber = (value: unknown): number => {
   const number = Number(value)
 
-  return Number.isFinite(number) ? number : 0
+  return Number.isFinite(number)
+    ? number
+    : 0
 }
 
 /* ============================================================
@@ -65,17 +120,38 @@ async function getTodayExpenses(
 ): Promise<ExpenseSummary> {
   let query = supabase
     .from('expenses')
-    .select('id, amount')
-    .eq('business_id', options.businessId)
-    .is('deleted_at', null)
-    .gte('expense_date', options.from.slice(0, 10))
-    .lt('expense_date', options.to.slice(0, 10))
+    .select(`
+      id,
+      amount
+    `)
+    .eq(
+      'business_id',
+      options.businessId,
+    )
+    .is(
+      'deleted_at',
+      null,
+    )
+    .gte(
+      'expense_date',
+      options.from.slice(0, 10),
+    )
+    .lt(
+      'expense_date',
+      options.to.slice(0, 10),
+    )
 
   if (options.branchId) {
-    query = query.eq('branch_id', options.branchId)
+    query = query.eq(
+      'branch_id',
+      options.branchId,
+    )
   }
 
-  const { data, error } = await query
+  const {
+    data,
+    error,
+  } = await query
 
   if (error) {
     throw new Error(
@@ -83,14 +159,17 @@ async function getTodayExpenses(
     )
   }
 
-  const expenses = (data ?? []) as ExpenseRow[]
+  const expenses =
+    (data ?? []) as ExpenseRow[]
+
+  const total = expenses.reduce(
+    (sum, expense) =>
+      sum + toNumber(expense.amount),
+    0,
+  )
 
   return {
-    total: expenses.reduce(
-      (sum, expense) =>
-        sum + toNumber(expense.amount),
-      0,
-    ),
+    total,
     transactions: expenses.length,
   }
 }
@@ -109,6 +188,7 @@ async function getInventorySummary(
       id,
       product_id,
       quantity,
+
       product:products (
         id,
         name,
@@ -116,13 +196,18 @@ async function getInventorySummary(
         low_stock_alert,
         is_active,
         deleted_at,
+
         category:categories (
+          id,
           name,
           name_am
         )
       )
     `)
-    .eq('business_id', options.businessId)
+    .eq(
+      'business_id',
+      options.businessId,
+    )
 
   if (options.branchId) {
     query = query.eq(
@@ -131,7 +216,10 @@ async function getInventorySummary(
     )
   }
 
-  const { data, error } = await query
+  const {
+    data,
+    error,
+  } = await query
 
   if (error) {
     throw new Error(
@@ -140,19 +228,23 @@ async function getInventorySummary(
   }
 
   const rows =
-    (data as unknown as RawInventoryRow[]) ?? []
+    (data as unknown as RawInventoryRow[]) ??
+    []
 
   let totalInventoryUnits = 0
   let lowStockCount = 0
   let outOfStockCount = 0
 
   const lowStock: LowStockItem[] = []
-  const categoryNames = new Set<string>()
+
+  const categoryNames =
+    new Set<string>()
 
   for (const row of rows) {
-    const product = Array.isArray(row.product)
-      ? row.product[0] ?? null
-      : row.product
+    const product =
+      Array.isArray(row.product)
+        ? row.product[0] ?? null
+        : row.product
 
     if (
       !product ||
@@ -162,59 +254,89 @@ async function getInventorySummary(
       continue
     }
 
-    const category = Array.isArray(product.category)
-      ? product.category[0] ?? null
-      : product.category
+    const category =
+      Array.isArray(product.category)
+        ? product.category[0] ?? null
+        : product.category
 
-    const quantity = toNumber(row.quantity)
+    const quantity =
+      toNumber(row.quantity)
 
-    const alertLevel = toNumber(
-      product.low_stock_alert,
-    )
+    const alertLevel =
+      toNumber(
+        product.low_stock_alert,
+      )
 
     totalInventoryUnits += quantity
 
     if (category?.name) {
-      categoryNames.add(category.name)
+      categoryNames.add(
+        category.name,
+      )
     }
 
     if (quantity <= 0) {
       outOfStockCount++
     }
 
-    if (quantity <= alertLevel) {
+    /*
+     * A low-stock alert is only meaningful
+     * when a positive alert level is configured.
+     */
+    if (
+      alertLevel > 0 &&
+      quantity <= alertLevel
+    ) {
       lowStockCount++
 
       lowStock.push({
         id: row.id,
-        productId: product.id,
-        name: product.name ?? '',
-        nameAm: product.name_am,
-        category: category?.name ?? null,
+
+        productId:
+          product.id,
+
+        name:
+          product.name ?? '',
+
+        nameAm:
+          product.name_am,
+
+        category:
+          category?.name ?? null,
+
         quantity,
+
         alertLevel,
-        shortage: Math.max(
-          alertLevel - quantity,
-          0,
-        ),
+
+        shortage:
+          Math.max(
+            alertLevel - quantity,
+            0,
+          ),
       })
     }
   }
 
-  return {
-    totalProducts: rows.filter((row) => {
-      const product = Array.isArray(row.product)
-        ? row.product[0] ?? null
-        : row.product
+  const activeProducts =
+    rows.filter((row) => {
+      const product =
+        Array.isArray(row.product)
+          ? row.product[0] ?? null
+          : row.product
 
       return (
         !!product &&
         product.is_active === true &&
         !product.deleted_at
       )
-    }).length,
+    })
 
-    totalCategories: categoryNames.size,
+  return {
+    totalProducts:
+      activeProducts.length,
+
+    totalCategories:
+      categoryNames.size,
 
     lowStockCount,
 
@@ -222,14 +344,17 @@ async function getInventorySummary(
 
     totalInventoryUnits,
 
-    lowStock: lowStock.sort(
-      (a, b) => a.quantity - b.quantity,
-    ),
+    lowStock:
+      lowStock.sort(
+        (a, b) =>
+          a.quantity -
+          b.quantity,
+      ),
   }
 }
 
 /* ============================================================
-   ACTIVE SHIFT
+   CURRENT USER ACTIVE SHIFT
    ============================================================ */
 
 async function getActiveShift(
@@ -264,11 +389,24 @@ async function getActiveShift(
       actual_cash,
       difference
     `)
-    .eq('business_id', options.businessId)
-    .eq('status', 'open')
-    .order('opened_at', {
-      ascending: false,
-    })
+    .eq(
+      'business_id',
+      options.businessId,
+    )
+    .eq(
+      'cashier_id',
+      options.userId,
+    )
+    .eq(
+      'status',
+      'open',
+    )
+    .order(
+      'opened_at',
+      {
+        ascending: false,
+      },
+    )
     .limit(1)
 
   if (options.branchId) {
@@ -278,7 +416,10 @@ async function getActiveShift(
     )
   }
 
-  const { data, error } = await query
+  const {
+    data,
+    error,
+  } = await query
 
   if (error) {
     throw new Error(
@@ -286,7 +427,60 @@ async function getActiveShift(
     )
   }
 
-  return (data?.[0] ?? null) as Shift | null
+  return (
+    data?.[0] ?? null
+  ) as Shift | null
+}
+
+/* ============================================================
+   OPEN SHIFT COUNT
+   ============================================================ */
+
+/**
+ * Counts all currently open shifts
+ * for the selected business / branch.
+ */
+async function getOpenShiftCount(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  options: DashboardReportOptions,
+): Promise<number> {
+  let query = supabase
+    .from('shifts')
+    .select(
+      'id',
+      {
+        count: 'exact',
+        head: true,
+      },
+    )
+    .eq(
+      'business_id',
+      options.businessId,
+    )
+    .eq(
+      'status',
+      'open',
+    )
+
+  if (options.branchId) {
+    query = query.eq(
+      'branch_id',
+      options.branchId,
+    )
+  }
+
+  const {
+    count,
+    error,
+  } = await query
+
+  if (error) {
+    throw new Error(
+      `Failed to fetch open shifts: ${error.message}`,
+    )
+  }
+
+  return count ?? 0
 }
 
 /* ============================================================
@@ -299,14 +493,29 @@ async function getPendingOfflineSales(
 ): Promise<number> {
   let query = supabase
     .from('sales')
-    .select('id', {
-      count: 'exact',
-      head: true,
-    })
-    .eq('business_id', options.businessId)
-    .eq('is_offline_sync', true)
-    .eq('status', 'completed')
-    .is('deleted_at', null)
+    .select(
+      'id',
+      {
+        count: 'exact',
+        head: true,
+      },
+    )
+    .eq(
+      'business_id',
+      options.businessId,
+    )
+    .eq(
+      'is_offline_sync',
+      true,
+    )
+    .eq(
+      'status',
+      'completed',
+    )
+    .is(
+      'deleted_at',
+      null,
+    )
 
   if (options.branchId) {
     query = query.eq(
@@ -315,7 +524,10 @@ async function getPendingOfflineSales(
     )
   }
 
-  const { count, error } = await query
+  const {
+    count,
+    error,
+  } = await query
 
   if (error) {
     throw new Error(
@@ -327,23 +539,24 @@ async function getPendingOfflineSales(
 }
 
 /* ============================================================
-   MAIN REPORT
+   MAIN DASHBOARD REPORT
    ============================================================ */
 
 export async function getDashboardReport(
   options: DashboardReportOptions,
 ): Promise<DashboardReport> {
-  const supabase = await createClient()
+  const supabase =
+    await createClient()
 
-  /*
-   * IMPORTANT:
-   * We keep the server report focused on dashboard data.
-   */
+  /* ==========================================================
+     PARALLEL NON-SALES QUERIES
+     ========================================================== */
 
   const [
     inventory,
     expenses,
     activeShift,
+    openShiftCount,
     pendingOfflineSales,
   ] = await Promise.all([
     getInventorySummary(
@@ -361,18 +574,20 @@ export async function getDashboardReport(
       options,
     ),
 
+    getOpenShiftCount(
+      supabase,
+      options,
+    ),
+
     getPendingOfflineSales(
       supabase,
       options,
     ),
   ])
 
-  /*
-   * Sales are fetched directly here temporarily.
-   *
-   * This avoids importing the client-side
-   * getSalesReport() into the Server Component.
-   */
+  /* ==========================================================
+     SALES
+     ========================================================== */
 
   let salesQuery = supabase
     .from('sales')
@@ -380,21 +595,39 @@ export async function getDashboardReport(
       id,
       total_amount
     `)
-    .eq('business_id', options.businessId)
-    .eq('status', 'completed')
-    .is('deleted_at', null)
-    .gte('created_at', options.from)
-    .lt('created_at', options.to)
+    .eq(
+      'business_id',
+      options.businessId,
+    )
+    .eq(
+      'status',
+      'completed',
+    )
+    .is(
+      'deleted_at',
+      null,
+    )
+    .gte(
+      'created_at',
+      options.from,
+    )
+    .lt(
+      'created_at',
+      options.to,
+    )
 
   if (options.branchId) {
-    salesQuery = salesQuery.eq(
-      'branch_id',
-      options.branchId,
-    )
+    salesQuery =
+      salesQuery.eq(
+        'branch_id',
+        options.branchId,
+      )
   }
 
-  const { data: salesData, error: salesError } =
-    await salesQuery
+  const {
+    data: salesData,
+    error: salesError,
+  } = await salesQuery
 
   if (salesError) {
     throw new Error(
@@ -402,36 +635,50 @@ export async function getDashboardReport(
     )
   }
 
-  const sales = salesData ?? []
+  const sales =
+    (salesData ?? []) as SalesRow[]
 
-  const revenue = sales.reduce(
-    (sum, sale) =>
-      sum + toNumber(sale.total_amount),
-    0,
-  )
+  /* ==========================================================
+     SALES SUMMARY
+     ========================================================== */
 
-  const transactions = sales.length
+  const revenue =
+    sales.reduce(
+      (sum, sale) =>
+        sum +
+        toNumber(
+          sale.total_amount,
+        ),
+      0,
+    )
+
+  const transactions =
+    sales.length
 
   const averageSale =
     transactions > 0
       ? revenue / transactions
       : 0
 
-  /*
-   * Category performance.
-   */
+  /* ==========================================================
+     CATEGORY PERFORMANCE + GROSS PROFIT
+     ========================================================== */
 
   let categoryQuery = supabase
     .from('sale_items')
     .select(`
       quantity,
       total_amount,
+      gross_profit,
+
       sale:sales!inner (
         business_id,
+        branch_id,
         created_at,
         status,
         deleted_at
       ),
+
       product:products (
         category:categories (
           id,
@@ -461,8 +708,18 @@ export async function getDashboardReport(
       options.to,
     )
 
-  const { data: categoryRows, error: categoryError } =
-    await categoryQuery
+  if (options.branchId) {
+    categoryQuery =
+      categoryQuery.eq(
+        'sale.branch_id',
+        options.branchId,
+      )
+  }
+
+  const {
+    data: categoryRowsData,
+    error: categoryError,
+  } = await categoryQuery
 
   if (categoryError) {
     throw new Error(
@@ -470,98 +727,211 @@ export async function getDashboardReport(
     )
   }
 
-  const categoryMap = new Map<
-    string,
-    {
-      categoryId: string | null
-      name: string
-      nameAm: string | null
-      itemsSold: number
-      revenue: number
-      grossProfit: number
-    }
-  >()
+  const categoryRows =
+    (categoryRowsData ??
+      []) as unknown as CategorySaleRow[]
 
-  for (const row of categoryRows ?? []) {
-    const product = Array.isArray(row.product)
-      ? row.product[0]
-      : row.product
+  const categoryMap =
+    new Map<
+      string,
+      {
+        categoryId: string | null
+        name: string
+        nameAm: string | null
+        itemsSold: number
+        revenue: number
+        grossProfit: number
+      }
+    >()
 
-    const category = Array.isArray(
-      product?.category,
-    )
-      ? product.category[0]
-      : product?.category
+  /*
+   * Total gross profit comes directly
+   * from sale_items.gross_profit.
+   */
+  let grossProfit = 0
 
-    const name =
+  let itemsSold = 0
+
+  for (const row of categoryRows) {
+    const product =
+      Array.isArray(row.product)
+        ? row.product[0] ?? null
+        : row.product
+
+    const category =
+      Array.isArray(
+        product?.category,
+      )
+        ? product.category[0] ?? null
+        : product?.category
+
+    const rowItemsSold =
+      toNumber(
+        row.quantity,
+      )
+
+    const rowRevenue =
+      toNumber(
+        row.total_amount,
+      )
+
+    const rowGrossProfit =
+      toNumber(
+        row.gross_profit,
+      )
+
+    itemsSold +=
+      rowItemsSold
+
+    grossProfit +=
+      rowGrossProfit
+
+    const categoryId =
+      category?.id ?? null
+
+    const categoryName =
       category?.name ??
       'Uncategorized'
 
-    const existing =
-      categoryMap.get(name)
+    /*
+     * Use ID where available so two
+     * categories with the same name
+     * cannot accidentally be merged.
+     */
+    const mapKey =
+      categoryId ??
+      `uncategorized:${categoryName}`
 
-    const itemsSold = toNumber(row.quantity)
-    const rowRevenue = toNumber(
-      row.total_amount,
-    )
+    const existing =
+      categoryMap.get(
+        mapKey,
+      )
 
     if (existing) {
-      existing.itemsSold += itemsSold
-      existing.revenue += rowRevenue
+      existing.itemsSold +=
+        rowItemsSold
+
+      existing.revenue +=
+        rowRevenue
+
+      existing.grossProfit +=
+        rowGrossProfit
     } else {
-      categoryMap.set(name, {
-        categoryId:
-          category?.id ?? null,
-        name,
-        nameAm:
-          category?.name_am ?? null,
-        itemsSold,
-        revenue: rowRevenue,
-        grossProfit: 0,
-      })
+      categoryMap.set(
+        mapKey,
+        {
+          categoryId,
+
+          name:
+            categoryName,
+
+          nameAm:
+            category?.name_am ??
+            null,
+
+          itemsSold:
+            rowItemsSold,
+
+          revenue:
+            rowRevenue,
+
+          grossProfit:
+            rowGrossProfit,
+        },
+      )
     }
   }
 
   const categories =
-    Array.from(categoryMap.values()).sort(
+    Array.from(
+      categoryMap.values(),
+    ).sort(
       (a, b) =>
-        b.revenue - a.revenue,
+        b.revenue -
+        a.revenue,
     )
 
-  const grossProfit = 0
-  const expenseTotal = expenses.total
-  const netProfit =
-    grossProfit - expenseTotal
+  /* ==========================================================
+     PROFIT
+     ========================================================== */
 
-  const grossMargin = 0
+  /*
+   * Gross Profit:
+   *
+   * sale_items.gross_profit
+   *
+   * This is already calculated/stored
+   * by the sales system.
+   */
+
+  const expenseTotal =
+    expenses.total
+
+  /*
+   * Net Profit:
+   *
+   * Gross Profit - Operating Expenses
+   */
+  const netProfit =
+    grossProfit -
+    expenseTotal
+
+  const grossMargin =
+    revenue > 0
+      ? (
+          grossProfit /
+          revenue
+        ) * 100
+      : 0
 
   const netMargin =
     revenue > 0
-      ? (netProfit / revenue) * 100
+      ? (
+          netProfit /
+          revenue
+        ) * 100
       : 0
 
   const profit: ProfitSummary = {
     revenue,
+
     grossProfit,
-    expenses: expenseTotal,
+
+    expenses:
+      expenseTotal,
+
     netProfit,
+
     grossMargin,
+
     netMargin,
   }
+
+  /* ==========================================================
+     FINAL REPORT
+     ========================================================== */
 
   return {
     sales: {
       revenue,
+
       transactions,
-      itemsSold: categories.reduce(
-        (sum, category) =>
-          sum + category.itemsSold,
-        0,
-      ),
+
+      itemsSold,
+
       grossProfit,
+
       grossMargin,
+
+      /*
+       * Keep these zero until the database
+       * fields for actual discounts/tax
+       * are wired into this report.
+       */
       discounts: 0,
+
       tax: 0,
+
       averageSale,
     },
 
@@ -572,12 +942,16 @@ export async function getDashboardReport(
     inventory: {
       totalProducts:
         inventory.totalProducts,
+
       totalCategories:
         inventory.totalCategories,
+
       lowStockCount:
         inventory.lowStockCount,
+
       outOfStockCount:
         inventory.outOfStockCount,
+
       totalInventoryUnits:
         inventory.totalInventoryUnits,
     },
@@ -585,7 +959,17 @@ export async function getDashboardReport(
     lowStock:
       inventory.lowStock,
 
+    /*
+     * Active shift belonging to
+     * the currently authenticated user.
+     */
     activeShift,
+
+    /*
+     * All open shifts in this
+     * business / branch.
+     */
+    openShiftCount,
 
     pendingOfflineSales,
 

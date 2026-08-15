@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowRight } from 'lucide-react'
 
@@ -47,7 +47,12 @@ interface DashboardClientProps {
   averageTicketSize: number
 
   pendingSyncCount: number
-  hasActiveShift: boolean
+
+  /**
+   * Number of currently open shifts.
+   * This is the source of truth for shift status.
+   */
+  openShiftCount: number
 }
 
 export default function DashboardClientContent({
@@ -73,8 +78,9 @@ export default function DashboardClientContent({
   averageTicketSize,
 
   pendingSyncCount,
-  hasActiveShift,
-}: DashboardClientProps)  {
+
+  openShiftCount,
+}: DashboardClientProps) {
   const router = useRouter()
 
   const isAm = locale === 'am'
@@ -82,110 +88,124 @@ export default function DashboardClientContent({
   const [isVoicePlaying, setIsVoicePlaying] =
     useState(false)
 
+  /* ============================================================
+     TRANSLATION
+     ============================================================ */
+
   const t = (en: string, am: string) =>
     isAm ? am : en
 
-  /*
-   * ----------------------------------------------------
-   * BASIC CATALOG METRICS
-   * ----------------------------------------------------
-   */
+  /* ============================================================
+     DASHBOARD STATE
+     ============================================================ */
 
   const totalProducts =
-  initialProductCount
+    initialProductCount
 
-const totalCategories =
-  initialCategoryCount
+  const totalCategories =
+    initialCategoryCount
 
-const totalTransactionsCount =
-  todayTransactionCount
+  const totalTransactions =
+    todayTransactionCount
 
-  /*
-   * ----------------------------------------------------
-   * VOICE BRIEFING
-   * ----------------------------------------------------
+  /**
+   * openShiftCount is the source of truth.
    */
+  const hasActiveShift =
+    openShiftCount > 0
 
- const handleVoiceGuidance = () => {
-  if (!('speechSynthesis' in window)) {
-    return
-  }
+  const isOwnerOrManager =
+    role === 'owner' ||
+    role === 'manager'
 
-  window.speechSynthesis.cancel()
+  /* ============================================================
+     VOICE BRIEFING
+     ============================================================ */
 
-  if (isVoicePlaying) {
-    setIsVoicePlaying(false)
-    return
-  }
-
-  let spokenText = ''
-
-  if (isAm) {
-    spokenText =
-      `እንኳን ደህና መጡ። ` +
-      `ዛሬ ${todayRevenue.toLocaleString()} ብር ` +
-      `የሽያጭ ገቢ አለዎት። ` +
-      `${totalTransactionsCount} ሽያጮች ተመዝግበዋል።`
-
-    if (lowStockAlerts.length > 0) {
-      spokenText +=
-        ` ${lowStockAlerts.length} ` +
-        `እቃዎች ዝቅተኛ ክምችት አላቸው።`
+  const handleVoiceGuidance = () => {
+    if (!('speechSynthesis' in window)) {
+      return
     }
 
-    if (pendingSyncCount > 0) {
-      spokenText +=
-        ` ${pendingSyncCount} ` +
-        `ሽያጮች ለማመሳሰል እየጠበቁ ነው።`
-    }
-  } else {
-    spokenText =
-      `Welcome back. ` +
-      `Today you have made ` +
-      `${todayRevenue.toLocaleString()} ETB ` +
-      `from ${totalTransactionsCount} sales.`
+    window.speechSynthesis.cancel()
 
-    if (lowStockAlerts.length > 0) {
-      spokenText +=
-        ` ${lowStockAlerts.length} ` +
-        `items are running low on stock.`
+    if (isVoicePlaying) {
+      setIsVoicePlaying(false)
+      return
     }
 
-    if (pendingSyncCount > 0) {
-      spokenText +=
-        ` ${pendingSyncCount} ` +
-        `sales are waiting to sync.`
-    }
-  }
+    let spokenText = ''
 
-  const utterance =
-    new SpeechSynthesisUtterance(
-      spokenText
+    if (isAm) {
+      spokenText =
+        `እንኳን ደህና መጡ። ` +
+        `ዛሬ ${todayRevenue.toLocaleString()} ብር ` +
+        `የሽያጭ ገቢ አለዎት። ` +
+        `${totalTransactions} ሽያጮች ተመዝግበዋል። ` +
+        `${openShiftCount} ፈረቃ ክፍት ነው።`
+
+      if (lowStockAlerts.length > 0) {
+        spokenText +=
+          ` ${lowStockAlerts.length} ` +
+          `እቃዎች ዝቅተኛ ክምችት አላቸው።`
+      }
+
+      if (pendingSyncCount > 0) {
+        spokenText +=
+          ` ${pendingSyncCount} ` +
+          `ሽያጮች ለማመሳሰል እየጠበቁ ነው።`
+      }
+    } else {
+      spokenText =
+        `Welcome back. ` +
+        `Today you have made ` +
+        `${todayRevenue.toLocaleString()} ETB ` +
+        `from ${totalTransactions} sales. ` +
+        `${openShiftCount} shift${
+          openShiftCount === 1 ? '' : 's'
+        } are currently open.`
+
+      if (lowStockAlerts.length > 0) {
+        spokenText +=
+          ` ${lowStockAlerts.length} ` +
+          `items are running low on stock.`
+      }
+
+      if (pendingSyncCount > 0) {
+        spokenText +=
+          ` ${pendingSyncCount} ` +
+          `sales are waiting to sync.`
+      }
+    }
+
+    const utterance =
+      new SpeechSynthesisUtterance(
+        spokenText
+      )
+
+    utterance.lang =
+      isAm ? 'am-ET' : 'en-US'
+
+    utterance.rate = 0.9
+
+    utterance.onend = () => {
+      setIsVoicePlaying(false)
+    }
+
+    utterance.onerror = () => {
+      setIsVoicePlaying(false)
+    }
+
+    setIsVoicePlaying(true)
+
+    window.speechSynthesis.speak(
+      utterance
     )
+  }
 
-  utterance.lang =
-    isAm ? 'am-ET' : 'en-US'
-
-  utterance.rate = 0.9
-
-  utterance.onend = () =>
-    setIsVoicePlaying(false)
-
-  utterance.onerror = () =>
-    setIsVoicePlaying(false)
-
-  setIsVoicePlaying(true)
-
-  window.speechSynthesis.speak(
-    utterance
-  )
-}
-
-  /*
-   * ----------------------------------------------------
-   * CLEANUP SPEECH
-   * ----------------------------------------------------
-   */
+  /* ============================================================
+     CLEANUP SPEECH
+     ============================================================ */
 
   useEffect(() => {
     return () => {
@@ -195,27 +215,28 @@ const totalTransactionsCount =
     }
   }, [])
 
-  /*
-   * ----------------------------------------------------
-   * ROLE
-   * ----------------------------------------------------
-   */
+  /* ============================================================
+     NAVIGATION
+     ============================================================ */
 
-  const isOwnerOrManager =
-    role === 'owner' ||
-    role === 'manager'
+  const goToSales = () => {
+    router.push(`/${locale}/sales`)
+  }
 
-  /*
-   * ----------------------------------------------------
-   * RENDER
-   * ----------------------------------------------------
-   */
+  const goToShifts = () => {
+    router.push(`/${locale}/shifts`)
+  }
+
+  /* ============================================================
+     RENDER
+     ============================================================ */
 
   return (
     <div
       className="
         mx-auto
-        max-w-4xl
+        w-full
+        max-w-6xl
         space-y-5
         px-2
         pb-6
@@ -223,38 +244,25 @@ const totalTransactionsCount =
       "
     >
 
-      {/* =================================================
-          1. DASHBOARD HEADER
-          ================================================= */}
+      {/* =====================================================
+          DASHBOARD HEADER
+          ===================================================== */}
 
       <DashboardHeader
         businessName={businessName}
         isAm={isAm}
         isVoicePlaying={isVoicePlaying}
         onToggleVoice={handleVoiceGuidance}
-
         todayRevenue={todayRevenue}
-
-        transactionCount={
-          totalTransactionsCount
-        }
-
-        lowStockCount={
-          lowStockAlerts.length
-        }
-
-        pendingSyncCount={
-          pendingSyncCount
-        }
-
-        activeShift={
-          hasActiveShift
-        }
+        transactionCount={totalTransactions}
+        lowStockCount={lowStockAlerts.length}
+        pendingSyncCount={pendingSyncCount}
+        activeShift={hasActiveShift}
       />
 
-      {/* =================================================
-          2. OWNER / MANAGER DASHBOARD
-          ================================================= */}
+      {/* =====================================================
+          OWNER / MANAGER DASHBOARD
+          ===================================================== */}
 
       {isOwnerOrManager ? (
         <div className="space-y-5">
@@ -262,6 +270,8 @@ const totalTransactionsCount =
           <OwnerActionHeader
             locale={locale}
           />
+
+          {/* MAIN BUSINESS METRICS */}
 
           <MetricSummaryGrid
             todayRevenue={todayRevenue}
@@ -272,11 +282,7 @@ const totalTransactionsCount =
                 : 'closed'
             }
 
-            onToggleShift={() => {
-              router.push(
-                `/${locale}/shifts`
-              )
-            }}
+            onToggleShift={goToShifts}
 
             totalProducts={
               totalProducts
@@ -287,11 +293,108 @@ const totalTransactionsCount =
             }
 
             totalTransactionsCount={
-              totalTransactionsCount
+              totalTransactions
             }
 
             locale={locale}
           />
+
+          {/* SHIFT STATUS */}
+
+          <button
+            type="button"
+            onClick={goToShifts}
+            className="
+              flex
+              w-full
+              items-center
+              justify-between
+              rounded-2xl
+              border
+              border-coffee-100
+              bg-white
+              p-4
+              text-left
+              shadow-sm
+              transition
+              hover:border-coffee-200
+              hover:shadow
+              active:scale-[0.99]
+            "
+          >
+            <div className="flex items-center gap-3">
+
+              <div
+                className={`
+                  flex
+                  h-10
+                  w-10
+                  items-center
+                  justify-center
+                  rounded-xl
+                  text-sm
+                  ${
+                    hasActiveShift
+                      ? 'bg-green-100'
+                      : 'bg-gray-100'
+                  }
+                `}
+              >
+                {hasActiveShift
+                  ? '🟢'
+                  : '⚪'}
+              </div>
+
+              <div>
+
+                <p
+                  className="
+                    text-xs
+                    font-bold
+                    text-coffee-500
+                  "
+                >
+                  {t(
+                    'Shift Status',
+                    'የፈረቃ ሁኔታ'
+                  )}
+                </p>
+
+                <p
+                  className="
+                    text-sm
+                    font-black
+                    text-coffee-900
+                  "
+                >
+                  {hasActiveShift
+                    ? t(
+                        `${openShiftCount} shift${
+                          openShiftCount === 1
+                            ? ''
+                            : 's'
+                        } open`,
+                        `${openShiftCount} ፈረቃ ክፍት ነው`
+                      )
+                    : t(
+                        'No shifts open',
+                        'ምንም ፈረቃ ክፍት የለም'
+                      )}
+                </p>
+
+              </div>
+            </div>
+
+            <ArrowRight
+              className="
+                h-5
+                w-5
+                text-coffee-300
+              "
+            />
+          </button>
+
+          {/* CATEGORY PERFORMANCE */}
 
           <CategoryPerformanceTable
             categoryBreakdown={
@@ -299,6 +402,8 @@ const totalTransactionsCount =
             }
             locale={locale}
           />
+
+          {/* LOW STOCK */}
 
           <LowStockWarningsTable
             lowStockAlerts={
@@ -310,9 +415,9 @@ const totalTransactionsCount =
         </div>
       ) : (
 
-        /* =================================================
-           3. OPERATIONAL STAFF / WAITER
-           ================================================= */
+        /* =====================================================
+           OPERATIONAL STAFF
+           ===================================================== */
 
         <div className="space-y-3">
 
@@ -340,11 +445,7 @@ const totalTransactionsCount =
           </div>
 
           <button
-            onClick={() => {
-              router.push(
-                `/${locale}/sales`
-              )
-            }}
+            onClick={goToSales}
             type="button"
             className="
               flex

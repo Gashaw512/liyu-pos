@@ -194,6 +194,8 @@ export interface DashboardReport {
 
   activeShift: Shift | null
 
+  openShiftCount: number
+
   pendingOfflineSales: number
 
   categories: {

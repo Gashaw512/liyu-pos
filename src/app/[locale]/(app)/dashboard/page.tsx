@@ -35,38 +35,38 @@ export default async function DashboardOverviewPage({
     redirect(`/${locale}/auth/login` as Route)
   }
 
- // ------------------------------------------------------------
-// 2. USER / BUSINESS CONTEXT
-// ------------------------------------------------------------
+  // ============================================================
+  // 2. USER / BUSINESS CONTEXT
+  // ============================================================
 
-const { data: profile } = await supabase
-  .from('profiles')
-  .select('role, business_id')
-  .eq('id', user.id)
-  .is('deleted_at', null)
-  .maybeSingle()
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role, business_id')
+    .eq('id', user.id)
+    .is('deleted_at', null)
+    .maybeSingle()
 
-if (!profile) {
-  redirect(`/${locale}/onboarding` as Route)
-}
+  if (!profile) {
+    redirect(`/${locale}/onboarding` as Route)
+  }
 
-const businessId =
-  profile.business_id ??
-  user.user_metadata?.business_id ??
-  user.app_metadata?.business_id
+  const businessId =
+    profile.business_id ??
+    user.user_metadata?.business_id ??
+    user.app_metadata?.business_id
 
-if (!businessId) {
-  redirect(`/${locale}/onboarding` as Route)
-}
+  if (!businessId) {
+    redirect(`/${locale}/onboarding` as Route)
+  }
 
-// ------------------------------------------------------------
-// 3. USER ROLE
-// ------------------------------------------------------------
+  // ============================================================
+  // 3. USER ROLE
+  // ============================================================
 
-const userRole =
-  profile.role ??
-  user.user_metadata?.role ??
-  'owner'
+  const userRole =
+    profile.role ??
+    user.user_metadata?.role ??
+    'owner'
 
   // ============================================================
   // 4. TODAY RANGE
@@ -92,6 +92,7 @@ const userRole =
 
   const report = await getDashboardReport({
     businessId,
+    userId: user.id,
     from,
     to,
   })
@@ -173,13 +174,17 @@ const userRole =
         report.sales.averageSale
       }
 
+      openShiftCount={
+        report.openShiftCount
+      }
+
       pendingSyncCount={
         report.pendingOfflineSales
       }
 
-      hasActiveShift={
-        report.activeShift !== null
-      }
+      // hasActiveShift={
+      //   report.activeShift !== null
+      // }
     />
   )
 }

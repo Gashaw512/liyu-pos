@@ -205,6 +205,7 @@ export default function DashboardClientContent({
   const goToInventory = () => goTo('/inventory')
 
   const goToShifts = () => goTo('/shifts')
+  const goToCloseDay = () =>goTo('/dashboard/close-day')
 
   const goToReports = () => goTo('/reports')
 
@@ -444,7 +445,7 @@ export default function DashboardClientContent({
         onDayStatusClick={goToShifts}
         onCloseDay={
           hasActiveShift
-            ? goToShifts
+            ? goToCloseDay
             : undefined
         }
         onOpenDay={

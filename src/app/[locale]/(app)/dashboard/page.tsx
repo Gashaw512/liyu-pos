@@ -106,7 +106,14 @@ export default async function DashboardOverviewPage({
     'Liyu POS'
 
   // ============================================================
-  // 7. RENDER
+  // 7. ACTIVE SHIFT
+  // ============================================================
+
+  const hasActiveShift =
+    report.activeShift !== null
+
+  // ============================================================
+  // 8. RENDER
   // ============================================================
 
   return (
@@ -174,17 +181,17 @@ export default async function DashboardOverviewPage({
         report.sales.averageSale
       }
 
-      openShiftCount={
-        report.openShiftCount
-      }
-
       pendingSyncCount={
         report.pendingOfflineSales
       }
 
-      // hasActiveShift={
-      //   report.activeShift !== null
-      // }
+      hasActiveShift={
+        hasActiveShift
+      }
+
+      openShiftCount={
+        report.openShiftCount
+      }
     />
   )
 }

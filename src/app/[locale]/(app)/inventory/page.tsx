@@ -12,7 +12,11 @@ import {
   PlusCircle,
   ArrowDownToLine
 } from 'lucide-react'
-import { getDB } from '@/lib/offline/db'
+import {
+  getDB,
+  type LocalPendingStockReceipt,
+} from '@/lib/offline/db'
+
 import { toast } from '@/lib/utils/toast'
 import { getLocalInventoryProducts } from '@/hooks/useInventoryData'
 import { useInventoryActions } from '@/hooks/useInventoryActions'
@@ -138,21 +142,251 @@ export default function InventoryPage() {
     }
   }
 
-  const handleReceiveStockSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!receiveProductId || receiveQty <= 0) return
-    const matchedProd = products?.find(p => p.id === receiveProductId)
-    const label = matchedProd ? (isAm && matchedProd.name_am ? matchedProd.name_am : matchedProd.name) : 'Product'
+  const handleReceiveStockSubmit = async (
+  e: React.FormEvent
+) => {
+  e.preventDefault()
 
-    toast(t(
-      `Stock incoming requested: ${receiveQty} units for ${label}.`,
-      `አዲስ ገቢ ዕቃ ተመዝግቧል: ${receiveQty} ፍሬ ለ ${label}።`
-    ))
+  // ---------------------------------------------
+  // Basic validation
+  // ---------------------------------------------
+
+  if (!receiveProductId) {
+    toast(
+      t(
+        'Please select a product.',
+        'እባክዎ ምርት ይምረጡ።'
+      ),
+      'error'
+    )
+    return
+  }
+
+  if (!Number.isFinite(receiveQty) || receiveQty <= 0) {
+    toast(
+      t(
+        'Quantity must be greater than zero.',
+        'ብዛቱ ከዜሮ በላይ መሆን አለበት።'
+      ),
+      'error'
+    )
+    return
+  }
+
+  if (
+    !Number.isFinite(receiveUnitCost) ||
+    receiveUnitCost < 0
+  ) {
+    toast(
+      t(
+        'Please enter a valid unit cost.',
+        'እባክዎ ትክክለኛ የመግዣ ዋጋ ያስገቡ።'
+      ),
+      'error'
+    )
+    return
+  }
+
+  const matchedProd =
+    products?.find(
+      p => p.id === receiveProductId
+    )
+
+  if (!matchedProd) {
+    toast(
+      t(
+        'Product could not be found.',
+        'ምርቱ አልተገኘም።'
+      ),
+      'error'
+    )
+    return
+  }
+
+  try {
+
+    const db = await getDB()
+
+    // ---------------------------------------------
+    // Active shift is required
+    // ---------------------------------------------
+
+    const activeShift =
+      await db.get(
+        'active_shift',
+        'current'
+      )
+
+    if (!activeShift) {
+      toast(
+        t(
+          'Please open an active shift first.',
+          'እባክዎ መጀመሪያ ክፍት የፈረቃ ስራ ይጀምሩ።'
+        ),
+        'error'
+      )
+      return
+    }
+
+    // ---------------------------------------------
+    // Normalize numbers
+    // ---------------------------------------------
+
+    const quantity =
+      Math.floor(Number(receiveQty))
+
+    const unitCost =
+      Number(receiveUnitCost)
+
+    const totalCost =
+      quantity * unitCost
+
+    if (quantity <= 0) {
+      throw new Error(
+        'Invalid receiving quantity.'
+      )
+    }
+
+    // ---------------------------------------------
+    // Create local receipt
+    // ---------------------------------------------
+
+    const receipt = {
+      localId: crypto.randomUUID(),
+
+      createdAt:
+        new Date().toISOString(),
+
+      syncStatus:
+        'pending' as const,
+
+      retryCount: 0,
+
+      product_id:
+        matchedProd.id,
+
+      business_id:
+        activeShift.business_id,
+
+      branch_id:
+        activeShift.branch_id,
+
+      shift_id:
+        activeShift.id,
+
+      quantity,
+
+      unit_cost:
+        unitCost,
+
+      total_cost:
+        totalCost,
+
+      notes:
+        'Stock received from inventory screen',
+    }
+
+    // ---------------------------------------------
+    // Save atomically
+    // ---------------------------------------------
+
+    const tx = db.transaction(
+      'pending_stock_receipts',
+      'readwrite'
+    )
+
+    await tx.objectStore(
+      'pending_stock_receipts'
+    ).put(receipt)
+
+    await tx.done
+
+    // ---------------------------------------------
+    // Update local UI immediately
+    //
+    // IMPORTANT:
+    // We do NOT modify `inventory`.
+    //
+    // The receipt is pending and the sync engine
+    // will eventually update the server inventory.
+    // ---------------------------------------------
+
+    setLiveStockMap(prev => {
+
+      const current =
+        prev[matchedProd.id]?.systemCount ??
+        matchedProd.opening_count ??
+        0
+
+      return {
+        ...prev,
+
+        [matchedProd.id]: {
+          ...prev[matchedProd.id],
+
+          systemCount:
+            current + quantity,
+
+          hasPendingTransactions:
+            true,
+        },
+      }
+    })
+
+    // Keep the editable count aligned
+    setCounts(prev => ({
+      ...prev,
+      [matchedProd.id]:
+        (
+          liveStockMap[matchedProd.id]
+            ?.systemCount ??
+          matchedProd.opening_count ??
+          0
+        ) + quantity,
+    }))
+
+    // ---------------------------------------------
+    // Success
+    // ---------------------------------------------
+
+    const label =
+      isAm && matchedProd.name_am
+        ? matchedProd.name_am
+        : matchedProd.name
+
+    toast(
+      t(
+        `Received ${quantity} units of ${label}.`,
+        `${quantity} ፍሬ ${label} ገቢ ተደርጓል።`
+      ),
+      'success'
+    )
+
+    // ---------------------------------------------
+    // Reset modal
+    // ---------------------------------------------
+
     setShowReceiveModal(false)
     setReceiveQty(0)
     setReceiveUnitCost(0)
     setReceiveProductId('')
+
+  } catch (error) {
+
+    console.error(
+      '[RECEIVE_STOCK]',
+      error
+    )
+
+    toast(
+      t(
+        'Failed to save received stock locally.',
+        'የገቢ ዕቃውን በአካባቢው ማስቀመጥ አልተቻለም።'
+      ),
+      'error'
+    )
   }
+}
 
   if (!products) {
     return (

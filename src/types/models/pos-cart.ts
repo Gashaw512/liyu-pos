@@ -1,4 +1,4 @@
-// src/types/model/pos-cart.ts
+// src/types/models/pos-cart.ts
 
 import type { CreateSaleDTO } from '../dto/sales-sync.dto';
 import type { Sale, SaleItem, Payment } from '../database/sales';
@@ -7,88 +7,73 @@ import type { Sale, SaleItem, Payment } from '../database/sales';
  * 1. GLOBAL OFFLINE LIFECYCLE METADATA
  * ========================================================================== */
 
-/**
- * Global tracking contract injected into any transactional record 
- * waiting in the local browser outbox queue to be synced to the cloud.
- */
 export interface OfflineSyncMeta {
   /**
-   * Unique browser tracking identifier (UUID or timestamp keypath).
+   * Unique browser tracking identifier.
    */
-  localId: string;
-  
+  localId: string
+
   /**
-   * ISO Timestamp string recording exactly when the cashier confirmed the action offline.
+   * ISO timestamp when the transaction was created locally.
    */
-  createdAt: string;
-  
+  createdAt: string
+
   /**
-   * Counter tracking failed network synchronization handshakes.
+   * Number of synchronization attempts.
    */
-  retryCount: number;
-  
+  retryCount: number
+
   /**
-   * Safe status flag determining state visibility across local UI elements.
+   * Current synchronization state.
    */
-  syncStatus: 'pending' | 'failed';
+  syncStatus: 'pending' | 'failed'
+
+  /**
+   * Last time synchronization was attempted.
+   */
+  lastSyncAttempt?: string
+
+  /**
+   * Last synchronization error.
+   */
+  lastSyncError?: string
 }
 
 /* ============================================================================
  * 2. TRANSACTIONAL VIEW MODELS
  * ========================================================================== */
 
-/**
- * 🛒 THE INDEXEDDB OUTBOX PAYLOAD FOR SALES
- * Intersects your clean transactional network DTO with local browser sync control properties.
- * Maps to: IndexedDB -> 'pending_sales' store.
- */
-export type LocalPendingSale = CreateSaleDTO & OfflineSyncMeta;
+export type LocalPendingSale =
+  CreateSaleDTO & OfflineSyncMeta;
 
 /**
- * 📜 THE UNIFIED HISTORICAL LOG MODEL
- * Combines the flat, normalized database tables into a deep nested format 
- * for sub-millisecond, lag-free rendering of past receipts while offline.
- * Maps to: IndexedDB -> 'completed_sales_history' store.
+ * Historical sale stored locally after successful completion.
  */
-export type LocalHistoricalSale = Sale & {
-  items: SaleItem[];
-  payments: Payment[];
-};
+export type LocalHistoricalSale =
+  Sale & {
+    items: SaleItem[];
+    payments: Payment[];
+  };
 
 /* ============================================================================
  * 3. HOSPITALITY / RESTAURANT DOMAIN MODELS
  * ========================================================================== */
 
-/**
- * 🍽️ WAITER ACTIVE OPEN TABS
- * Captures incremental line item logs for active tables before final checkout settlement.
- * Maps to: IndexedDB -> 'open_tabs' store.
- */
 export interface LocalOpenTab {
-  /**
-   * Matches the unique Table UUID session key tracker.
-   */
   id: string;
   table_number: string;
   updated_at: string;
-  
-  /**
-   * Temporary nested line item array optimized for quick modifiers inside restaurant layouts.
-   */
+
   items: Array<{
     product_id: string;
     product_name: string;
     quantity: number;
     unit_price: number;
   }>;
+
   total_accumulated: number;
 }
 
-/**
- * 🪑 DYNAMIC TABLES CONFIGURATION MAP
- * Manages spatial layouts, table labels, and real-time operational availability states.
- * Maps to: IndexedDB -> 'tables' store.
- */
 export interface LocalTableConfiguration {
   id: string;
   name: string;
@@ -96,27 +81,28 @@ export interface LocalTableConfiguration {
   status?: 'vacant' | 'occupied' | 'dirty' | 'reserved';
 }
 
+/* ============================================================================
+ * 4. FRONTEND CART
+ * ========================================================================== */
 
-// Add this directly to the bottom of src/types/models/pos-cart.ts
-
-/**
- * 🛒 FRONTEND ACTIVE CART LINE ITEM INTERFACE
- * Standardized across your state manager stores and sales layouts.
- */
 export interface CartItem {
-  id: string;          // Maps to product_id
-  name: string;        // Maps to product_name
+  id: string;
+  name: string;
   quantity: number;
-  price: number;       // Maps to unit_price
-  
-  // Implicit database backward-compatible tracking fallbacks
+  price: number;
+
   product_id?: string;
   product_name?: string;
   unit_price?: number;
 }
 
-/**
- * 💳 TRANSACTION SETTLEMENT METADATA
- * Supports robust multi-channel point-of-sale checkout modes.
- */
-export type PaymentMethod = 'cash' | 'telebirr' | 'cbe_birr' | 'card' | 'credit';
+/* ============================================================================
+ * 5. PAYMENT METHODS
+ * ========================================================================== */
+
+export type PaymentMethod =
+  | 'cash'
+  | 'telebirr'
+  | 'cbe_birr'
+  | 'card'
+  | 'credit';

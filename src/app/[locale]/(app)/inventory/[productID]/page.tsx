@@ -6,7 +6,7 @@ import { useParams } from 'next/navigation'
 import { getDB } from '@/lib/offline/db'
 import { getLocalInventoryProducts } from '@/hooks/useInventoryData'
 import StockRow from '@/components/inventory/StockRow'
-import type { InventoryProduct, LocalPendingStockCount } from '@/types/inventory'
+import type { InventoryProduct } from '@/types/inventory'
 
 export const dynamic = 'force-dynamic';
 
@@ -88,11 +88,11 @@ export default function ProductStockTakePage() {
         changeDetected = true
         const uuid = crypto.randomUUID()
 
-        const singleStockRow: LocalPendingStockCount = {
+        const singleStockRow = {
           localId: uuid,
           createdAt: now,
           retryCount: 0,
-          syncStatus: 'pending',
+          syncStatus: 'pending' as const,
           product_id: product.id,
           business_id: activeShift.business_id,
           branch_id: activeShift.branch_id,
@@ -197,8 +197,8 @@ export default function ProductStockTakePage() {
               type="button"
               onClick={() => setSelectedCategory('ALL')}
               className={`h-9 px-4 rounded-xl text-xs font-bold transition-all shrink-0 border active:scale-95 ${selectedCategory === 'ALL'
-                  ? 'bg-slate-950 border-slate-950 text-white shadow-sm'
-                  : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                ? 'bg-slate-950 border-slate-950 text-white shadow-sm'
+                : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                 }`}
             >
               🌟 {isAm ? 'ሁሉም' : 'All'} ({products.length})
@@ -212,8 +212,8 @@ export default function ProductStockTakePage() {
                   type="button"
                   onClick={() => setSelectedCategory(cat.id)}
                   className={`h-9 px-4 rounded-xl text-xs font-bold transition-all shrink-0 border active:scale-95 ${selectedCategory === cat.id
-                      ? 'bg-slate-950 border-slate-950 text-white shadow-sm'
-                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                    ? 'bg-slate-950 border-slate-950 text-white shadow-sm'
+                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                     }`}
                 >
                   {cat.icon || '🏷️'} {isAm && cat.name_am ? cat.name_am : cat.name} ({countPerCat})
@@ -242,8 +242,8 @@ export default function ProductStockTakePage() {
                 <div
                   key={product.id}
                   className={`bg-white p-4 rounded-2xl border transition-all ${hasChanged
-                      ? 'border-amber-400 ring-2 ring-amber-50 shadow-md'
-                      : 'border-slate-200 shadow-sm'
+                    ? 'border-amber-400 ring-2 ring-amber-50 shadow-md'
+                    : 'border-slate-200 shadow-sm'
                     }`}
                 >
                   <div className="flex justify-between items-start mb-4">

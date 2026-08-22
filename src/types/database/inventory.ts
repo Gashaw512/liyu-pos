@@ -3,6 +3,8 @@
 // export interface StockReconciliation {}
 // export interface Purchase {}
 // export interface PurchaseItem {}
+
+
 // src/types/database/inventory.ts
 
 import type { MovementType, PurchaseStatus } from '../enum';

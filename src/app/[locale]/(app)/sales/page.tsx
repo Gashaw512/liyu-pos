@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from 'react'
 import { getDB } from '../../../../lib/offline/db'
+import { finalizeSale } from '@/lib/offline/saleService'
 import PaymentSelector from '../../../../components/pos/PaymentSelector'
 import { useParams, useRouter } from 'next/navigation'
 import { 
@@ -267,7 +268,7 @@ export default function POSPage() {
         id: selectedTable.id,
         table_number: selectedTable.name, 
         updated_at: new Date().toISOString(),
-        items: formattedDatabaseItems, // 👈 Uses the structurally secure array mapping
+        items: formattedDatabaseItems,
         total_accumulated: totalBill
       }
       
@@ -285,66 +286,61 @@ export default function POSPage() {
     }
   }
 
-  const handleFinalizeSale = async (splitPayments: { cash: number; telebirr: number; bank_transfer?: number; selected_bank?: string }) => {
-    try {
-      const db = await getDB()
-      const localId = crypto.randomUUID()
-      const parsedTip = parseFloat(manualTip) || 0
-
-      const pendingPayload = {
-        localId,
-        createdAt: new Date().toISOString(),
-        retryCount: 0,
-        syncStatus: 'pending' as const,
-        offline_id: localId,
-        receipt_number: `REC-${Date.now().toString().substring(6)}`,
-        shift_id: activeShift?.real_database_id || null,
-        branch_id: activeShift?.branch_id || 'branch_main',
-        cashier_id: activeShift?.cashier_id || 'cashier_default',
-        business_id: activeShift?.business_id || 'biz_active',
-        table_number: selectedTable ? selectedTable.name : 'Walk-in',
-        
-        total_amount: totalBill + parsedTip,
-        subtotal: totalBill,
-        tip_amount: parsedTip,
-        
-        discount_amount: 0,
-        tax_amount: 0,
-        status: 'completed' as const,
-        payment_status: 'paid' as const,
-        items: cart.map(item => ({
-          product_id: item.id,
-          product_name: item.name,
-          quantity: item.quantity,
-          unit_price: item.price,
-          cost_price: item.price * 0.7,
-          total_price: item.price * item.quantity,
-        })),
-        payments: [
-          { method: 'cash', amount: splitPayments.cash },
-          { method: 'telebirr', amount: splitPayments.telebirr },
-          { method: splitPayments.selected_bank || 'bank_transfer', amount: splitPayments.bank_transfer || 0 }
-        ].filter(p => p.amount > 0)
-      }
-
-      await db.put('pending_sales', pendingPayload as any)
-
-      if (selectedTable && db.objectStoreNames.contains('open_tabs')) {
-        await db.delete('open_tabs', selectedTable.id)
-      }
-
-      await loadPOSData()
-      setCart([])
-      setSelectedTable(null)
-      setShowPayment(false)
-      setManualTip('')
-
-      router.push(`/${params.locale}/sales/${localId}`)
-    } catch (err) {
-      console.error('Local order logging crash:', err)
-      alert('Local storage engine failure.')
-    }
+  const handleFinalizeSale = async (
+  splitPayments: {
+    cash: number
+    telebirr: number
+    bank_transfer?: number
+    selected_bank?: string
   }
+) => {
+  try {
+    const sale = await finalizeSale({
+      splitPayments,
+
+      manualTip,
+
+      activeShift,
+
+      selectedTable,
+
+      cart,
+
+      totalBill,
+    })
+
+    /*
+     * Refresh POS data so the UI immediately
+     * sees the new local stock quantity.
+     */
+    await loadPOSData()
+
+    /*
+     * Clear checkout state.
+     */
+    setCart([])
+    setSelectedTable(null)
+    setShowPayment(false)
+    setManualTip('')
+
+    /*
+     * Receipt reads the same local pending sale.
+     */
+    router.push(
+      `/${params.locale}/sales/${sale.localId}`
+    )
+
+  } catch (error) {
+    console.error(
+      '[POS] Failed to finalize local sale:',
+      error
+    )
+
+    alert(
+      'Unable to save the sale locally. Please try again.'
+    )
+  }
+}
 
   if (loading) {
     return (

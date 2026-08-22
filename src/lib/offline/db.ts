@@ -1,342 +1,570 @@
-// import { openDB, DBSchema, IDBPDatabase } from 'idb'
-// import {
-//   Product,
-//   Category,
-//   Inventory,
-//   Shift,
-//   Sale,
-//   SaleItem,
-//   Payment,
-//   PendingSale,
-//   StockCount
-// } from '../../types/database'
+// src/lib/offline/db.ts
 
-// // Define the precise schema contract for the client browser's IndexedDB instance
-// interface LiyuPOSDBSchema extends DBSchema {
-//   // Core Reference Data (Synced down from Supabase, read-only for cashiers)
-//   products: {
-//     key: string // UUID
-//     value: Product
-//     // Use strict string mappings here for the index schema definitions
-//     indexes: { 'by-category': string; 'by-business': string }
-//   }
-//   categories: {
-//     key: string // UUID
-//     value: Category
-//     indexes: { 'by-business': string }
-//   }
-//   inventory: {
-//     key: string // UUID
-//     value: Inventory
-//     indexes: { 'by-product': string; 'by-branch': string }
-//   }
+import {
+  openDB,
+  type DBSchema,
+  type IDBPDatabase,
+} from 'idb'
 
-//   // Active Runtime Sessions
-//   active_shift: {
-//     key: string // Always "current" to preserve single drawer constraints locally
-//     value: Shift
-//   }
+import type {
+  Product,
+  Category,
+  Inventory,
+  Shift,
+} from '@/types/database'
 
-//   // Local-First Write Queues (Appended locally, cleared post-Supabase sync batch)
-//   pending_sales: {
-//     key: string // localId / offlineId string
-//     value: PendingSale & {
-//       localId: string
-//       createdAt: string
-//       retryCount: number
-//       syncStatus: 'pending' | 'failed'
-//     }
-//   }
-//   pending_stock_reconciliations: {
-//     key: string // localId
-//     value: StockCount & {
-//       localId: string
-//       createdAt: string
-//       syncStatus: 'pending' | 'failed'
-//     }
-//   }
-
-//   // Local Historical Logs for Fast Offline UI Rendering
-//   completed_sales_history: {
-//     key: string // sale UUID / offlineId
-//     value: Sale & { items: SaleItem[]; payments: Payment[] }
-//     indexes: { 'by-shift': string; 'by-date': string }
-//   }
-
-//   sync_log: {
-//     key: string // UUID
-//     value: {
-//       id: string
-//       type: 'sale' | 'inventory_recon' | 'catalog_pull'
-//       status: 'success' | 'failed'
-//       error_message?: string
-//       timestamp: string
-//     }
-//   }
-
-//   // THE SCHEMA CONTRACT FOR WAITER OPEN TABS
-//   open_tabs: {
-//     key: string // Holds the Selected Table ID or Name (e.g., 'Table 1')
-//     value: {
-//       id: string
-//       table_number: string
-//       updated_at: string
-//       items: any[]
-//       total_accumulated: number
-//     }
-//   }
-
-//   // Dynamic tables list configuration
-//   tables: { 
-//     key: string; 
-//     value: {
-//       id: string
-//       name: string
-//       table_number?: string | number
-//       status?: string
-//     } 
-//   };
-// }
-
-// const DB_NAME = 'liyu-pos-core'
-// // ─── 1. BUMPED VERSION TO 3 TO FORCE MIGRATION FOR MISSING STORES ───
-// const DB_VERSION = 3
-
-// export const getDB = (): Promise<IDBPDatabase<LiyuPOSDBSchema>> => {
-//   return openDB<LiyuPOSDBSchema>(DB_NAME, DB_VERSION, {
-//     upgrade(db, oldVersion, newVersion) {
-//       // 1. Products Store with Search Optimization Indexes
-//       if (!db.objectStoreNames.contains('products')) {
-//         const productStore = db.createObjectStore('products', { keyPath: 'id' })
-//         productStore.createIndex('by-category', 'category_id')
-//         productStore.createIndex('by-business', 'business_id')
-//       }
-
-//       // 2. Categories Store
-//       if (!db.objectStoreNames.contains('categories')) {
-//         const categoryStore = db.createObjectStore('categories', { keyPath: 'id' })
-//         categoryStore.createIndex('by-business', 'business_id')
-//       }
-
-//       // 3. Stock Level Matrix Store
-//       if (!db.objectStoreNames.contains('inventory')) {
-//         const inventoryStore = db.createObjectStore('inventory', { keyPath: 'id' })
-//         inventoryStore.createIndex('by-product', 'product_id')
-//         inventoryStore.createIndex('by-branch', 'branch_id')
-//       }
-
-//       // 4. Current Shift State Container
-//       if (!db.objectStoreNames.contains('active_shift')) {
-//         db.createObjectStore('active_shift', { keyPath: 'id' })
-//       }
-
-//       // 5. Outbound Write Queues
-//       if (!db.objectStoreNames.contains('pending_sales')) {
-//         db.createObjectStore('pending_sales', { keyPath: 'localId' })
-//       }
-//       if (!db.objectStoreNames.contains('pending_stock_reconciliations')) {
-//         db.createObjectStore('pending_stock_reconciliations', { keyPath: 'localId' })
-//       }
-
-//       // 6. Local Historical Log Indexes
-//       if (!db.objectStoreNames.contains('completed_sales_history')) {
-//         const historyStore = db.createObjectStore('completed_sales_history', { keyPath: 'id' })
-//         historyStore.createIndex('by-shift', 'shift_id')
-//         historyStore.createIndex('by-date', 'created_at')
-//       }
-
-//       // 7. System Sync History Logs
-//       if (!db.objectStoreNames.contains('sync_log')) {
-//         db.createObjectStore('sync_log', { keyPath: 'id' })
-//       }
-
-//       // 8. INITIALIZE THE WAITER OPEN TABS DATA STORE
-//       if (!db.objectStoreNames.contains('open_tabs')) {
-//         db.createObjectStore('open_tabs', { keyPath: 'id' })
-//       }
-
-//       // ─── 2. PHYSICALLY CREATE THE TABLES STORE IF MISSING ───
-//       if (!db.objectStoreNames.contains('tables')) {
-//         db.createObjectStore('tables', { keyPath: 'id' })
-//       }
-//     },
-//   })
-// }
-
-// export async function clearLocalCatalog(): Promise<void> {
-//   const db = await getDB()
-//   const tx = db.transaction(['products', 'categories', 'inventory'], 'readwrite')
-//   await Promise.all([
-//     tx.objectStore('products').clear(),
-//     tx.objectStore('categories').clear(),
-//     tx.objectStore('inventory').clear(),
-//   ])
-//   await tx.done
-// }
-
-
-// src/lib/db.ts
-import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
-
-// 1. Import Strict Database Table Schemas
-import type { 
-  Product, 
-  Category, 
-  Inventory, 
-  Shift 
-} from '@/types/database';
-
-// 2. Import Local UI View Models & Wrapped Sync Types
-import type { 
-  LocalPendingSale, 
-  LocalHistoricalSale, 
+import type {
+  LocalPendingSale,
+  LocalHistoricalSale,
   LocalOpenTab,
-  LocalTableConfiguration 
-} from '../../types/models/pos-cart';
+  LocalTableConfiguration,
+} from '../../types/models/pos-cart'
 
-// 3. Define the precise schema contract for the client browser's IndexedDB instance
-interface LiyuPOSDBSchema extends DBSchema {
-  // ─── CORE REFERENCE DATA (Synced down from Supabase, read-only for cashiers) ───
-  products: {
-    key: string; // UUID
-    value: Product;
-    indexes: { 'by-category': string; 'by-business': string };
-  };
-  categories: {
-    key: string; // UUID
-    value: Category;
-    indexes: { 'by-business': string };
-  };
-  inventory: {
-    key: string; // UUID
-    value: Inventory;
-    indexes: { 'by-product': string; 'by-branch': string };
-  };
+/* =========================================================
+ * SYNC STATUS
+ * ========================================================= */
 
-  // ─── ACTIVE RUNTIME SESSIONS ───
-  active_shift: {
-    key: string; // Always "current" to preserve single drawer constraints locally
-    value: Shift;
-  };
+export type LocalSyncStatus =
+  | 'pending'
+  | 'failed'
 
-  // ─── LOCAL-FIRST WRITE QUEUES (Appended locally, cleared post-Supabase sync batch) ───
-  pending_sales: {
-    key: string; // localId / offlineId string
-    value: LocalPendingSale; // Cleanly holds CreateSaleDTO + Sync Metadata
-  };
-  pending_stock_reconciliations: {
-    key: string; // localId
-    value: any; // Can be swapped with your modular StockCount UI type later
-  };
+/* =========================================================
+ * LOCAL STOCK RECEIPT
+ * ========================================================= */
 
-  // ─── LOCAL HISTORICAL LOGS FOR FAST OFFLINE UI RENDERING ───
-  completed_sales_history: {
-    key: string; // sale UUID / offlineId
-    value: LocalHistoricalSale; // Cleanly maps Sale + items[] + payments[]
-    indexes: { 'by-shift': string; 'by-date': string };
-  };
+export interface LocalPendingStockReceipt {
+  localId: string
 
-  sync_log: {
-    key: string; // UUID
-    value: {
-      id: string;
-      type: 'sale' | 'inventory_recon' | 'catalog_pull';
-      status: 'success' | 'failed';
-      error_message?: string;
-      timestamp: string;
-    };
-  };
+  createdAt: string
 
-  // ─── HOSPITALITY WAITER ENGINE STORES ───
-  open_tabs: {
-    key: string; // Holds the Selected Table ID or Name (e.g., 'Table 1')
-    value: LocalOpenTab;
-  };
-  tables: { 
-    key: string; 
-    value: LocalTableConfiguration;
-  };
+  syncStatus: LocalSyncStatus
+
+  retryCount: number
+
+  product_id: string
+
+  business_id: string
+
+  branch_id: string
+
+  shift_id: string | null
+
+  /**
+   * Quantity being RECEIVED.
+   *
+   * Example:
+   *
+   * current stock = 10
+   * received       = 5
+   * new stock      = 15
+   */
+  quantity: number
+
+  unit_cost: number
+
+  /**
+   * Local calculated value.
+   *
+   * The server/database may calculate the final
+   * purchase item total independently.
+   */
+  total_cost: number
+
+  notes?: string
+
+  /**
+   * Idempotency key.
+   */
+  offline_id?: string
+
+  lastSyncAttempt?: string
+
+  lastSyncError?: string
 }
 
-const DB_NAME = 'liyu-pos-core';
-// ─── BUMPED VERSION TO 3 TO FORCE MIGRATION FOR MISSING HOSPITALITY STORES ───
-const DB_VERSION = 3;
+/* =========================================================
+ * LOCAL STOCK RECONCILIATION
+ * ========================================================= */
+
+export interface LocalPendingStockReconciliation {
+  localId: string
+
+  createdAt: string
+
+  syncStatus: LocalSyncStatus
+
+  retryCount: number
+
+  product_id: string
+
+  business_id: string
+
+  branch_id: string
+
+  shift_id: string | null
+
+  system_quantity: number
+
+  counted_quantity: number
+
+  adjustment_type?:
+    | 'stock_count'
+    | 'adjustment'
+    | 'waste'
+    | 'theft'
+    | 'return'
+
+  notes?: string
+
+  offline_id?: string
+
+  lastSyncAttempt?: string
+
+  lastSyncError?: string
+}
+
+/* =========================================================
+ * DATABASE SCHEMA
+ * ========================================================= */
+
+interface LiyuPOSDBSchema extends DBSchema {
+
+  /* -------------------------------------------------------
+   * PRODUCTS
+   * ------------------------------------------------------- */
+
+  products: {
+    key: string
+
+    value: Product
+
+    indexes: {
+      'by-category': string
+      'by-business': string
+    }
+  }
+
+  /* -------------------------------------------------------
+   * CATEGORIES
+   * ------------------------------------------------------- */
+
+  categories: {
+    key: string
+
+    value: Category
+
+    indexes: {
+      'by-business': string
+    }
+  }
+
+  /* -------------------------------------------------------
+   * INVENTORY
+   * ------------------------------------------------------- */
+
+  inventory: {
+    key: string
+
+    value: Inventory
+
+    indexes: {
+      'by-product': string
+      'by-branch': string
+    }
+  }
+
+  /* -------------------------------------------------------
+   * ACTIVE SHIFT
+   * ------------------------------------------------------- */
+
+  active_shift: {
+    key: string
+    value: Shift
+  }
+
+  /* -------------------------------------------------------
+   * SALES OUTBOX
+   * ------------------------------------------------------- */
+
+  pending_sales: {
+    key: string
+    value: LocalPendingSale
+  }
+
+  /* -------------------------------------------------------
+   * STOCK RECONCILIATION OUTBOX
+   * ------------------------------------------------------- */
+
+  pending_stock_reconciliations: {
+    key: string
+    value: LocalPendingStockReconciliation
+  }
+
+  /* -------------------------------------------------------
+   * STOCK RECEIVE OUTBOX
+   * ------------------------------------------------------- */
+
+  pending_stock_receipts: {
+    key: string
+    value: LocalPendingStockReceipt
+  }
+
+  /* -------------------------------------------------------
+   * SALES HISTORY
+   * ------------------------------------------------------- */
+
+  completed_sales_history: {
+    key: string
+
+    value: LocalHistoricalSale
+
+    indexes: {
+      'by-shift': string
+      'by-date': string
+    }
+  }
+
+  /* -------------------------------------------------------
+   * SYNC LOG
+   * ------------------------------------------------------- */
+
+  sync_log: {
+    key: string
+
+    value: {
+      id: string
+
+      type:
+        | 'sale'
+        | 'inventory_recon'
+        | 'inventory_receipt'
+        | 'catalog_pull'
+        | 'outbound'
+
+      status:
+        | 'success'
+        | 'failed'
+
+      error_message?: string
+
+      timestamp: string
+    }
+  }
+
+  /* -------------------------------------------------------
+   * OPEN TABS
+   * ------------------------------------------------------- */
+
+  open_tabs: {
+    key: string
+    value: LocalOpenTab
+  }
+
+  /* -------------------------------------------------------
+   * TABLES
+   * ------------------------------------------------------- */
+
+  tables: {
+    key: string
+    value: LocalTableConfiguration
+  }
+}
+
+/* =========================================================
+ * DATABASE CONFIG
+ * ========================================================= */
+
+const DB_NAME = 'liyu-pos-core'
 
 /**
- * Initializes or fetches the open connection instance to the local browser IndexedDB.
+ * Keep version 10.
+ *
+ * The upgrade code is additive and checks whether each
+ * object store already exists, so existing local data
+ * is preserved.
  */
-export const getDB = (): Promise<IDBPDatabase<LiyuPOSDBSchema>> => {
-  return openDB<LiyuPOSDBSchema>(DB_NAME, DB_VERSION, {
-    upgrade(db, oldVersion, newVersion) {
-      // 1. Products Store with Search Optimization Indexes
-      if (!db.objectStoreNames.contains('products')) {
-        const productStore = db.createObjectStore('products', { keyPath: 'id' });
-        productStore.createIndex('by-category', 'category_id');
-        productStore.createIndex('by-business', 'business_id');
-      }
+const DB_VERSION = 11
 
-      // 2. Categories Store
-      if (!db.objectStoreNames.contains('categories')) {
-        const categoryStore = db.createObjectStore('categories', { keyPath: 'id' });
-        categoryStore.createIndex('by-business', 'business_id');
-      }
+/* =========================================================
+ * DATABASE INITIALIZATION
+ * ========================================================= */
 
-      // 3. Stock Level Matrix Store
-      if (!db.objectStoreNames.contains('inventory')) {
-        const inventoryStore = db.createObjectStore('inventory', { keyPath: 'id' });
-        inventoryStore.createIndex('by-product', 'product_id');
-        inventoryStore.createIndex('by-branch', 'branch_id');
-      }
+export const getDB = (): Promise<
+  IDBPDatabase<LiyuPOSDBSchema>
+> => {
+  return openDB<LiyuPOSDBSchema>(
+    DB_NAME,
+    DB_VERSION,
+    {
+      upgrade(
+        db,
+        oldVersion,
+        _newVersion,
+        transaction
+      ) {
 
-      // 4. Current Shift State Container
-      if (!db.objectStoreNames.contains('active_shift')) {
-        db.createObjectStore('active_shift', { keyPath: 'id' });
-      }
+        console.log(
+          `[DB] Upgrade ${oldVersion} → ${DB_VERSION}`
+        )
 
-      // 5. Outbound Write Queues
-      if (!db.objectStoreNames.contains('pending_sales')) {
-        db.createObjectStore('pending_sales', { keyPath: 'localId' });
-      }
-      if (!db.objectStoreNames.contains('pending_stock_reconciliations')) {
-        db.createObjectStore('pending_stock_reconciliations', { keyPath: 'localId' });
-      }
+        /* ===================================================
+         * PRODUCTS
+         * ================================================= */
 
-      // 6. Local Historical Log Indexes
-      if (!db.objectStoreNames.contains('completed_sales_history')) {
-        const historyStore = db.createObjectStore('completed_sales_history', { keyPath: 'id' });
-        historyStore.createIndex('by-shift', 'shift_id');
-        historyStore.createIndex('by-date', 'created_at');
-      }
+        if (
+          !db.objectStoreNames.contains('products')
+        ) {
+          const store =
+            db.createObjectStore(
+              'products',
+              {
+                keyPath: 'id',
+              }
+            )
 
-      // 7. System Sync History Logs
-      if (!db.objectStoreNames.contains('sync_log')) {
-        db.createObjectStore('sync_log', { keyPath: 'id' });
-      }
+          store.createIndex(
+            'by-category',
+            'category_id'
+          )
 
-      // 8. Initialize the Waiter Open Tabs Data Store
-      if (!db.objectStoreNames.contains('open_tabs')) {
-        db.createObjectStore('open_tabs', { keyPath: 'id' });
-      }
+          store.createIndex(
+            'by-business',
+            'business_id'
+          )
+        }
 
-      // 9. Create the Tables Layout Configuration Store
-      if (!db.objectStoreNames.contains('tables')) {
-        db.createObjectStore('tables', { keyPath: 'id' });
-      }
-    },
-  });
-};
+        /* ===================================================
+         * CATEGORIES
+         * ================================================= */
 
-/**
- * Utility: Wipes the cached reference catalogs cleanly.
- * Useful during manual sync refreshes or branch switching routines.
- */
+        if (
+          !db.objectStoreNames.contains('categories')
+        ) {
+          const store =
+            db.createObjectStore(
+              'categories',
+              {
+                keyPath: 'id',
+              }
+            )
+
+          store.createIndex(
+            'by-business',
+            'business_id'
+          )
+        }
+
+        /* ===================================================
+         * INVENTORY
+         * ================================================= */
+
+        if (
+          !db.objectStoreNames.contains('inventory')
+        ) {
+          const store =
+            db.createObjectStore(
+              'inventory',
+              {
+                keyPath: 'id',
+              }
+            )
+
+          store.createIndex(
+            'by-product',
+            'product_id'
+          )
+
+          store.createIndex(
+            'by-branch',
+            'branch_id'
+          )
+        }
+
+        /* ===================================================
+         * ACTIVE SHIFT
+         * ================================================= */
+
+        if (
+          !db.objectStoreNames.contains(
+            'active_shift'
+          )
+        ) {
+          db.createObjectStore(
+            'active_shift',
+            {
+              keyPath: 'id',
+            }
+          )
+        }
+
+        /* ===================================================
+         * PENDING SALES
+         * ================================================= */
+
+        if (
+          !db.objectStoreNames.contains(
+            'pending_sales'
+          )
+        ) {
+          db.createObjectStore(
+            'pending_sales',
+            {
+              keyPath: 'localId',
+            }
+          )
+        }
+
+        /* ===================================================
+         * PENDING STOCK RECONCILIATIONS
+         * ================================================= */
+
+        if (
+          !db.objectStoreNames.contains(
+            'pending_stock_reconciliations'
+          )
+        ) {
+          db.createObjectStore(
+            'pending_stock_reconciliations',
+            {
+              keyPath: 'localId',
+            }
+          )
+        }
+
+        /* ===================================================
+         * PENDING STOCK RECEIPTS
+         * ================================================= */
+
+        if (
+          !db.objectStoreNames.contains(
+            'pending_stock_receipts'
+          )
+        ) {
+          db.createObjectStore(
+            'pending_stock_receipts',
+            {
+              keyPath: 'localId',
+            }
+          )
+        }
+
+        /* ===================================================
+         * COMPLETED SALES HISTORY
+         * ================================================= */
+
+        if (
+          !db.objectStoreNames.contains(
+            'completed_sales_history'
+          )
+        ) {
+          const store =
+            db.createObjectStore(
+              'completed_sales_history',
+              {
+                keyPath: 'id',
+              }
+            )
+
+          store.createIndex(
+            'by-shift',
+            'shift_id'
+          )
+
+          store.createIndex(
+            'by-date',
+            'created_at'
+          )
+        }
+
+        /* ===================================================
+         * SYNC LOG
+         * ================================================= */
+
+        if (
+          !db.objectStoreNames.contains(
+            'sync_log'
+          )
+        ) {
+          db.createObjectStore(
+            'sync_log',
+            {
+              keyPath: 'id',
+            }
+          )
+        }
+
+        /* ===================================================
+         * OPEN TABS
+         * ================================================= */
+
+        if (
+          !db.objectStoreNames.contains(
+            'open_tabs'
+          )
+        ) {
+          db.createObjectStore(
+            'open_tabs',
+            {
+              keyPath: 'id',
+            }
+          )
+        }
+
+        /* ===================================================
+         * TABLES
+         * ================================================= */
+
+        if (
+          !db.objectStoreNames.contains(
+            'tables'
+          )
+        ) {
+          db.createObjectStore(
+            'tables',
+            {
+              keyPath: 'id',
+            }
+          )
+        }
+
+        console.log(
+          '[DB] Liyu POS IndexedDB ready.'
+        )
+      },
+    }
+  )
+}
+
+/* =========================================================
+ * CLEAR SERVER REFERENCE CATALOG
+ *
+ * IMPORTANT:
+ *
+ * This ONLY clears server reference data.
+ *
+ * It DOES NOT clear:
+ *   pending_sales
+ *   pending_stock_receipts
+ *   pending_stock_reconciliations
+ * ========================================================= */
+
 export async function clearLocalCatalog(): Promise<void> {
-  const db = await getDB();
-  const tx = db.transaction(['products', 'categories', 'inventory'], 'readwrite');
+  const db = await getDB()
+
+  const tx = db.transaction(
+    [
+      'products',
+      'categories',
+      'inventory',
+    ],
+    'readwrite'
+  )
+
   await Promise.all([
     tx.objectStore('products').clear(),
     tx.objectStore('categories').clear(),
     tx.objectStore('inventory').clear(),
-  ]);
-  await tx.done;
+  ])
+
+  await tx.done
 }

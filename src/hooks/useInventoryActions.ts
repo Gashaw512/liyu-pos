@@ -3,8 +3,7 @@ import { computeLiveLocalStock } from '@/lib/calculations/stockCalculator'
 import { toast } from '@/lib/utils/toast'
 
 import type {
-    InventoryProduct,
-    LocalPendingStockCount
+    InventoryProduct
 } from '@/types/inventory'
 
 export function useInventoryActions(
@@ -55,11 +54,11 @@ export function useInventoryActions(
 
             const store = tx.objectStore('pending_stock_reconciliations')
 
-            const row: LocalPendingStockCount = {
+            const row = {
                 localId: crypto.randomUUID(),
                 createdAt: new Date().toISOString(),
                 retryCount: 0,
-                syncStatus: 'pending',
+                syncStatus: 'pending' as const,
                 product_id: targetProduct.id,
                 business_id: activeShift.business_id,
                 branch_id: activeShift.branch_id,
@@ -87,7 +86,7 @@ export function useInventoryActions(
                     '✅ ማስተካከያው ተቀምጧል!'
                 ),
                 'success'
-            
+
             )
         } finally {
             setRowSavingId(null)
@@ -143,7 +142,7 @@ export function useInventoryActions(
                     localId: crypto.randomUUID(),
                     createdAt: now,
                     retryCount: 0,
-                    syncStatus: 'pending',
+                    syncStatus: 'pending' as const,
                     product_id: product.id,
                     business_id: activeShift.business_id,
                     branch_id: activeShift.branch_id,

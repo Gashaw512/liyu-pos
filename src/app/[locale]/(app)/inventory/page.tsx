@@ -5,17 +5,10 @@ import { useState, useEffect, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import {
   ArrowLeft,
-  Loader2,
   RotateCcw,
-  ChevronDown,
-  ChevronUp,
   PlusCircle,
-  ArrowDownToLine
 } from 'lucide-react'
-import {
-  getDB,
-  type LocalPendingStockReceipt,
-} from '@/lib/offline/db'
+import { getDB } from '@/lib/offline/db'
 
 import { toast } from '@/lib/utils/toast'
 import { getLocalInventoryProducts } from '@/hooks/useInventoryData'

@@ -157,3 +157,59 @@
 .scrollbar-none::-webkit-scrollbar {
   display: none;
 }
+
+
+
+@media print {
+  /* Hide everything first */
+  body * {
+    visibility: hidden !important;
+  }
+
+  /* Show receipt only */
+  .receipt-print-area,
+  .receipt-print-area * {
+    visibility: visible !important;
+  }
+
+  html,
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+
+  /* Center the receipt on the printed page */
+  .receipt-print-area {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 auto !important;
+    padding: 12mm !important;
+    background: #fff !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  /* Don't print buttons */
+  .receipt-no-print {
+    display: none !important;
+  }
+
+  /* Better printed typography */
+  .receipt-print-area {
+    color: #1f2937 !important;
+    font-family: Arial, Helvetica, sans-serif !important;
+  }
+
+  /* Prevent receipt sections from splitting */
+  .receipt-print-area > * {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  @page {
+    size: auto;
+    margin: 10mm;
+  }
+}

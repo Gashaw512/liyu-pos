@@ -1,12 +1,15 @@
-
 // src/app/[locale]/(app)/sales/page.tsx
 
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import {
-  Check,
   Coins,
   Loader2,
   Save,
@@ -70,12 +73,9 @@ function normalizeNumber(
     : fallback
 }
 
-function getTableNumber(
-  table: POSTable,
-): string {
+function getTableNumber(table: POSTable): string {
   return normalizeString(
-    table.table_number ??
-    table.name,
+    table.table_number ?? table.name,
   )
 }
 
@@ -87,7 +87,10 @@ function tabBelongsToTable(
   const tableNumber = getTableNumber(table)
 
   const tabId = normalizeString(tab?.id)
-  const tabTableId = normalizeString(tab?.table_id)
+  const tabTableId = normalizeString(
+    tab?.table_id,
+  )
+
   const tabTableNumber = normalizeString(
     tab?.table_number,
   )
@@ -107,6 +110,50 @@ function tabBelongsToTable(
   )
 }
 
+/**
+ * Creates a stable representation of a cart.
+ *
+ * Used only to determine whether the current
+ * table order differs from its saved order.
+ */
+function serializeCart(
+  cart: POSCartItem[],
+): string {
+  return JSON.stringify(
+    cart
+      .map((item) => ({
+        id: normalizeString(item.id),
+        name: normalizeString(item.name),
+        price: normalizeNumber(item.price),
+        quantity: normalizeNumber(
+          item.quantity,
+        ),
+      }))
+      .sort((a, b) =>
+        a.id.localeCompare(b.id),
+      ),
+  )
+}
+
+/**
+ * IMPORTANT:
+ *
+ * Always use the same serialized value for
+ * an empty cart.
+ *
+ * This prevents:
+ *
+ * serializeCart([]) === "[]"
+ *
+ * from being compared against:
+ *
+ * "".
+ *
+ * An empty table therefore never becomes
+ * accidentally "unsaved".
+ */
+const EMPTY_CART_SNAPSHOT = serializeCart([])
+
 // ============================================================
 // PAGE
 // ============================================================
@@ -121,9 +168,9 @@ export default function SalesPage() {
 
   const isAm = locale === 'am'
 
-  // ============================================================
+  // ==========================================================
   // STATE
-  // ============================================================
+  // ==========================================================
 
   const [loading, setLoading] =
     useState(true)
@@ -168,8 +215,10 @@ export default function SalesPage() {
   const [billOpen, setBillOpen] =
     useState(false)
 
-  const [savingTab, setSavingTab] =
-    useState(false)
+  const [
+    savingTab,
+    setSavingTab,
+  ] = useState(false)
 
   const [
     openingShift,
@@ -181,24 +230,47 @@ export default function SalesPage() {
     setClosingShift,
   ] = useState(false)
 
-  const [cashFloat, setCashFloat] =
-    useState(DEFAULT_CASH_FLOAT)
+  const [
+    cashFloat,
+    setCashFloat,
+  ] = useState(DEFAULT_CASH_FLOAT)
 
-  const [manualTip, setManualTip] =
-    useState('')
+  const [
+    manualTip,
+    setManualTip,
+  ] = useState('')
 
-  // ============================================================
+  /**
+   * TRUE only when the selected table has
+   * actual items that differ from its saved order.
+   */
+  const [
+    hasUnsavedChanges,
+    setHasUnsavedChanges,
+  ] = useState(false)
+
+  /**
+   * Snapshot of the last saved table order.
+   */
+  const [
+    savedCartSnapshot,
+    setSavedCartSnapshot,
+  ] = useState(
+    EMPTY_CART_SNAPSHOT,
+  )
+
+  // ==========================================================
   // LOAD POS DATA
-  // ============================================================
+  // ==========================================================
 
   const loadPOSData =
     useCallback(async () => {
       try {
         const db = await getDB()
 
-        // --------------------------------------------------------
+        // ------------------------------------------------------
         // ACTIVE SHIFT
-        // --------------------------------------------------------
+        // ------------------------------------------------------
 
         const shift =
           await db.get(
@@ -210,9 +282,9 @@ export default function SalesPage() {
           shift || null,
         )
 
-        // --------------------------------------------------------
+        // ------------------------------------------------------
         // PRODUCTS
-        // --------------------------------------------------------
+        // ------------------------------------------------------
 
         const productRows =
           await db.getAll('products')
@@ -264,9 +336,9 @@ export default function SalesPage() {
           normalizedProducts,
         )
 
-        // --------------------------------------------------------
+        // ------------------------------------------------------
         // CATEGORIES
-        // --------------------------------------------------------
+        // ------------------------------------------------------
 
         if (
           db.objectStoreNames.contains(
@@ -325,9 +397,9 @@ export default function SalesPage() {
           setCategories([])
         }
 
-        // --------------------------------------------------------
+        // ------------------------------------------------------
         // OPEN TABS
-        // --------------------------------------------------------
+        // ------------------------------------------------------
 
         let openTabs: any[] = []
 
@@ -342,9 +414,9 @@ export default function SalesPage() {
             )
         }
 
-        // --------------------------------------------------------
+        // ------------------------------------------------------
         // TABLES
-        // --------------------------------------------------------
+        // ------------------------------------------------------
 
         let normalizedTables: POSTable[] =
           []
@@ -418,9 +490,9 @@ export default function SalesPage() {
               )
         }
 
-        // --------------------------------------------------------
+        // ------------------------------------------------------
         // FALLBACK TABLES
-        // --------------------------------------------------------
+        // ------------------------------------------------------
 
         if (
           normalizedTables.length ===
@@ -463,17 +535,17 @@ export default function SalesPage() {
       }
     }, [])
 
-  // ============================================================
+  // ==========================================================
   // INITIAL LOAD
-  // ============================================================
+  // ==========================================================
 
   useEffect(() => {
     void loadPOSData()
   }, [loadPOSData])
 
-  // ============================================================
+  // ==========================================================
   // FILTERED PRODUCTS
-  // ============================================================
+  // ==========================================================
 
   const filteredProducts =
     useMemo(() => {
@@ -528,9 +600,9 @@ export default function SalesPage() {
       productSearch,
     ])
 
-  // ============================================================
+  // ==========================================================
   // CART CALCULATIONS
-  // ============================================================
+  // ==========================================================
 
   const totalBill = useMemo(
     () =>
@@ -575,25 +647,71 @@ export default function SalesPage() {
   const cartHasItems =
     cart.length > 0
 
-  const canSaveTableOrder =
-    Boolean(
-      selectedTable &&
-      cartHasItems &&
-      !savingTab,
+  // ==========================================================
+  // UNSAVED ORDER STATE
+  // ==========================================================
+
+  /**
+   * IMPORTANT:
+   *
+   * An empty cart is NEVER considered an
+   * unsaved table order.
+   *
+   * Therefore switching between empty tables
+   * will never show the save confirmation.
+   */
+  useEffect(() => {
+    if (
+      !selectedTable ||
+      !cartHasItems
+    ) {
+      setHasUnsavedChanges(false)
+      return
+    }
+
+    const currentSnapshot =
+      serializeCart(cart)
+
+    setHasUnsavedChanges(
+      currentSnapshot !==
+      savedCartSnapshot,
     )
+  }, [
+    cart,
+    cartHasItems,
+    selectedTable,
+    savedCartSnapshot,
+  ])
 
-  // Automatically close the bill
-  // if the cart becomes empty.
-
+  /**
+   * Automatically close the bill when
+   * there are no items.
+   */
   useEffect(() => {
     if (!cartHasItems) {
       setBillOpen(false)
     }
   }, [cartHasItems])
 
-  // ============================================================
+  /**
+   * Save is possible only when:
+   *
+   * - a table is selected
+   * - there are items
+   * - there are actual unsaved changes
+   * - we are not already saving
+   */
+  const canSaveTableOrder =
+    Boolean(
+      selectedTable &&
+      cartHasItems &&
+      hasUnsavedChanges &&
+      !savingTab,
+    )
+
+  // ==========================================================
   // LOAD EXISTING TABLE ORDER
-  // ============================================================
+  // ==========================================================
 
   const loadTableTab =
     useCallback(
@@ -609,6 +727,15 @@ export default function SalesPage() {
             )
           ) {
             setCart([])
+
+            setSavedCartSnapshot(
+              EMPTY_CART_SNAPSHOT,
+            )
+
+            setHasUnsavedChanges(
+              false,
+            )
+
             return
           }
 
@@ -626,9 +753,9 @@ export default function SalesPage() {
                 ),
             )
 
-          // ------------------------------------------------------
-          // RESTORE CART
-          // ------------------------------------------------------
+          // ----------------------------------------------------
+          // RESTORE SAVED ORDER
+          // ----------------------------------------------------
 
           if (
             existingTab &&
@@ -669,14 +796,43 @@ export default function SalesPage() {
                   (item) =>
                     item.id.length >
                     0 &&
-                    item.quantity > 0,
+                    item.quantity >
+                    0,
                 )
 
             setCart(
               restoredCart,
             )
+
+            /**
+             * The restored order is already
+             * saved, so this becomes the
+             * clean baseline.
+             */
+            setSavedCartSnapshot(
+              serializeCart(
+                restoredCart,
+              ),
+            )
+
+            setHasUnsavedChanges(
+              false,
+            )
           } else {
+            /**
+             * EMPTY TABLE
+             *
+             * This is the important fix.
+             */
             setCart([])
+
+            setSavedCartSnapshot(
+              EMPTY_CART_SNAPSHOT,
+            )
+
+            setHasUnsavedChanges(
+              false,
+            )
           }
         } catch (error) {
           console.error(
@@ -685,32 +841,45 @@ export default function SalesPage() {
           )
 
           setCart([])
+
+          setSavedCartSnapshot(
+            EMPTY_CART_SNAPSHOT,
+          )
+
+          setHasUnsavedChanges(
+            false,
+          )
         }
       },
       [],
     )
 
-  // ============================================================
+  // ==========================================================
   // SELECT TABLE
-  // ============================================================
+  // ==========================================================
 
   const handleSelectTable =
     async (
       table: POSTable,
     ) => {
-      // If switching away from an
-      // unsaved cart, ask first.
-
+      /**
+       * IMPORTANT:
+       *
+       * Ask ONLY when the CURRENT table
+       * has actual unsaved items.
+       *
+       * Empty table => NO confirmation.
+       */
       if (
-        cart.length > 0 &&
         selectedTable &&
-        selectedTable.id !==
-        table.id
+        selectedTable.id !== table.id &&
+        cartHasItems &&
+        hasUnsavedChanges
       ) {
         const confirmed =
           window.confirm(
             isAm
-              ? 'የአሁኑን ትዕዛዝ ሳያስቀምጡ ጠረጴዛ መቀየር ይፈልጋሉ?'
+              ? 'ያልተቀመጠውን ትዕዛዝ ሳያስቀምጡ ጠረጴዛ መቀየር ይፈልጋሉ?'
               : 'Switch table without saving the current order?',
           )
 
@@ -719,8 +888,17 @@ export default function SalesPage() {
         }
       }
 
+      /**
+       * Select the new table.
+       */
       setSelectedTable(table)
 
+      /**
+       * Restore its saved order.
+       *
+       * Empty table => empty cart +
+       * clean snapshot + no warning.
+       */
       await loadTableTab(table)
 
       setShowCheckout(false)
@@ -728,20 +906,25 @@ export default function SalesPage() {
       setManualTip('')
     }
 
-  // ============================================================
+  // ==========================================================
   // WALK-IN
-  // ============================================================
+  // ==========================================================
 
   const handleWalkIn =
     () => {
+      /**
+       * Ask only when there is an actual
+       * unsaved order on the current table.
+       */
       if (
-        cart.length > 0 &&
-        selectedTable
+        selectedTable &&
+        cartHasItems &&
+        hasUnsavedChanges
       ) {
         const confirmed =
           window.confirm(
             isAm
-              ? 'የአሁኑን ትዕዛዝ ሳያስቀምጡ ወደ ቀጥታ ሽያጭ መሄድ ይፈልጋሉ?'
+              ? 'ያልተቀመጠውን ትዕዛዝ ሳያስቀምጡ ወደ ቀጥታ ሽያጭ መሄድ ይፈልጋሉ?'
               : 'Switch to walk-in without saving the current order?',
           )
 
@@ -751,15 +934,25 @@ export default function SalesPage() {
       }
 
       setSelectedTable(null)
+
       setCart([])
+
+      setSavedCartSnapshot(
+        EMPTY_CART_SNAPSHOT,
+      )
+
+      setHasUnsavedChanges(
+        false,
+      )
+
       setShowCheckout(false)
       setBillOpen(false)
       setManualTip('')
     }
 
-  // ============================================================
+  // ==========================================================
   // CART - ADD
-  // ============================================================
+  // ==========================================================
 
   const addToCart =
     (
@@ -805,11 +998,17 @@ export default function SalesPage() {
           ]
         },
       )
+
+      if (selectedTable) {
+        setHasUnsavedChanges(
+          true,
+        )
+      }
     }
 
-  // ============================================================
+  // ==========================================================
   // CART - INCREASE
-  // ============================================================
+  // ==========================================================
 
   const increaseQuantity =
     (
@@ -834,11 +1033,17 @@ export default function SalesPage() {
                 : item,
           ),
       )
+
+      if (selectedTable) {
+        setHasUnsavedChanges(
+          true,
+        )
+      }
     }
 
-  // ============================================================
+  // ==========================================================
   // CART - DECREASE
-  // ============================================================
+  // ==========================================================
 
   const decreaseQuantity =
     (id: string) => {
@@ -860,11 +1065,17 @@ export default function SalesPage() {
                 item.quantity > 0,
             ),
       )
+
+      if (selectedTable) {
+        setHasUnsavedChanges(
+          true,
+        )
+      }
     }
 
-  // ============================================================
+  // ==========================================================
   // CART - CLEAR ITEM
-  // ============================================================
+  // ==========================================================
 
   const clearCartItem =
     (id: string) => {
@@ -875,11 +1086,17 @@ export default function SalesPage() {
               item.id !== id,
           ),
       )
+
+      if (selectedTable) {
+        setHasUnsavedChanges(
+          true,
+        )
+      }
     }
 
-  // ============================================================
+  // ==========================================================
   // SHIFT - OPEN
-  // ============================================================
+  // ==========================================================
 
   const handleOpenShift =
     async () => {
@@ -986,9 +1203,9 @@ export default function SalesPage() {
       }
     }
 
-  // ============================================================
+  // ==========================================================
   // SHIFT - CLOSE
-  // ============================================================
+  // ==========================================================
 
   const handleCloseShift =
     async () => {
@@ -1019,10 +1236,23 @@ export default function SalesPage() {
         )
 
         setActiveShift(null)
+
         setCart([])
+
         setSelectedTable(null)
+
+        setSavedCartSnapshot(
+          EMPTY_CART_SNAPSHOT,
+        )
+
+        setHasUnsavedChanges(
+          false,
+        )
+
         setShowCheckout(false)
+
         setManualTip('')
+
         setBillOpen(false)
       } catch (error) {
         console.error(
@@ -1040,28 +1270,21 @@ export default function SalesPage() {
       }
     }
 
-  // ============================================================
+  // ==========================================================
   // SAVE TABLE ORDER
-  //
-  // IMPORTANT:
-  // This is a local/offline table-order operation.
-  // It does NOT create a sale and does NOT touch inventory.
-  // Inventory/sale deduction happens only in finalizeSale().
-  // ============================================================
+  // ==========================================================
 
   const handleSaveTab =
     async () => {
       if (!selectedTable) {
-        window.alert(
-          isAm
-            ? 'እባክዎ ጠረጴዛ ይምረጡ'
-            : 'Please select a table first.',
-        )
-
         return
       }
 
-      if (cart.length === 0) {
+      if (!cartHasItems) {
+        return
+      }
+
+      if (!hasUnsavedChanges) {
         return
       }
 
@@ -1075,10 +1298,6 @@ export default function SalesPage() {
         const db =
           await getDB()
 
-        // --------------------------------------------------------
-        // SAFETY CHECK
-        // --------------------------------------------------------
-
         if (
           !db.objectStoreNames.contains(
             'open_tabs',
@@ -1088,10 +1307,6 @@ export default function SalesPage() {
             'IndexedDB open_tabs store is not available.',
           )
         }
-
-        // --------------------------------------------------------
-        // NORMALIZE ITEMS
-        // --------------------------------------------------------
 
         const items =
           cart
@@ -1131,10 +1346,6 @@ export default function SalesPage() {
           )
         }
 
-        // --------------------------------------------------------
-        // FIND EXISTING TAB
-        // --------------------------------------------------------
-
         const allTabs =
           await db.getAll(
             'open_tabs',
@@ -1152,13 +1363,11 @@ export default function SalesPage() {
         const now =
           new Date().toISOString()
 
-        // --------------------------------------------------------
-        // IMPORTANT:
-        // Use the EXISTING tab ID when available.
-        //
-        // This prevents duplicate open_tabs records.
-        // --------------------------------------------------------
-
+        /**
+         * Reuse existing tab ID.
+         *
+         * Prevents duplicate open_tabs.
+         */
         const tabId =
           existingTab?.id ??
           selectedTable.id
@@ -1182,34 +1391,51 @@ export default function SalesPage() {
           updated_at: now,
         }
 
-        // --------------------------------------------------------
-        // DIRECT LOCAL SAVE
-        // --------------------------------------------------------
-
         await db.put(
           'open_tabs',
           tab,
         )
 
-        // --------------------------------------------------------
-        // REFRESH TABLE STATUS
-        // --------------------------------------------------------
+        /**
+         * Saved cart becomes the new
+         * clean baseline.
+         */
+        const newSnapshot =
+          serializeCart(cart)
+
+        setSavedCartSnapshot(
+          newSnapshot,
+        )
+
+        setHasUnsavedChanges(
+          false,
+        )
 
         await loadPOSData()
 
-        // --------------------------------------------------------
-        // RESET CURRENT POS ORDER
-        // --------------------------------------------------------
-
+        /**
+         * Start a fresh order after saving.
+         *
+         * The saved order remains in
+         * open_tabs.
+         */
         setCart([])
-        setSelectedTable(null)
-        setShowCheckout(false)
-        setBillOpen(false)
-        setManualTip('')
 
-        // --------------------------------------------------------
-        // SUCCESS
-        // --------------------------------------------------------
+        setSelectedTable(null)
+
+        setSavedCartSnapshot(
+          EMPTY_CART_SNAPSHOT,
+        )
+
+        setHasUnsavedChanges(
+          false,
+        )
+
+        setShowCheckout(false)
+
+        setBillOpen(false)
+
+        setManualTip('')
 
         window.alert(
           isAm
@@ -1232,9 +1458,9 @@ export default function SalesPage() {
       }
     }
 
-  // ============================================================
+  // ==========================================================
   // CHECKOUT / FINALIZE SALE
-  // ============================================================
+  // ==========================================================
 
   const handleFinalizeSale =
     async (
@@ -1248,8 +1474,6 @@ export default function SalesPage() {
       }
 
       try {
-        // IMPORTANT:
-        // Capture the table BEFORE clearing state.
         const paidTable =
           selectedTable
 
@@ -1269,9 +1493,9 @@ export default function SalesPage() {
             totalBill,
           })
 
-        // --------------------------------------------------------
+        // ------------------------------------------------------
         // REMOVE OPEN TABLE AFTER SUCCESSFUL PAYMENT
-        // --------------------------------------------------------
+        // ------------------------------------------------------
 
         if (paidTable) {
           const db =
@@ -1311,25 +1535,25 @@ export default function SalesPage() {
           }
         }
 
-        // --------------------------------------------------------
-        // REFRESH TABLE STATUS
-        // --------------------------------------------------------
-
         await loadPOSData()
 
-        // --------------------------------------------------------
-        // RESET POS
-        // --------------------------------------------------------
-
         setCart([])
-        setSelectedTable(null)
-        setShowCheckout(false)
-        setManualTip('')
-        setBillOpen(false)
 
-        // --------------------------------------------------------
-        // SHOW SALE
-        // --------------------------------------------------------
+        setSelectedTable(null)
+
+        setSavedCartSnapshot(
+          EMPTY_CART_SNAPSHOT,
+        )
+
+        setHasUnsavedChanges(
+          false,
+        )
+
+        setShowCheckout(false)
+
+        setManualTip('')
+
+        setBillOpen(false)
 
         router.push(
           `/${locale}/sales/${sale.localId}`,
@@ -1348,15 +1572,23 @@ export default function SalesPage() {
       }
     }
 
-  // ============================================================
+  // ==========================================================
   // DIRECT SAVE BUTTON
-  // ============================================================
+  // ==========================================================
 
   const DirectSaveOrderButton =
     () => {
+      /**
+       * Completely hidden unless:
+       *
+       * - table selected
+       * - cart has items
+       * - actual unsaved changes exist
+       */
       if (
         !selectedTable ||
-        !cartHasItems
+        !cartHasItems ||
+        !hasUnsavedChanges
       ) {
         return null
       }
@@ -1372,23 +1604,28 @@ export default function SalesPage() {
           }
           className="
             flex
-            h-12
+            h-10
             items-center
             justify-center
-            gap-2
+            gap-1.5
             rounded-xl
             bg-coffee-900
-            px-4
-            text-sm
+            px-3
+            text-xs
             font-black
             text-white
-            shadow-card
-            transition
+            shadow-md
+            transition-all
+            duration-200
+            hover:-translate-y-0.5
             hover:bg-coffee-800
-            active:scale-[0.98]
+            hover:shadow-lg
+            active:scale-95
             disabled:cursor-not-allowed
             disabled:opacity-60
             sm:h-11
+            sm:px-4
+            sm:text-sm
           "
         >
           {savingTab ? (
@@ -1407,8 +1644,8 @@ export default function SalesPage() {
 
               <span>
                 {isAm
-                  ? 'ትዕዛዝ አስቀምጥ'
-                  : 'Save Order'}
+                  ? 'አስቀምጥ'
+                  : 'Save'}
               </span>
             </>
           )}
@@ -1416,9 +1653,9 @@ export default function SalesPage() {
       )
     }
 
-  // ============================================================
+  // ==========================================================
   // LOADING
-  // ============================================================
+  // ==========================================================
 
   if (loading) {
     return (
@@ -1436,16 +1673,14 @@ export default function SalesPage() {
     )
   }
 
-  // ============================================================
+  // ==========================================================
   // OPEN SHIFT SCREEN
-  // ============================================================
+  // ==========================================================
 
   if (!activeShift) {
     return (
       <div className="flex h-dvh items-center justify-center bg-coffee-900 p-4">
         <div className="w-full max-w-sm overflow-hidden rounded-3xl bg-cream-50 shadow-elevated">
-          {/* HEADER */}
-
           <div className="bg-coffee-900 px-6 py-7 text-center text-white">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-gold-400/15">
               <Coins className="h-6 w-6 text-gold-400" />
@@ -1464,8 +1699,6 @@ export default function SalesPage() {
             </p>
           </div>
 
-          {/* FORM */}
-
           <div className="space-y-4 p-5">
             <div>
               <label className="mb-1.5 block text-xs font-black text-coffee-500">
@@ -1478,10 +1711,13 @@ export default function SalesPage() {
                 <input
                   type="number"
                   min="0"
-                  value={cashFloat}
+                  value={
+                    cashFloat
+                  }
                   onChange={(event) =>
                     setCashFloat(
-                      event.target.value,
+                      event.target
+                        .value,
                     )
                   }
                   className="h-14 w-full rounded-2xl border border-cream-300 bg-cream-100 px-4 pr-14 text-center font-mono text-xl font-black text-coffee-900 outline-none transition focus:border-berbere-400 focus:ring-2 focus:ring-berbere-100"
@@ -1519,25 +1755,32 @@ export default function SalesPage() {
     )
   }
 
-  // ============================================================
+  // ==========================================================
   // MAIN POS
-  // ============================================================
+  // ==========================================================
 
   return (
     <div className="flex h-dvh w-full flex-col overflow-hidden bg-cream-100 font-sans text-coffee-700">
-      {/* ========================================================
+
+      {/* ======================================================
           HEADER
-      ======================================================== */}
+      ====================================================== */}
 
       <div className="relative z-30 shrink-0">
         <POSHeader
           isAm={isAm}
-          activeShift={activeShift}
+          activeShift={
+            activeShift
+          }
           selectedTable={
             selectedTable
           }
-          totalItems={totalItems}
-          totalBill={totalBill}
+          totalItems={
+            totalItems
+          }
+          totalBill={
+            totalBill
+          }
           onCloseShift={
             handleCloseShift
           }
@@ -1547,7 +1790,9 @@ export default function SalesPage() {
           cartHasItems={
             cartHasItems
           }
-          billOpen={billOpen}
+          billOpen={
+            billOpen
+          }
           onToggleBill={() =>
             setBillOpen(
               (current) =>
@@ -1556,9 +1801,9 @@ export default function SalesPage() {
           }
         />
 
-        {/* ======================================================
+        {/* ====================================================
             BILL DROPDOWN
-        ====================================================== */}
+        ==================================================== */}
 
         {billOpen &&
           cartHasItems && (
@@ -1612,18 +1857,15 @@ export default function SalesPage() {
           )}
       </div>
 
-      {/* ========================================================
+      {/* ======================================================
           CONTENT
-      ======================================================== */}
+      ====================================================== */}
 
       <div className="min-h-0 flex-1 overflow-hidden">
         {!showCheckout ? (
-          // ======================================================
-          // PRODUCT / TABLE SCREEN
-          // ======================================================
-
           <main className="h-full overflow-y-auto subtle-scrollbar">
             <div className="mx-auto flex min-h-full w-full max-w-[1600px] flex-col px-2 pb-24 pt-2 sm:px-3 sm:pb-28 sm:pt-3 lg:px-4 lg:pb-6 lg:pt-4">
+
               {/* ==================================================
                   TABLE WORKSPACE
               ================================================== */}
@@ -1675,47 +1917,36 @@ export default function SalesPage() {
               ================================================== */}
 
               {cartHasItems && (
-                <section className="mt-2 shrink-0 rounded-2xl border border-berbere-200 bg-berbere-50 p-3 sm:mt-3 sm:p-3.5">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <div className="flex min-w-0 items-center gap-2">
+                <div className="sticky top-2 z-20 mx-1 mt-2 animate-in slide-in-from-top-2 duration-300 sm:mx-0 sm:mt-3">
+                  <div className="flex items-center gap-2 rounded-2xl border border-berbere-200 bg-berbere-50/95 p-2 shadow-lg backdrop-blur-md sm:p-2.5">
+
+                    <div className="flex min-w-0 flex-1 items-center gap-2">
                       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-berbere-100">
                         <ShoppingCart className="h-4 w-4 text-berbere-600" />
                       </div>
 
                       <div className="min-w-0">
-                        <p className="truncate text-[10px] font-black uppercase tracking-wide text-berbere-600">
+                        <p className="truncate text-[10px] font-black text-berbere-600">
                           {selectedTable
                             ? selectedTable.name
                             : isAm
                               ? 'ቀጥታ ሽያጭ'
-                              : 'Walk-in Sale'}
+                              : 'Walk-in'}
                         </p>
 
                         <p className="text-xs font-black text-coffee-900">
-                          {totalItems}{' '}
-                          {isAm
-                            ? 'እቃ'
-                            : totalItems ===
-                              1
-                              ? 'item'
-                              : 'items'}{' '}
-                          ·{' '}
+                          {totalItems} ·{' '}
                           {totalBill.toLocaleString()}{' '}
                           ETB
                         </p>
                       </div>
                     </div>
 
-                    <div className="ml-auto flex w-full gap-2 sm:w-auto">
-                      {/* DIRECT SAVE */}
-
-                      {selectedTable && (
-                        <div className="flex-1 sm:flex-none">
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      {selectedTable &&
+                        hasUnsavedChanges && (
                           <DirectSaveOrderButton />
-                        </div>
-                      )}
-
-                      {/* PAY NOW */}
+                        )}
 
                       <button
                         type="button"
@@ -1728,19 +1959,19 @@ export default function SalesPage() {
                             false,
                           )
                         }}
-                        className="flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-berbere-500 px-4 text-sm font-black text-white shadow-card transition hover:bg-berbere-600 active:scale-[0.98] sm:h-11 sm:flex-none"
+                        className="flex h-10 items-center gap-1.5 rounded-xl bg-berbere-500 px-3 text-xs font-black text-white shadow-md transition-all duration-200 hover:-translate-y-0.5 hover:bg-berbere-600 hover:shadow-lg active:scale-95"
                       >
                         <Coins className="h-4 w-4" />
 
-                        <span>
+                        <span className="hidden xs:inline">
                           {isAm
                             ? 'ክፍያ'
-                            : 'Pay Now'}
+                            : 'Pay'}
                         </span>
                       </button>
                     </div>
                   </div>
-                </section>
+                </div>
               )}
 
               {/* ==================================================
@@ -1748,7 +1979,6 @@ export default function SalesPage() {
               ================================================== */}
 
               <section className="mt-2 shrink-0 overflow-hidden rounded-2xl border border-cream-300 bg-cream-50 shadow-sm sm:mt-3">
-                {/* SEARCH */}
 
                 <div className="p-2.5 sm:p-3">
                   <div className="relative">
@@ -1812,8 +2042,6 @@ export default function SalesPage() {
                     </div>
                   )}
                 </div>
-
-                {/* CATEGORIES */}
 
                 <div className="border-t border-cream-200 px-2.5 py-2 sm:px-3">
                   <POSCategories
@@ -1887,13 +2115,14 @@ export default function SalesPage() {
               </section>
             </div>
 
-            {/* ====================================================
-                MOBILE / DESKTOP DIRECT ORDER BAR
-            ==================================================== */}
+            {/* ==================================================
+                SAVE BAR
+            ================================================== */}
 
             {canSaveTableOrder && (
               <div className="fixed inset-x-0 bottom-0 z-40 border-t border-cream-300 bg-cream-50/95 p-2 shadow-[0_-8px_24px_rgba(65,45,30,0.12)] backdrop-blur sm:p-3 lg:static lg:mt-4 lg:border lg:shadow-sm lg:backdrop-blur-0">
                 <div className="mx-auto flex w-full max-w-[1600px] items-center gap-2 lg:px-1">
+
                   <div className="hidden min-w-0 flex-1 sm:block">
                     <p className="truncate text-xs font-black text-coffee-900">
                       {selectedTable?.name}
@@ -1939,19 +2168,23 @@ export default function SalesPage() {
             )}
           </main>
         ) : (
-          // ======================================================
+          // ====================================================
           // CHECKOUT
-          // ======================================================
+          // ====================================================
 
           <main className="h-full overflow-y-auto subtle-scrollbar">
             <div className="mx-auto w-full max-w-2xl p-3 sm:p-4 lg:p-6">
               <POSCheckout
                 cart={cart}
-                totalBill={totalBill}
+                totalBill={
+                  totalBill
+                }
                 selectedTable={
                   selectedTable
                 }
-                manualTip={manualTip}
+                manualTip={
+                  manualTip
+                }
                 onManualTipChange={
                   setManualTip
                 }

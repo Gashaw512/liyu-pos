@@ -1948,27 +1948,43 @@ export default function SalesPage() {
                           <DirectSaveOrderButton />
                         )}
 
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowCheckout(
-                            true,
-                          )
+                    <button
+                          type="button"
+                          onClick={() => {
+                            setShowCheckout(
+                              true,
+                            )
 
-                          setBillOpen(
-                            false,
-                          )
-                        }}
-                        className="flex h-10 items-center gap-1.5 rounded-xl bg-berbere-500 px-3 text-xs font-black text-white shadow-md transition-all duration-200 hover:-translate-y-0.5 hover:bg-berbere-600 hover:shadow-lg active:scale-95"
-                      >
-                        <Coins className="h-4 w-4" />
+                            setBillOpen(
+                              false,
+                            )
+                          }}
+                          className="
+                            flex
+                            h-10
+                            items-center
+                            gap-1.5
+                            rounded-xl
+                            bg-berbere-500
+                            px-3
+                            text-xs
+                            font-black
+                            text-white
+                            shadow-md
+                            transition-all
+                            duration-200
+                            hover:bg-berbere-600
+                            active:scale-95
+                          "
+                        >
+                          <Coins className="h-4 w-4" />
 
-                        <span className="hidden xs:inline">
-                          {isAm
-                            ? 'ክፍያ'
-                            : 'Pay'}
-                        </span>
-                      </button>
+                          <span>
+                            {isAm
+                              ? 'ክፍያ'
+                              : 'Pay'}
+                          </span>
+                        </button>
                     </div>
                   </div>
                 </div>

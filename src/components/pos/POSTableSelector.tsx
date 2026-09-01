@@ -20,16 +20,15 @@ export default function POSTableSelector({
   onSelectTable,
   onWalkIn,
 }: POSTableSelectorProps) {
-  /*
-   * Table priority:
-   * 1. Selected table
-   * 2. Tables with open orders
-   * 3. Available tables
+  /**
+   * Table order:
+   * 1. Currently selected table
+   * 2. Tables with saved/open orders
+   * 3. Empty tables
    *
-   * Keep this component focused only on table selection.
-   * Save / Pay / Checkout actions belong to the order/cart area.
+   * This keeps active work easy to find without
+   * making the selector unnecessarily large.
    */
-
   const orderedTables = [...tables].sort((a, b) => {
     const aSelected = selectedTable?.id === a.id
     const bSelected = selectedTable?.id === b.id
@@ -38,8 +37,11 @@ export default function POSTableSelector({
       return aSelected ? -1 : 1
     }
 
-    if (a.has_open_tab !== b.has_open_tab) {
-      return a.has_open_tab ? -1 : 1
+    const aOpen = Boolean(a.has_open_tab)
+    const bOpen = Boolean(b.has_open_tab)
+
+    if (aOpen !== bOpen) {
+      return aOpen ? -1 : 1
     }
 
     return String(a.name).localeCompare(
@@ -52,76 +54,53 @@ export default function POSTableSelector({
   return (
     <section className="w-full">
       {/* ============================================================
-          HEADER
+          COMPACT HEADER
       ============================================================ */}
 
-      <div className="mb-1.5 flex items-center justify-between">
+      <div className="mb-1.5 flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-1.5">
           <Table2
-            className="h-3.5 w-3.5 shrink-0 text-berbere-500"
+            className="h-4 w-4 shrink-0 text-berbere-500"
+            aria-hidden="true"
           />
 
-          <span
-            className="
-              text-[9px]
-              font-black
-              uppercase
-              tracking-wide
-              text-coffee-600
-            "
-          >
+          <span className="text-[10px] font-black uppercase tracking-wide text-coffee-600">
             {isAm ? 'ጠረጴዛ' : 'Table'}
           </span>
 
-          <span
-            className="
-              rounded-full
-              bg-cream-200
-              px-1.5 py-0.5
-              text-[8px]
-              font-black
-              text-coffee-500
-            "
-          >
+          <span className="rounded-full bg-cream-200 px-1.5 py-0.5 text-[8px] font-black text-coffee-500">
             {tables.length}
           </span>
         </div>
 
-        {/* ==========================================================
-            STATUS
-        ========================================================== */}
+        {/* Simple explanation of occupied tables */}
+        <div
+          className="flex items-center gap-1"
+          title={
+            isAm
+              ? 'የተከፈተ ትዕዛዝ ያለው ጠረጴዛ'
+              : 'Table with an open order'
+          }
+        >
+          <span
+            className="h-1.5 w-1.5 rounded-full bg-warning"
+            aria-hidden="true"
+          />
 
-        <div className="flex items-center gap-2">
-          <span className="flex items-center gap-1">
-            <span
-              className="
-                h-1.5 w-1.5
-                rounded-full
-                bg-warning
-              "
-              aria-hidden="true"
-            />
-
-            <span
-              className="
-                text-[7px]
-                font-bold
-                text-coffee-400
-              "
-            >
-              {isAm ? 'ክፍት' : 'Open'}
-            </span>
+          <span className="text-[8px] font-bold text-coffee-400">
+            {isAm ? 'ትዕዛዝ አለ' : 'Has order'}
           </span>
         </div>
       </div>
 
       {/* ============================================================
-          TABLE LIST
+          TABLES
       ============================================================ */}
 
       <div
         className="
-          flex gap-1.5
+          flex
+          gap-1.5
           overflow-x-auto
           pb-0.5
           subtle-scrollbar
@@ -142,10 +121,17 @@ export default function POSTableSelector({
           type="button"
           onClick={onWalkIn}
           aria-pressed={!selectedTable}
+          title={
+            isAm
+              ? 'ቀጥታ ሽያጭ - ጠረጴዛ የለውም'
+              : 'Walk-in sale - no table'
+          }
           className={[
             `
-              flex h-10
-              min-w-[76px]
+              relative
+              flex
+              h-10
+              min-w-[78px]
               shrink-0
               items-center
               justify-center
@@ -154,7 +140,8 @@ export default function POSTableSelector({
               px-2
               text-[10px]
               font-black
-              transition
+              transition-all
+              duration-150
               active:scale-[0.97]
               sm:min-w-0
             `,
@@ -174,7 +161,9 @@ export default function POSTableSelector({
               `,
           ].join(' ')}
         >
-          {isAm ? 'ቀጥታ' : 'Walk-In'}
+          <span className="truncate">
+            {isAm ? 'ቀጥታ ሽያጭ' : 'Walk-In'}
+          </span>
         </button>
 
         {/* ==========================================================
@@ -192,33 +181,46 @@ export default function POSTableSelector({
             <button
               key={table.id}
               type="button"
-              onClick={() =>
-                onSelectTable(table)
-              }
+              onClick={() => onSelectTable(table)}
               aria-pressed={selected}
               aria-label={
                 open
                   ? `${table.name} - ${
                       isAm
-                        ? 'ክፍት ትዕዛዝ'
-                        : 'open order'
+                        ? 'ትዕዛዝ አለ'
+                        : 'has open order'
                     }`
                   : table.name
+              }
+              title={
+                open
+                  ? `${table.name} — ${
+                      isAm
+                        ? 'ትዕዛዝ አለ'
+                        : 'Open order'
+                    }`
+                  : `${table.name} — ${
+                      isAm
+                        ? 'ባዶ'
+                        : 'Empty'
+                    }`
               }
               className={[
                 `
                   relative
-                  flex h-10
-                  min-w-[76px]
+                  flex
+                  h-10
+                  min-w-[78px]
                   shrink-0
                   items-center
                   justify-center
                   rounded-lg
                   border
-                  px-2
-                  text-[10px]
+                  px-2.5
+                  text-[11px]
                   font-black
-                  transition
+                  transition-all
+                  duration-150
                   active:scale-[0.97]
                   sm:min-w-0
                 `,
@@ -253,16 +255,21 @@ export default function POSTableSelector({
                   OPEN ORDER INDICATOR
               ==================================================== */}
 
-              {open && !selected && (
+              {open && (
                 <span
-                  className="
-                    absolute
-                    right-1.5
-                    top-1.5
-                    h-1.5 w-1.5
-                    rounded-full
-                    bg-warning
-                  "
+                  className={[
+                    `
+                      absolute
+                      right-1.5
+                      top-1.5
+                      h-1.5
+                      w-1.5
+                      rounded-full
+                    `,
+                    selected
+                      ? 'bg-coffee-900'
+                      : 'bg-warning',
+                  ].join(' ')}
                   aria-hidden="true"
                 />
               )}

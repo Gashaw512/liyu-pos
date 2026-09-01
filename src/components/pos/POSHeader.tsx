@@ -40,6 +40,8 @@ export default function POSHeader({
     selectedTable?.name ??
     (isAm ? 'ቀጥታ ሽያጭ' : 'Walk-In')
 
+  const isWalkIn = !selectedTable
+
   return (
     <header
       className="
@@ -47,6 +49,7 @@ export default function POSHeader({
         w-full shrink-0
         border-b border-cream-300
         bg-cream-50/95
+        shadow-sm
         backdrop-blur-md
       "
     >
@@ -62,78 +65,139 @@ export default function POSHeader({
           lg:px-5
         "
       >
-        {/* ======================================================
-            ORDER LOCATION
-        ====================================================== */}
+        {/* ==========================================================
+            SALES AREA
+            The most important information on the screen.
+        ========================================================== */}
 
         <div
           className="
-            flex min-w-0 flex-1
-            items-center gap-2
+            flex
+            min-w-0
+            flex-1
+            items-center
+            gap-2
           "
         >
+          {/* SALES ICON */}
+
           <div
-            className="
-              flex h-8 w-8 shrink-0
-              items-center justify-center
-              rounded-lg
-              bg-berbere-50
-              text-berbere-500
-            "
+            className={[
+              `
+                flex
+                h-9
+                w-9
+                shrink-0
+                items-center
+                justify-center
+                rounded-xl
+              `,
+              isWalkIn
+                ? 'bg-cream-200 text-coffee-500'
+                : 'bg-berbere-50 text-berbere-500',
+            ].join(' ')}
+            aria-hidden="true"
           >
             <Utensils className="h-4 w-4" />
           </div>
 
+          {/* LOCATION */}
+
           <div className="min-w-0 leading-none">
             <div
               className="
-                truncate
                 text-[8px]
-                font-bold
+                font-black
                 uppercase
-                tracking-wider
+                tracking-[0.12em]
                 text-coffee-400
               "
             >
-              {isAm ? 'ትዕዛዝ' : 'ORDER'}
+              {isAm ? 'የሽያጭ ቦታ' : 'SALES AREA'}
             </div>
 
             <div
               className="
-                mt-1 truncate
-                text-xs
-                font-black
-                text-coffee-800
+                mt-1
+                flex
+                min-w-0
+                items-center
+                gap-1.5
               "
             >
-              {orderPlace}
+              <span
+                className="
+                  truncate
+                  text-sm
+                  font-black
+                  text-coffee-900
+                  sm:text-base
+                "
+              >
+                {orderPlace}
+              </span>
+
+              {/* Small status indicator */}
+
+              <span
+                className={[
+                  `
+                    h-1.5
+                    w-1.5
+                    shrink-0
+                    rounded-full
+                  `,
+                  isWalkIn
+                    ? 'bg-coffee-300'
+                    : 'bg-berbere-500',
+                ].join(' ')}
+                aria-hidden="true"
+              />
             </div>
           </div>
         </div>
 
-        {/* ======================================================
+        {/* ==========================================================
             ITEMS
-        ====================================================== */}
+        ========================================================== */}
 
         <div
           className="
-            flex shrink-0
-            items-center gap-1.5
-            rounded-lg
+            flex
+            shrink-0
+            items-center
+            gap-1.5
+            rounded-xl
+            border
+            border-cream-200
             bg-cream-100
-            px-2.5
+            px-2
             py-1.5
+            sm:px-2.5
           "
-          title={isAm ? 'የትዕዛዝ እቃዎች' : 'Items in order'}
+          title={
+            isAm
+              ? 'የትዕዛዙ እቃዎች ብዛት'
+              : 'Number of items in this order'
+          }
         >
-          <ShoppingBag className="h-3.5 w-3.5 text-gold-600" />
+          <ShoppingBag
+            className="
+              h-3.5
+              w-3.5
+              shrink-0
+              text-gold-600
+            "
+            aria-hidden="true"
+          />
 
           <span
             className="
               font-mono
               text-xs
               font-black
-              text-coffee-800
+              text-coffee-900
+              sm:text-sm
             "
           >
             {totalItems}
@@ -152,15 +216,20 @@ export default function POSHeader({
           </span>
         </div>
 
-        {/* ======================================================
+        {/* ==========================================================
             TOTAL
-        ====================================================== */}
+        ========================================================== */}
 
         <div
           className="
             shrink-0
             text-right
           "
+          title={
+            isAm
+              ? 'የአሁኑ ትዕዛዝ ጠቅላላ'
+              : 'Current order total'
+          }
         >
           <div
             className="
@@ -189,9 +258,10 @@ export default function POSHeader({
           </div>
         </div>
 
-        {/* ======================================================
-            VIEW ORDER
-        ====================================================== */}
+        {/* ==========================================================
+            ORDER BUTTON
+            Clear action for viewing the current bill.
+        ========================================================== */}
 
         <button
           type="button"
@@ -200,26 +270,54 @@ export default function POSHeader({
           aria-expanded={billOpen}
           aria-label={
             isAm
-              ? 'የትዕዛዝ ዝርዝር ይመልከቱ'
-              : 'View order'
+              ? 'የአሁኑን ትዕዛዝ ይመልከቱ'
+              : 'View current order'
+          }
+          title={
+            isAm
+              ? 'የአሁኑን ትዕዛዝ ይመልከቱ'
+              : 'View current order'
           }
           className={[
-            'flex h-9 shrink-0 items-center justify-center gap-1.5',
-            'rounded-lg px-2.5',
-            'text-[9px] font-black',
-            'transition active:scale-[0.97]',
+            `
+              flex
+              h-9
+              shrink-0
+              items-center
+              justify-center
+              gap-1.5
+              rounded-xl
+              px-2.5
+              text-[9px]
+              font-black
+              transition-all
+              active:scale-[0.97]
+              sm:px-3
+            `,
             cartHasItems
-              ? 'bg-berbere-500 text-white shadow-sm hover:bg-berbere-600'
-              : 'cursor-default bg-cream-200 text-coffee-400',
+              ? `
+                bg-berbere-500
+                text-white
+                shadow-sm
+                hover:bg-berbere-600
+              `
+              : `
+                cursor-default
+                bg-cream-200
+                text-coffee-400
+              `,
           ].join(' ')}
         >
-          <ShoppingBag className="h-3.5 w-3.5" />
+          <ShoppingBag
+            className="h-3.5 w-3.5"
+            aria-hidden="true"
+          />
 
           <span className="hidden sm:inline">
             {billOpen
               ? isAm
                 ? 'ዝጋ'
-                : 'Hide'
+                : 'Close'
               : isAm
                 ? 'ትዕዛዝ'
                 : 'Order'}
@@ -227,15 +325,21 @@ export default function POSHeader({
 
           {cartHasItems &&
             (billOpen ? (
-              <ChevronUp className="h-3 w-3" />
+              <ChevronUp
+                className="h-3 w-3"
+                aria-hidden="true"
+              />
             ) : (
-              <ChevronDown className="h-3 w-3" />
+              <ChevronDown
+                className="h-3 w-3"
+                aria-hidden="true"
+              />
             ))}
         </button>
 
-        {/* ======================================================
+        {/* ==========================================================
             CLOSE SHIFT
-        ====================================================== */}
+        ========================================================== */}
 
         <button
           type="button"
@@ -246,14 +350,24 @@ export default function POSHeader({
               ? 'ፈረቃ ዝጋ'
               : 'Close shift'
           }
+          title={
+            isAm
+              ? 'የስራ ፈረቃ ዝጋ'
+              : 'Close shift'
+          }
           className="
-            flex h-9 w-9 shrink-0
-            items-center justify-center
-            rounded-lg
-            border border-cream-300
+            flex
+            h-9
+            w-9
+            shrink-0
+            items-center
+            justify-center
+            rounded-xl
+            border
+            border-cream-300
             bg-cream-50
             text-danger
-            transition
+            transition-all
             hover:bg-cream-100
             active:scale-[0.97]
             disabled:cursor-not-allowed
@@ -261,9 +375,17 @@ export default function POSHeader({
           "
         >
           {closingShift ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <Loader2
+              className="
+                h-3.5
+                w-3.5
+                animate-spin
+              "
+            />
           ) : (
-            <LogOut className="h-3.5 w-3.5" />
+            <LogOut
+              className="h-3.5 w-3.5"
+            />
           )}
         </button>
       </div>

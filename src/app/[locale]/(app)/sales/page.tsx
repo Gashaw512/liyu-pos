@@ -1948,18 +1948,18 @@ export default function SalesPage() {
                           <DirectSaveOrderButton />
                         )}
 
-                    <button
-                          type="button"
-                          onClick={() => {
-                            setShowCheckout(
-                              true,
-                            )
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowCheckout(
+                            true,
+                          )
 
-                            setBillOpen(
-                              false,
-                            )
-                          }}
-                          className="
+                          setBillOpen(
+                            false,
+                          )
+                        }}
+                        className="
                             flex
                             h-10
                             items-center
@@ -1976,15 +1976,15 @@ export default function SalesPage() {
                             hover:bg-berbere-600
                             active:scale-95
                           "
-                        >
-                          <Coins className="h-4 w-4" />
+                      >
+                        <Coins className="h-4 w-4" />
 
-                          <span>
-                            {isAm
-                              ? 'ክፍያ'
-                              : 'Pay'}
-                          </span>
-                        </button>
+                        <span>
+                          {isAm
+                            ? 'ክፍያ'
+                            : 'Pay'}
+                        </span>
+                      </button>
                     </div>
                   </div>
                 </div>

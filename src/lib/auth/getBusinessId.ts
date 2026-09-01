@@ -1,3 +1,4 @@
+// lib/auth/getBusinessId.ts
 import createClient from '@/lib/supabase/client'
 
 export async function getBusinessId() {

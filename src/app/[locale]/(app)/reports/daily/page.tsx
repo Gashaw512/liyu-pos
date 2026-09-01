@@ -25,6 +25,10 @@ import {
 
 import { getDB } from '../../../../../lib/offline/db'
 import createClient from '../../../../../lib/supabase/client'
+
+import {
+  getDailyReport,
+} from '@/lib/reports/daily-report.service'
 interface SaleItem {
   id?: string
   sale_id?: string

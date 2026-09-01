@@ -1,435 +1,2377 @@
-// src/app/[locale]/report/daily/page.tsx
+// src/app/[locale]/(app)/reports/daily/page.tsx
 'use client'
-
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { 
-  ArrowLeft, Calendar, TrendingUp, Wallet, ShieldAlert, 
-  User, CheckCircle, AlertTriangle, Eye, ListFilter, Share2 , Loader2
+import {
+  AlertTriangle,
+  ArrowDownRight,
+  ArrowLeft,
+  ArrowUpRight,
+  BarChart3,
+  CalendarDays,
+  CheckCircle2,
+  CircleDollarSign,
+  Clock3,
+  Loader2,
+  Package,
+  RefreshCw,
+  Share2,
+  ShoppingBag,
+  TrendingUp,
+  Wallet,
+  Wifi,
+  WifiOff,
 } from 'lucide-react'
-import { getDB } from '../../../../../lib/offline/db'
 
-interface MissingProduct {
+import { getDB } from '../../../../../lib/offline/db'
+import createClient from '../../../../../lib/supabase/client'
+
+import {
+  getDailyReport,
+} from '@/lib/reports/daily-report.service'
+interface SaleItem {
+  id?: string
+  sale_id?: string
+  saleId?: string
+
+  product_id?: string
+  productId?: string
+
+  category_id?: string
+  categoryId?: string
+
+  product_name?: string
+  productName?: string
+  name?: string
+
+  quantity?: number
+
+  unit_price?: number
+  unitPrice?: number
+  price?: number
+
+  total?: number
+  total_amount?: number
+}
+
+interface Payment {
+  id?: string
+  sale_id?: string
+  saleId?: string
+
+  method?: string
+  payment_method?: string
+
+  amount?: number
+}
+
+interface SaleRecord {
+  id?: string
+  sale_id?: string
+
+  created_at?: string
+  createdAt?: string
+
+  subtotal?: number
+  total_amount?: number
+  totalAmount?: number
+
+  tip_amount?: number
+  tipAmount?: number
+
+  payment_method?: string
+  paymentMethod?: string
+
+  items?: SaleItem[]
+  sale_items?: SaleItem[]
+
+  payments?: Payment[]
+
+  synced?: boolean
+  sync_status?: string
+  status?: string
+}
+
+interface ProductRecord {
+  id: string
+  name?: string
+  stock_quantity?: number
+  quantity?: number
+  reorder_level?: number
+  low_stock_threshold?: number
+}
+
+interface CategoryRecord {
+  id: string
+  name?: string
+}
+
+interface ShiftRecord {
+  id?: string
+  opening_cash?: number
+  actual_cash?: number | null
+  opened_by?: string
+  opened_at?: string
+  closed_at?: string
+  status?: string
+}
+
+interface ExpenseRecord {
+  id?: string
+  amount?: number
+  total_amount?: number
+
+  description?: string
+  note?: string
+  category?: string
+  expense_category?: string
+
+  expense_date?: string
+  date?: string
+  created_at?: string
+
+  status?: string
+}
+
+interface ProductSummary {
   id: string
   name: string
-  stock_left: number
-  threshold: number
-}
-
-interface FinancialSummary {
-  subtotalSales: number    // Taxable product revenue
-  totalTips: number        // Manual tips collected for waiter payouts
-  grandTotal: number       // Subtotal + Tips (Total money passing to owner)
-  cashVolume: number
-  telebirrVolume: number
-  bankVolume: number
-}
-
-interface LocalCategoryBreakdown {
-  name: string
-  itemsSold: number
+  quantity: number
   revenue: number
+}
+
+interface CategorySummary {
+  id: string
+  name: string
+  quantity: number
+  revenue: number
+}
+
+interface PaymentSummary {
+  method: string
+  amount: number
+}
+
+function numberValue(value: unknown): number {
+  const number = Number(value)
+
+  return Number.isFinite(number) ? number : 0
+}
+function getSaleId(sale: SaleRecord): string {
+  return String(sale.id || sale.sale_id || '')
+}
+function getSaleDate(sale: SaleRecord): string {
+  return String(sale.created_at || sale.createdAt || '')
+}
+function getSaleTotal(sale: SaleRecord): number {
+  return numberValue(
+    sale.total_amount ??
+      sale.totalAmount ??
+      sale.subtotal ??
+      0,
+  )
+}
+function getSaleTip(sale: SaleRecord): number {
+  return numberValue(
+    sale.tip_amount ??
+      sale.tipAmount ??
+      0,
+  )
+}
+
+function getSaleItems(sale: SaleRecord): SaleItem[] {
+  if (Array.isArray(sale.items)) {
+    return sale.items
+  }
+
+  if (Array.isArray(sale.sale_items)) {
+    return sale.sale_items
+  }
+
+  return []
+}
+
+function getPaymentMethod(payment: Payment): string {
+  return String(
+    payment.method ||
+      payment.payment_method ||
+      'other',
+  )
+    .trim()
+    .toLowerCase()
+}
+
+function getSalePaymentMethod(sale: SaleRecord): string {
+  return String(
+    sale.payment_method ||
+      sale.paymentMethod ||
+      'other',
+  )
+    .trim()
+    .toLowerCase()
+}
+
+function getItemRevenue(item: SaleItem): number {
+  const quantity = numberValue(item.quantity)
+
+  if (item.total != null) {
+    return numberValue(item.total)
+  }
+
+  if (item.total_amount != null) {
+    return numberValue(item.total_amount)
+  }
+
+  return (
+    quantity *
+    numberValue(
+      item.unit_price ??
+        item.unitPrice ??
+        item.price ??
+        0,
+    )
+  )
+}
+
+function getExpenseAmount(expense: ExpenseRecord): number {
+  return numberValue(
+    expense.amount ??
+      expense.total_amount ??
+      0,
+  )
+}
+
+function getExpenseDate(expense: ExpenseRecord): string {
+  return String(
+    expense.expense_date ||
+      expense.date ||
+      expense.created_at ||
+      '',
+  )
+}
+function formatMoney(value: number): string {
+  return `${Math.round(value).toLocaleString()} ETB`
+}
+
+function formatNumber(value: number): string {
+  return Math.round(value).toLocaleString()
+}
+
+function formatPaymentName(method: string): string {
+  const normalized = method.toLowerCase()
+
+  if (normalized === 'cash') return 'Cash'
+  if (normalized === 'telebirr') return 'Telebirr'
+
+  if (
+    normalized === 'bank' ||
+    normalized === 'bank_transfer' ||
+    normalized === 'transfer'
+  ) {
+    return 'Bank Transfer'
+  }
+
+  if (normalized === 'card') return 'Card'
+
+  return method
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function isToday(dateString: string): boolean {
+  if (!dateString) return false
+
+  const date = new Date(dateString)
+
+  if (Number.isNaN(date.getTime())) {
+    return false
+  }
+
+  const today = new Date()
+
+  return (
+    date.getFullYear() === today.getFullYear() &&
+    date.getMonth() === today.getMonth() &&
+    date.getDate() === today.getDate()
+  )
+}
+
+function getTodayRange() {
+  const start = new Date()
+
+  start.setHours(0, 0, 0, 0)
+
+  const end = new Date(start)
+
+  end.setDate(end.getDate() + 1)
+
+  return {
+    start,
+    end,
+    startISO: start.toISOString(),
+    endISO: end.toISOString(),
+  }
+}
+
+function addPayment(
+  totals: Record<string, number>,
+  method: string,
+  amount: number,
+) {
+  const normalized = method.toLowerCase()
+
+  if (normalized === 'cash') {
+    totals.cash += amount
+  } else if (normalized === 'telebirr') {
+    totals.telebirr += amount
+  } else if (
+    normalized === 'bank' ||
+    normalized === 'bank_transfer' ||
+    normalized === 'transfer'
+  ) {
+    totals.bank += amount
+  } else if (normalized === 'card') {
+    totals.card += amount
+  } else {
+    totals.other += amount
+  }
 }
 
 export default function DailyReportPage() {
   const params = useParams()
   const router = useRouter()
-  const isAm = params.locale === 'am'
-  const locale = params.locale || 'am'
 
-  // Report View Toggle: 'overview' vs 'detailed'
-  const [viewMode, setViewMode] = useState<'overview' | 'detailed'>('overview')
+  const locale = String(params.locale || 'en')
+  const isAm = locale === 'am'
+
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
 
-  // System States mapped logically
-  const [activeShift, setActiveShift] = useState<any>(null)
-  const [financials, setFinancials] = useState<FinancialSummary>({
-    subtotalSales: 0,
-    totalTips: 0,
-    grandTotal: 0,
-    cashVolume: 0,
-    telebirrVolume: 0,
-    bankVolume: 0,
-  })
-  const [categoryBreakdown, setCategoryBreakdown] = useState<LocalCategoryBreakdown[]>([])
-  const [missingProducts, setMissingProducts] = useState<MissingProduct[]>([])
-  const [salesCount, setSalesCount] = useState(0)
+  const [sales, setSales] = useState<SaleRecord[]>([])
+  const [expenses, setExpenses] = useState<ExpenseRecord[]>([])
 
-  // Amharic Translator utility
-  const t = (en: string, am: string) => (isAm ? am : en)
+  const [products, setProducts] = useState<ProductRecord[]>([])
+  const [categories, setCategories] = useState<CategoryRecord[]>([])
 
-  useEffect(() => {
-    async function compileDailyReport() {
+  const [activeShift, setActiveShift] =
+    useState<ShiftRecord | null>(null)
+
+  const [remoteSalesCount, setRemoteSalesCount] = useState(0)
+  const [localOnlySalesCount, setLocalOnlySalesCount] = useState(0)
+
+  const [remoteExpenseCount, setRemoteExpenseCount] = useState(0)
+
+  const [lastUpdated, setLastUpdated] =
+    useState<Date | null>(null)
+
+  const [remoteAvailable, setRemoteAvailable] =
+    useState(true)
+  const t = (en: string, am: string) =>
+    isAm ? am : en
+
+  const loadReport = useCallback(
+    async (showRefresh = false) => {
       try {
-        const db = await getDB()
-
-        // 1. Fetch Shift context layout status
-        const currentShift = await db.get('active_shift', 'current')
-        setActiveShift(currentShift || null)
-
-        // 2. Load supporting structures for Category mappings
-        const [cachedProducts, cachedCategories] = await Promise.all([
-          db.getAll('products'),
-          db.getAll('categories')
-        ])
-
-        const catMap: Record<string, string> = {}
-        cachedCategories?.forEach(c => {
-          catMap[c.id] = c.name
-        })
-
-        // 3. Aggregate Transactions for the Current Day
-        const history = await db.getAll('completed_sales_history')
-        const pending = await db.getAll('pending_sales')
-        const allDailySales = [...history, ...pending]
-
-        let subtotalAccumulator = 0
-        let tipAccumulator = 0
-        let cashAccumulator = 0
-        let telebirrAccumulator = 0
-        let bankAccumulator = 0
-
-        const startOfToday = new Date()
-        startOfToday.setHours(0, 0, 0, 0)
-
-        const targetedSales = allDailySales.filter((sale: any) => {
-          const targetDate = new Date(sale.createdAt || sale.created_at)
-          return targetDate >= startOfToday
-        })
-
-        // Temporary map container to aggregate totals by normalized category names
-        const breakdownMap: Record<string, { itemsSold: number; revenue: number }> = {}
-
-        targetedSales.forEach((sale: any) => {
-          const saleSubtotal = sale.subtotal || sale.total_amount || 0
-          const saleTip = sale.tip_amount || 0
-
-          subtotalAccumulator += saleSubtotal
-          tipAccumulator += saleTip
-
-          // Track items for category breakdowns
-          if (sale.items && Array.isArray(sale.items)) {
-            sale.items.forEach((item: any) => {
-              const rawCatName = catMap[item.category_id] || 'General'
-              
-              // Normalize names to match your unified SQL database view layout buckets
-              let normalizedName = rawCatName
-              if (['Beer', 'ቢራ'].includes(rawCatName)) normalizedName = 'Beer / ቢራ'
-              if (['Water', 'ውሃ'].includes(rawCatName)) normalizedName = 'Water / ውሃ'
-              if (['Food', 'ምግብ'].includes(rawCatName)) normalizedName = 'Food / ምግብ'
-              if (['Soft Drinks', 'ለስላሳ መጠጦች'].includes(rawCatName)) normalizedName = 'Soft Drinks / ለስላሳ'
-
-              if (!breakdownMap[normalizedName]) {
-                breakdownMap[normalizedName] = { itemsSold: 0, revenue: 0 }
-              }
-
-              const qty = Number(item.quantity || 0)
-              const price = Number(item.unit_price || item.price || 0)
-              
-              breakdownMap[normalizedName].itemsSold += qty
-              breakdownMap[normalizedName].revenue += qty * price
-            })
-          }
-
-          // Drill-down logic safely parsing payments structure array
-          if (sale.payments && Array.isArray(sale.payments)) {
-            sale.payments.forEach((p: any) => {
-              const method = String(p.method).toLowerCase()
-              const amt = parseFloat(p.amount) || 0
-              if (method === 'cash') cashAccumulator += amt
-              else if (method === 'telebirr') telebirrAccumulator += amt
-              else bankAccumulator += amt
-            })
-          } else {
-            const fallbackAmt = sale.total_amount || 0
-            if (sale.payment_method === 'cash') cashAccumulator += fallbackAmt
-            else if (sale.payment_method === 'telebirr') telebirrAccumulator += fallbackAmt
-            else bankAccumulator += fallbackAmt
-          }
-        })
-
-        // Convert the structural hashmap back into a renderable array
-        const formattedBreakdown = Object.entries(breakdownMap).map(([name, data]) => ({
-          name,
-          itemsSold: data.itemsSold,
-          revenue: data.revenue
-        }))
-
-        setCategoryBreakdown(formattedBreakdown)
-
-        setFinancials({
-          subtotalSales: subtotalAccumulator,
-          totalTips: tipAccumulator,
-          grandTotal: subtotalAccumulator + tipAccumulator,
-          cashVolume: cashAccumulator,
-          telebirrVolume: telebirrAccumulator,
-          bankVolume: bankAccumulator
-        })
-        setSalesCount(targetedSales.length)
-
-        // 4. Scan Inventory for Missing/Low-Stock Exceptions
-        if (cachedProducts) {
-          const lowStockAlerts = cachedProducts
-            .filter((p: any) => (p.stock_quantity !== undefined ? p.stock_quantity : p.quantity || 0) <= 5)
-            .map((p: any) => ({
-              id: String(p.id),
-              name: p.name,
-              stock_left: p.stock_quantity !== undefined ? p.stock_quantity : p.quantity || 0,
-              threshold: 5
-            }))
-          setMissingProducts(lowStockAlerts.slice(0, 4))
+        if (showRefresh) {
+          setRefreshing(true)
+        } else {
+          setLoading(true)
         }
-      } catch (err) {
-        console.error('Error generating daily analytics reporting structures:', err)
+
+        const db = await getDB()
+        const supabase = createClient()
+
+        const {
+          start,
+          end,
+          startISO,
+          endISO,
+        } = getTodayRange()
+
+        let localHistory: SaleRecord[] = []
+
+        try {
+          localHistory =
+            ((await db.getAll(
+              'completed_sales_history',
+            )) || []) as SaleRecord[]
+        } catch {
+          localHistory = []
+        }
+
+        const localTodaySales =
+          localHistory.filter((sale) =>
+            isToday(getSaleDate(sale)),
+          )
+        try {
+          const currentShift = await db.get(
+            'active_shift',
+            'current',
+          )
+
+          setActiveShift(
+            currentShift
+              ? (currentShift as ShiftRecord)
+              : null,
+          )
+        } catch {
+          setActiveShift(null)
+        }
+
+        try {
+          const [
+            cachedProducts,
+            cachedCategories,
+          ] = await Promise.all([
+            db.getAll('products'),
+            db.getAll('categories'),
+          ])
+
+          setProducts(
+            (cachedProducts || []) as ProductRecord[],
+          )
+
+          setCategories(
+            (cachedCategories || []) as CategoryRecord[],
+          )
+        } catch {
+          setProducts([])
+          setCategories([])
+        }
+        let remoteSales: SaleRecord[] = []
+
+        try {
+          const {
+            data,
+            error,
+          } = await supabase
+            .from('sales')
+            .select('*')
+            .gte('created_at', startISO)
+            .lt('created_at', endISO)
+            .order('created_at', {
+              ascending: false,
+            })
+
+          if (error) {
+            throw error
+          }
+
+          remoteSales =
+            ((data || []) as SaleRecord[])
+
+          setRemoteAvailable(true)
+          setRemoteSalesCount(remoteSales.length)
+        } catch (error) {
+          console.error(
+            'Unable to load remote sales:',
+            error,
+          )
+
+          setRemoteAvailable(false)
+          setRemoteSalesCount(0)
+        }
+
+        const mergedSalesMap =
+          new Map<string, SaleRecord>()
+
+        remoteSales.forEach((sale) => {
+          const id = getSaleId(sale)
+
+          if (id) {
+            mergedSalesMap.set(id, sale)
+          }
+        })
+
+        let localOnlyCount = 0
+
+        localTodaySales.forEach((sale) => {
+          const id = getSaleId(sale)
+
+          if (!id) {
+            return
+          }
+
+          if (!mergedSalesMap.has(id)) {
+            mergedSalesMap.set(id, sale)
+            localOnlyCount += 1
+          }
+        })
+
+        const mergedSales =
+          Array.from(
+            mergedSalesMap.values(),
+          ).sort(
+            (a, b) =>
+              new Date(
+                getSaleDate(b),
+              ).getTime() -
+              new Date(
+                getSaleDate(a),
+              ).getTime(),
+          )
+
+        setSales(mergedSales)
+        setLocalOnlySalesCount(localOnlyCount)
+        if (remoteSales.length > 0) {
+          try {
+            const remoteSaleIds =
+              remoteSales
+                .map(getSaleId)
+                .filter(Boolean)
+
+            if (remoteSaleIds.length > 0) {
+              const {
+                data: remoteItems,
+                error: itemsError,
+              } = await supabase
+                .from('sale_items')
+                .select('*')
+                .in(
+                  'sale_id',
+                  remoteSaleIds,
+                )
+
+              if (!itemsError && remoteItems) {
+                const itemsBySale =
+                  new Map<string, SaleItem[]>()
+
+                ;(remoteItems as SaleItem[]).forEach(
+                  (item) => {
+                    const saleId = String(
+                      item.sale_id ||
+                        item.saleId ||
+                        '',
+                    )
+
+                    if (!saleId) return
+
+                    const existing =
+                      itemsBySale.get(saleId) ||
+                      []
+
+                    existing.push(item)
+
+                    itemsBySale.set(
+                      saleId,
+                      existing,
+                    )
+                  },
+                )
+
+                mergedSales.forEach((sale) => {
+                  const id = getSaleId(sale)
+
+                  const remoteItemsForSale =
+                    itemsBySale.get(id)
+
+                  if (
+                    remoteItemsForSale &&
+                    remoteItemsForSale.length > 0
+                  ) {
+                    sale.items =
+                      remoteItemsForSale
+                  }
+                })
+              }
+            }
+          } catch (error) {
+            console.warn(
+              'Unable to load remote sale items:',
+              error,
+            )
+          }
+
+          try {
+            const remoteSaleIds =
+              remoteSales
+                .map(getSaleId)
+                .filter(Boolean)
+
+            if (remoteSaleIds.length > 0) {
+              const {
+                data: remotePayments,
+                error: paymentsError,
+              } = await supabase
+                .from('payments')
+                .select('*')
+                .in(
+                  'sale_id',
+                  remoteSaleIds,
+                )
+
+              if (
+                !paymentsError &&
+                remotePayments
+              ) {
+                const paymentsBySale =
+                  new Map<string, Payment[]>()
+
+                ;(
+                  remotePayments as Payment[]
+                ).forEach((payment) => {
+                  const saleId = String(
+                    payment.sale_id ||
+                      payment.saleId ||
+                      '',
+                  )
+
+                  if (!saleId) return
+
+                  const existing =
+                    paymentsBySale.get(
+                      saleId,
+                    ) || []
+
+                  existing.push(payment)
+
+                  paymentsBySale.set(
+                    saleId,
+                    existing,
+                  )
+                })
+
+                mergedSales.forEach((sale) => {
+                  const id = getSaleId(sale)
+
+                  const remotePaymentsForSale =
+                    paymentsBySale.get(id)
+
+                  if (
+                    remotePaymentsForSale &&
+                    remotePaymentsForSale.length > 0
+                  ) {
+                    sale.payments =
+                      remotePaymentsForSale
+                  }
+                })
+              }
+            }
+          } catch (error) {
+            console.warn(
+              'Unable to load remote payments:',
+              error,
+            )
+          }
+        }
+
+        let remoteExpenses: ExpenseRecord[] = []
+
+        try {
+          const {
+            data,
+            error,
+          } = await supabase
+            .from('expenses')
+            .select('*')
+            .gte(
+              'created_at',
+              startISO,
+            )
+            .lt(
+              'created_at',
+              endISO,
+            )
+
+          if (!error && data) {
+            remoteExpenses =
+              data as ExpenseRecord[]
+          }
+        } catch (error) {
+          console.warn(
+            'Remote expenses table unavailable:',
+            error,
+          )
+        }
+
+        setRemoteExpenseCount(
+          remoteExpenses.length,
+        )
+
+        let localExpenses: ExpenseRecord[] = []
+
+        try {
+          const local =
+            await db.getAll('expenses')
+
+          localExpenses =
+            ((local || []) as ExpenseRecord[])
+              .filter((expense) =>
+                isToday(
+                  getExpenseDate(expense),
+                ),
+              )
+        } catch {
+          localExpenses = []
+        }
+
+        const expenseMap =
+          new Map<string, ExpenseRecord>()
+
+        remoteExpenses.forEach(
+          (expense, index) => {
+            const id = String(
+              expense.id ||
+                `remote-expense-${index}`,
+            )
+
+            expenseMap.set(id, expense)
+          },
+        )
+
+        localExpenses.forEach(
+          (expense, index) => {
+            const id = String(
+              expense.id ||
+                `local-expense-${index}`,
+            )
+
+            if (!expenseMap.has(id)) {
+              expenseMap.set(id, expense)
+            }
+          },
+        )
+
+        setExpenses(
+          Array.from(
+            expenseMap.values(),
+          ),
+        )
+
+        setLastUpdated(new Date())
+
+        void start
+        void end
+      } catch (error) {
+        console.error(
+          'Failed to load daily report:',
+          error,
+        )
       } finally {
         setLoading(false)
+        setRefreshing(false)
       }
-    }
-    compileDailyReport()
-  }, [])
+    },
+    [],
+  )
 
-  const theoreticalRevenue = financials.subtotalSales
-  const shiftDiscrepancy = activeShift?.actual_cash !== null && activeShift?.actual_cash !== undefined
-    ? activeShift.actual_cash - (activeShift.opening_cash + financials.cashVolume)
-    : 0
+  useEffect(() => {
+    loadReport()
+  }, [loadReport])
+
+  const categoryMap = useMemo(() => {
+    const map = new Map<string, string>()
+
+    categories.forEach((category) => {
+      map.set(
+        String(category.id),
+        category.name || 'General',
+      )
+    })
+
+    return map
+  }, [categories])
+
+  const productMap = useMemo(() => {
+    const map = new Map<string, string>()
+
+    products.forEach((product) => {
+      map.set(
+        String(product.id),
+        product.name || 'Unknown Product',
+      )
+    })
+
+    return map
+  }, [products])
+
+  const financials = useMemo(() => {
+    let salesTotal = 0
+    let tips = 0
+
+    const payments = {
+      cash: 0,
+      telebirr: 0,
+      bank: 0,
+      card: 0,
+      other: 0,
+    }
+
+    sales.forEach((sale) => {
+      salesTotal += getSaleTotal(sale)
+      tips += getSaleTip(sale)
+
+      const salePayments =
+        Array.isArray(sale.payments)
+          ? sale.payments
+          : []
+
+      if (salePayments.length > 0) {
+        salePayments.forEach(
+          (payment) => {
+            addPayment(
+              payments,
+              getPaymentMethod(payment),
+              numberValue(
+                payment.amount,
+              ),
+            )
+          },
+        )
+      } else {
+        addPayment(
+          payments,
+          getSalePaymentMethod(sale),
+          getSaleTotal(sale),
+        )
+      }
+    })
+
+    const totalReceived =
+      salesTotal + tips
+
+    const paymentTotal =
+      payments.cash +
+      payments.telebirr +
+      payments.bank +
+      payments.card +
+      payments.other
+
+    return {
+      salesTotal,
+      tips,
+      totalReceived,
+
+      cash: payments.cash,
+      telebirr: payments.telebirr,
+      bank: payments.bank,
+      card: payments.card,
+      other: payments.other,
+
+      paymentTotal,
+    }
+  }, [sales])
+
+  const expenseSummary = useMemo(() => {
+    const total = expenses.reduce(
+      (sum, expense) =>
+        sum + getExpenseAmount(expense),
+      0,
+    )
+
+    const byCategory =
+      new Map<string, number>()
+
+    expenses.forEach((expense) => {
+      const category =
+        String(
+          expense.category ||
+            expense.expense_category ||
+            'Other',
+        ).trim() || 'Other'
+
+      byCategory.set(
+        category,
+        (byCategory.get(category) || 0) +
+          getExpenseAmount(expense),
+      )
+    })
+
+    return {
+      total,
+      byCategory:
+        Array.from(
+          byCategory.entries(),
+        )
+          .map(
+            ([category, amount]) => ({
+              category,
+              amount,
+            }),
+          )
+          .sort(
+            (a, b) =>
+              b.amount - a.amount,
+          ),
+    }
+  }, [expenses])
+
+  const netResult =
+    financials.totalReceived -
+    expenseSummary.total
+  const itemsSold = useMemo(() => {
+    return sales.reduce(
+      (total, sale) =>
+        total +
+        getSaleItems(sale).reduce(
+          (itemTotal, item) =>
+            itemTotal +
+            numberValue(item.quantity),
+          0,
+        ),
+      0,
+    )
+  }, [sales])
+
+  const productReport =
+    useMemo(() => {
+      const map =
+        new Map<string, ProductSummary>()
+
+      sales.forEach((sale) => {
+        getSaleItems(sale).forEach(
+          (item) => {
+            const productId = String(
+              item.product_id ||
+                item.productId ||
+                item.name ||
+                item.id ||
+                'unknown',
+            )
+
+            const productName =
+              item.product_name ||
+              item.productName ||
+              item.name ||
+              productMap.get(
+                productId,
+              ) ||
+              'Unknown Product'
+
+            const quantity =
+              numberValue(
+                item.quantity,
+              )
+
+            const revenue =
+              getItemRevenue(item)
+
+            const existing =
+              map.get(productId)
+
+            if (existing) {
+              existing.quantity +=
+                quantity
+
+              existing.revenue +=
+                revenue
+            } else {
+              map.set(productId, {
+                id: productId,
+                name: productName,
+                quantity,
+                revenue,
+              })
+            }
+          },
+        )
+      })
+
+      return Array.from(
+        map.values(),
+      ).sort(
+        (a, b) =>
+          b.revenue - a.revenue,
+      )
+    }, [sales, productMap])
+
+  const categoryReport =
+    useMemo(() => {
+      const map =
+        new Map<string, CategorySummary>()
+
+      sales.forEach((sale) => {
+        getSaleItems(sale).forEach(
+          (item) => {
+            const categoryId =
+              String(
+                item.category_id ||
+                  item.categoryId ||
+                  'general',
+              )
+
+            const categoryName =
+              categoryMap.get(
+                categoryId,
+              ) || 'General'
+
+            const quantity =
+              numberValue(
+                item.quantity,
+              )
+
+            const revenue =
+              getItemRevenue(item)
+
+            const existing =
+              map.get(categoryId)
+
+            if (existing) {
+              existing.quantity +=
+                quantity
+
+              existing.revenue +=
+                revenue
+            } else {
+              map.set(categoryId, {
+                id: categoryId,
+                name: categoryName,
+                quantity,
+                revenue,
+              })
+            }
+          },
+        )
+      })
+
+      return Array.from(
+        map.values(),
+      ).sort(
+        (a, b) =>
+          b.revenue - a.revenue,
+      )
+    }, [sales, categoryMap])
+
+  const paymentReport =
+    useMemo(() => {
+      const values: PaymentSummary[] =
+        [
+          {
+            method: 'Cash',
+            amount:
+              financials.cash,
+          },
+          {
+            method: 'Telebirr',
+            amount:
+              financials.telebirr,
+          },
+          {
+            method: 'Bank Transfer',
+            amount:
+              financials.bank,
+          },
+          {
+            method: 'Card',
+            amount:
+              financials.card,
+          },
+          {
+            method: 'Other',
+            amount:
+              financials.other,
+          },
+        ]
+
+      return values.filter(
+        (item) => item.amount > 0,
+      )
+    }, [financials])
+
+  const lowStockProducts =
+    useMemo(() => {
+      return products
+        .map((product) => {
+          const stock =
+            numberValue(
+              product.stock_quantity ??
+                product.quantity ??
+                0,
+            )
+
+          const threshold =
+            numberValue(
+              product.low_stock_threshold ??
+                product.reorder_level ??
+                5,
+            )
+
+          return {
+            ...product,
+            stock,
+            threshold,
+          }
+        })
+        .filter(
+          (product) =>
+            product.stock <=
+            product.threshold,
+        )
+        .sort(
+          (a, b) =>
+            a.stock - b.stock,
+        )
+        .slice(0, 8)
+    }, [products])
+
+  const expectedCash = useMemo(() => {
+    return (
+      numberValue(
+        activeShift?.opening_cash,
+      ) + financials.cash
+    )
+  }, [
+    activeShift,
+    financials.cash,
+  ])
+
+  const actualCash =
+    activeShift?.actual_cash != null
+      ? numberValue(
+          activeShift.actual_cash,
+        )
+      : null
+
+  const cashDifference =
+    actualCash != null
+      ? actualCash - expectedCash
+      : null
+
+  const shareReport = async () => {
+    const date =
+      new Date().toLocaleDateString(
+        isAm ? 'am-ET' : 'en-ET',
+        {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        },
+      )
+
+    const text = [
+      'LIYU POS — DAILY REPORT',
+      date,
+      '',
+      `Sales: ${formatMoney(
+        financials.salesTotal,
+      )}`,
+      `Tips: ${formatMoney(
+        financials.tips,
+      )}`,
+      `Total Received: ${formatMoney(
+        financials.totalReceived,
+      )}`,
+      `Expenses: ${formatMoney(
+        expenseSummary.total,
+      )}`,
+      `Net Result: ${formatMoney(
+        netResult,
+      )}`,
+      '',
+      `Orders: ${formatNumber(
+        sales.length,
+      )}`,
+      `Items Sold: ${formatNumber(
+        itemsSold,
+      )}`,
+      '',
+      'PAYMENTS',
+      `Cash: ${formatMoney(
+        financials.cash,
+      )}`,
+      `Telebirr: ${formatMoney(
+        financials.telebirr,
+      )}`,
+      `Bank: ${formatMoney(
+        financials.bank,
+      )}`,
+      `Card: ${formatMoney(
+        financials.card,
+      )}`,
+      '',
+      `Shift: ${
+        activeShift
+          ? 'Open'
+          : 'Closed'
+      }`,
+    ].join('\n')
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title:
+            'Liyu POS Daily Report',
+          text,
+        })
+      } else {
+        await navigator.clipboard.writeText(
+          text,
+        )
+
+        window.alert(
+          t(
+            'Report copied to clipboard.',
+            'ሪፖርቱ ወደ clipboard ተቀድቷል።',
+          ),
+        )
+      }
+    } catch (error) {
+      console.error(
+        'Unable to share report:',
+        error,
+      )
+    }
+  }
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#F7F4EB] flex flex-col items-center justify-center p-6">
-        <Loader2 className="w-8 h-8 text-[#8B2635] animate-spin mb-2" />
-        <span className="text-xs font-bold text-[#5a3e38] tracking-wider animate-pulse">{t('Compiling Daily Ledger...', 'ዕለታዊ ሪፖርት በመሰብሰብ ላይ...')}</span>
+      <div className="min-h-screen bg-[#F7F4EB] flex items-center justify-center px-4">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-11 h-11 rounded-2xl bg-[#8B2635] flex items-center justify-center shadow-sm">
+            <Loader2 className="w-5 h-5 text-white animate-spin" />
+          </div>
+
+          <p className="text-sm font-black text-[#5A3E38]">
+            {t(
+              'Preparing today’s report...',
+              'የዛሬን ሪፖርት በማዘጋጀት ላይ...',
+            )}
+          </p>
+
+          <p className="text-[10px] text-slate-400">
+            {t(
+              'Checking local and remote records',
+              'የlocal እና remote መረጃዎችን በመፈተሽ ላይ',
+            )}
+          </p>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-[#F7F4EB] p-4 font-['DM_Sans',sans-serif] pb-28 select-none">
-      
-      {/* Upper Navigation Action Context Grid */}
-      <div className="max-w-md mx-auto flex items-center justify-between mb-5">
-        <button onClick={() => router.push(`/${locale}/reports`)}
-          className="flex items-center gap-1.5 text-xs font-black text-[#5a3e38] bg-white px-3 py-2 rounded-xl border border-[#2B1E1A]/10 shadow-sm active:scale-95 transition-all">
-          <ArrowLeft className="w-3.5 h-3.5 text-[#8B2635]" />
-          {t('Back', 'ተመለስ')}
-        </button>
-        <div className="flex gap-1 bg-white p-1 rounded-xl border border-[#2B1E1A]/10 shadow-sm">
-          <button 
-            onClick={() => setViewMode('overview')}
-            className={`px-3 py-1 rounded-lg text-[11px] font-bold tracking-tight transition-all flex items-center gap-1 ${viewMode === 'overview' ? 'bg-[#8B2635] text-white' : 'text-[#5a3e38]'}`}>
-            <TrendingUp className="w-3 h-3" /> {t('Overview', 'አጠቃላይ')}
-          </button>
-          <button 
-            onClick={() => setViewMode('detailed')}
-            className={`px-3 py-1 rounded-lg text-[11px] font-bold tracking-tight transition-all flex items-center gap-1 ${viewMode === 'detailed' ? 'bg-[#8B2635] text-white' : 'text-[#5a3e38]'}`}>
-            <Eye className="w-3 h-3" /> {t('Detailed', 'ዝርዝር')}
-          </button>
-        </div>
-      </div>
+    <main className="min-h-screen bg-[#F7F4EB] pb-28">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5 space-y-5">
 
-      <div className="max-w-md mx-auto space-y-4">
+        <header className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <button
+              type="button"
+              onClick={() =>
+                router.push(
+                  `/${locale}/reports`,
+                )
+              }
+              className="w-10 h-10 shrink-0 rounded-xl bg-white border border-[#2B1E1A]/10 shadow-sm flex items-center justify-center text-[#5A3E38] hover:bg-[#FAF8F2] active:scale-95 transition"
+              aria-label={t(
+                'Back',
+                'ተመለስ',
+              )}
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
 
-        {/* Master Identity Dashboard Block */}
-        <div className="bg-white rounded-2xl border border-[#2B1E1A]/10 shadow-sm p-4 space-y-3 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-24 h-24 bg-[#E2A03F]/5 rounded-bl-full pointer-events-none" />
-          <div className="flex justify-between items-start">
-            <div className="space-y-1">
-              <span className="flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><Calendar className="w-3 h-3 text-[#E2A03F]" /> {t('Daily Flash Briefing', 'የዛሬ ዕለታዊ ሪፖርት')}</span>
-              <h2 className="font-['Playfair_Display',serif] font-black text-xl text-[#2B1E1A]">{new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}</h2>
-            </div>
-            <div className={`px-2.5 py-1 rounded-lg text-[10px] font-black flex items-center gap-1 uppercase tracking-tight ${activeShift ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-600 border border-slate-300/60'}`}>
-              <CheckCircle className="w-3 h-3" /> {activeShift ? t('Active Shift', 'ክፍት ፈረቃ') : t('Closed / Finalized', 'ተዘግቷል')}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 text-xs text-[#5a3e38]">
-            <div className="flex items-center gap-1.5 bg-[#F7F4EB]/60 p-2 rounded-xl">
-              <User className="w-3.5 h-3.5 text-[#8B2635]" />
-              <div>
-                <span className="text-[9px] block text-slate-400 font-bold uppercase">{t('Cashier Assigned', 'ተረኛ ገንዘብ ያዥ')}</span>
-                <span className="font-bold text-[#2B1E1A]">{activeShift?.opened_by || 'Main_Staff'}</span>
-              </div>
-            </div>
-            <div className="flex items-center gap-1.5 bg-[#F7F4EB]/60 p-2 rounded-xl">
-              <ListFilter className="w-3.5 h-3.5 text-[#8B2635]" />
-              <div>
-                <span className="text-[9px] block text-slate-400 font-bold uppercase">{t('Ticket Count', 'የተቆረጠ ደረሰኝ')}</span>
-                <span className="font-mono font-black text-[#2B1E1A]">{salesCount} Orders</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Financial Executive Volume Banner Card */}
-        <div className="bg-[#8B2635] text-white p-5 rounded-2xl shadow-sm space-y-4 relative overflow-hidden">
-          <div className="absolute -bottom-4 -right-4 text-white/5 font-black text-7xl select-none">ETB</div>
-          <div className="flex justify-between items-center">
-            <div className="space-y-0.5">
-              <span className="text-[10px] font-black uppercase opacity-75 tracking-wider">{t('Gross Food & Drink Revenue', 'የምግብና መጠጥ ሽያጭ ገቢ (Subtotal)')}</span>
-              <p className="text-3xl font-black font-mono tracking-tight text-[#E2A03F]">{financials.subtotalSales} <span className="text-xs font-bold text-white">ETB</span></p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 pt-3 border-t border-white/10 text-xs">
             <div>
-              <span className="text-[9px] block text-white/60 font-medium uppercase">{t('Manual Tips for Waiters', 'ማታ ለአስተናጋጆች የሚከፈል ጉርሻ')}</span>
-              <span className="font-mono font-bold text-white text-sm">+{financials.totalTips} ETB</span>
-            </div>
-            <div className="text-right">
-              <span className="text-[9px] block text-white/60 font-medium uppercase">{t('Combined Fund Transferred', 'ጠቅላላ ባለቤቱ የተቀበለው (Grand)')}</span>
-              <span className="font-mono font-black text-amber-300 text-sm">{financials.grandTotal} ETB</span>
-            </div>
-          </div>
-        </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-xl sm:text-2xl font-black text-[#2B1E1A]">
+                  {t(
+                    'Daily Business Report',
+                    'የዕለት የንግድ ሪፖርት',
+                  )}
+                </h1>
 
-        {/* Dynamic Mode Content Switching Container */}
-        {viewMode === 'overview' ? (
-          <>
-            {/* Dynamic Category Volume Distribution Summary List */}
-            <div className="bg-white p-4 rounded-2xl border border-[#2B1E1A]/10 shadow-sm space-y-3">
-              <h3 className="text-xs font-black text-[#2B1E1A] uppercase tracking-wider">
-                📊 {t('Sales by Category', 'ሽያጭ በምድብ')}
-              </h3>
-              {categoryBreakdown.length === 0 ? (
-                <p className="text-xs text-slate-400 text-center py-2 bg-slate-50 rounded-xl font-medium">{t('No item lines recorded today.', 'ዛሬ የተሸጠ ምንም እቃ የለም።')}</p>
-              ) : (
-                <div className="space-y-2">
-                  {categoryBreakdown.map((row) => (
-                    <div key={row.name} className="flex justify-between items-center text-xs p-2 bg-[#F7F4EB]/40 rounded-xl border border-slate-100">
-                      <div className="flex flex-col">
-                        <span className="font-bold text-[#2B1E1A]">{row.name}</span>
-                        <span className="text-[10px] text-slate-400 font-medium">{row.itemsSold} {t('items sold', 'እቃዎች ተሽጠዋል')}</span>
-                      </div>
-                      <span className="font-mono font-black text-emerald-700">{row.revenue} ETB</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+                <span
+                  className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full border text-[9px] font-black ${
+                    activeShift
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : 'bg-slate-100 text-slate-600 border-slate-200'
+                  }`}
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      activeShift
+                        ? 'bg-emerald-500'
+                        : 'bg-slate-400'
+                    }`}
+                  />
 
-            {/* Payment Channel Volumes Grid Layout */}
-            <div className="bg-white p-4 rounded-2xl border border-[#2B1E1A]/10 shadow-sm space-y-3.5">
-              <h3 className="text-xs font-black text-[#2B1E1A] uppercase tracking-wider flex items-center gap-1.5">
-                <Wallet className="w-4 h-4 text-[#8B2635]" /> {t('Payment Channel Audits', 'የክፍያ አማራጮች ዝርዝር')}
-              </h3>
-
-              <div className="space-y-2.5">
-                {/* Cash Allocation Line item */}
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs font-bold text-[#5a3e38]">
-                    <span>💵 {t('Physical Cash Drawer', 'በካሽ መሳቢያ ውስጥ የገባ')}</span>
-                    <span className="font-mono text-[#2B1E1A]">{financials.cashVolume} ETB</span>
-                  </div>
-                  <div className="w-full h-2 bg-[#F7F4EB] rounded-full overflow-hidden">
-                    <div className="h-full bg-emerald-600 rounded-full" style={{ width: `${financials.grandTotal > 0 ? (financials.cashVolume / financials.grandTotal) * 100 : 0}%` }} />
-                  </div>
-                </div>
-
-                {/* Telebirr Channel Allocation */}
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs font-bold text-[#5a3e38]">
-                    <span>📱 {t('Telebirr Digital Wallet', 'ቴሌቢር የገባ')}</span>
-                    <span className="font-mono text-[#2B1E1A]">{financials.telebirrVolume} ETB</span>
-                  </div>
-                  <div className="w-full h-2 bg-[#F7F4EB] rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-500 rounded-full" style={{ width: `${financials.grandTotal > 0 ? (financials.telebirrVolume / financials.grandTotal) * 100 : 0}%` }} />
-                  </div>
-                </div>
-
-                {/* Bank Transfers Layout channel tracking item */}
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs font-bold text-[#5a3e38]">
-                    <span>🏦 {t('Bank Transfers (CBE/Wegagen)', 'በባንክ ሒሳብ የተላከ')}</span>
-                    <span className="font-mono text-[#2B1E1A]">{financials.bankVolume} ETB</span>
-                  </div>
-                  <div className="w-full h-2 bg-[#F7F4EB] rounded-full overflow-hidden">
-                    <div className="h-full bg-amber-500 rounded-full" style={{ width: `${financials.grandTotal > 0 ? (financials.bankVolume / financials.grandTotal) * 100 : 0}%` }} />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Critical Low Stock Missing Exception UI Panel */}
-            <div className="bg-white p-4 rounded-2xl border border-[#2B1E1A]/10 shadow-sm space-y-3">
-              <div className="flex justify-between items-center">
-                <h3 className="text-xs font-black text-[#2B1E1A] uppercase tracking-wider flex items-center gap-1.5">
-                  <ShieldAlert className="w-4 h-4 text-[#8B2635]" /> {t('Stock Exception Alerts', 'ያለቁ ወይም አነስተኛ ምርቶች')}
-                </h3>
-                {missingProducts.length > 0 && <span className="text-[9px] bg-rose-50 text-rose-700 px-1.5 py-0.5 font-bold rounded-md border border-rose-200">{missingProducts.length} {t('Critical', 'ሊያልቁ የቀሩ')}</span>}
+                  {activeShift
+                    ? t(
+                        'Shift Open',
+                        'ፈረቃ ክፍት',
+                      )
+                    : t(
+                        'Shift Closed',
+                        'ፈረቃ ተዘግቷል',
+                      )}
+                </span>
               </div>
 
-              {missingProducts.length === 0 ? (
-                <p className="text-xs font-medium text-slate-400 py-2 text-center bg-slate-50 rounded-xl">{t('All inventory items healthy.', 'ሁሉም ምርቶች በበቂ ሁኔታ አሉ።')}</p>
-              ) : (
-                <div className="grid grid-cols-2 gap-2">
-                  {missingProducts.map((p) => (
-                    <div key={p.id} className="p-2.5 bg-rose-50/40 border border-rose-100 rounded-xl flex flex-col justify-between space-y-1">
-                      <span className="text-xs font-bold text-slate-800 line-clamp-1">{p.name}</span>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-mono font-black text-rose-600 bg-rose-100/50 px-1.5 py-0.5 rounded-md">{p.stock_left} {t('Left', 'የቀረው')}</span>
-                        <AlertTriangle className="w-3 h-3 text-amber-500 shrink-0" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </>
-        ) : (
-          /* Detailed Audit Drill-down Mode Panel Layout */
-          <div className="bg-white p-4 rounded-2xl border border-[#2B1E1A]/10 shadow-sm space-y-3.5">
-            <h3 className="text-xs font-black text-[#2B1E1A] uppercase tracking-wider">{t('Cashier Loss Audit Trail', 'የሂሳብ ማመዛዘኛ ዝርዝር')}</h3>
-            
-            <div className="space-y-2 divide-y divide-slate-100 text-xs">
-              <div className="flex justify-between py-2 text-[#5a3e38]">
-                <span>{t('Opening Cash Float Registered', 'የመጀመሪያ መነሻ ካሽ')}</span>
-                <span className="font-mono font-bold text-[#2B1E1A]">{activeShift?.opening_cash || 0} ETB</span>
-              </div>
-              <div className="flex justify-between py-2 text-[#5a3e38]">
-                <span>{t('Expected Product Net Revenue', 'የምርት ጥቅል ሽያጭ ገቢ')}</span>
-                <span className="font-mono font-bold text-[#2B1E1A]">{theoreticalRevenue} ETB</span>
-              </div>
-              <div className="flex justify-between py-2 text-[#5a3e38]">
-                <span>{t('Expected Cash Drawer Total', 'በመሳቢያ ውስጥ ሊኖር የሚገባ ካሽ')}</span>
-                <span className="font-mono font-bold text-[#2B1E1A]">{(activeShift?.opening_cash || 0) + financials.cashVolume} ETB</span>
-              </div>
-              <div className="flex justify-between py-2 items-center text-[#5a3e38]">
-                <span>{t('Shift Discrepancy Status', 'የሂሳብ ጉድለት/ትርፍ ማረጋገጫ')}</span>
-                {shiftDiscrepancy === 0 ? (
-                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">{t('Balanced', 'ትክክል ነው')}</span>
-                ) : (
-                  <span className="font-mono font-black text-rose-600 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">{shiftDiscrepancy} ETB</span>
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+                <span className="flex items-center gap-1.5">
+                  <CalendarDays className="w-3.5 h-3.5" />
+
+                  {new Date().toLocaleDateString(
+                    isAm
+                      ? 'am-ET'
+                      : 'en-ET',
+                    {
+                      weekday:
+                        'long',
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric',
+                    },
+                  )}
+                </span>
+
+                {lastUpdated && (
+                  <span className="hidden sm:flex items-center gap-1">
+                    <Clock3 className="w-3 h-3" />
+
+                    {lastUpdated.toLocaleTimeString(
+                      isAm
+                        ? 'am-ET'
+                        : 'en-ET',
+                    )}
+                  </span>
                 )}
               </div>
             </div>
           </div>
-        )}
 
-        {/* Remote Sharing Dispatch Trigger Panel Box */}
-        <div className="bg-[#E2A03F]/10 border border-[#E2A03F]/30 p-3.5 rounded-2xl flex items-center justify-between gap-3">
-          <div className="space-y-0.5">
-            <h4 className="text-xs font-black text-[#2B1E1A]">{t('Dispatch Report via Messenger', 'ሪፖርቱን ለባለቤቱ ይላኩ')}</h4>
-            <p className="text-[10px] text-[#5a3e38] font-medium leading-tight">{t('Forward summary to Telegram or WhatsApp instantly.', 'የዛሬውን አጠቃላይ መረጃ በቀጥታ በቴሌግራም ወይም በዋትስአፕ ያጋሩ።')}</p>
-          </div>
-          <button 
-            type="button"
-            onClick={() => {
-              // Composes clean executive string layout for sharing copy workflows
-              const summaryText = `📊 DAILY BREAKDOWN REPORT\nDate: ${new Date().toLocaleDateString()}\n--------------------\n• Net Sales Revenue: ${financials.subtotalSales} ETB\n• Waiter Tips Added: ${financials.totalTips} ETB\n• Grand Received: ${financials.grandTotal} ETB\n--------------------\n• Cash Drawer: ${financials.cashVolume} ETB\n• Telebirr Wallet: ${financials.telebirrVolume} ETB\n• Bank Transfer: ${financials.bankVolume} ETB\n--------------------\nShift Status: ${activeShift ? 'Open/Active' : 'Closed'}`
-              
-              if (navigator.share) {
-                navigator.share({ title: 'Daily Shift Summary', text: summaryText })
-              } else {
-                navigator.clipboard.writeText(summaryText)
-                alert(t('Report summary text copied to clipboard!', 'የሪፖርቱ ማጠቃለያ ኮፒ ተደርጓል!'))
+          <div className="flex items-center gap-2">
+            <div
+              className={`hidden sm:flex items-center gap-2 px-3 h-10 rounded-xl border text-[10px] font-bold ${
+                remoteAvailable
+                  ? 'bg-white border-emerald-200 text-emerald-700'
+                  : 'bg-amber-50 border-amber-200 text-amber-700'
+              }`}
+            >
+              {remoteAvailable ? (
+                <Wifi className="w-3.5 h-3.5" />
+              ) : (
+                <WifiOff className="w-3.5 h-3.5" />
+              )}
+
+              {remoteAvailable
+                ? t(
+                    'Remote connected',
+                    'Remote ተገናኝቷል',
+                  )
+                : t(
+                    'Remote unavailable',
+                    'Remote አልተገናኘም',
+                  )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() =>
+                loadReport(true)
               }
-            }}
-            className="h-10 px-3 bg-[#2B1E1A] hover:bg-slate-800 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all shrink-0 shadow-sm active:scale-95">
-            <Share2 className="w-3.5 h-3.5 text-[#E2A03F]" />
-            <span>{t('Dispatch', 'ላክ')}</span>
-          </button>
-        </div>
+              disabled={refreshing}
+              className="h-10 px-3 rounded-xl bg-white border border-[#2B1E1A]/10 shadow-sm text-[#5A3E38] text-xs font-bold flex items-center gap-2 hover:bg-[#FAF8F2] disabled:opacity-60"
+            >
+              <RefreshCw
+                className={`w-3.5 h-3.5 ${
+                  refreshing
+                    ? 'animate-spin'
+                    : ''
+                }`}
+              />
 
+              {t(
+                'Refresh',
+                'አድስ',
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={shareReport}
+              className="h-10 px-3 rounded-xl bg-[#8B2635] text-white text-xs font-bold flex items-center gap-2 shadow-sm hover:bg-[#76202E] active:scale-95 transition"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+
+              {t(
+                'Share',
+                'አጋራ',
+              )}
+            </button>
+          </div>
+        </header>
+
+        <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+
+          {/* Revenue */}
+
+          <div className="rounded-2xl bg-[#8B2635] p-4 shadow-sm">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-[9px] uppercase tracking-[0.14em] font-black text-white/60">
+                  {t(
+                    'Total Received',
+                    'ጠቅላላ የተቀበለ',
+                  )}
+                </p>
+
+                <p className="mt-2 text-xl sm:text-2xl font-black text-white font-mono">
+                  {formatMoney(
+                    financials.totalReceived,
+                  )}
+                </p>
+              </div>
+
+              <div className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center">
+                <CircleDollarSign className="w-4 h-4 text-white" />
+              </div>
+            </div>
+
+            <p className="mt-2 text-[9px] text-white/55">
+              {formatMoney(
+                financials.salesTotal,
+              )}{' '}
+              {t(
+                'sales + tips',
+                'ሽያጭ + ጉርሻ',
+              )}
+            </p>
+          </div>
+
+          {/* Expenses */}
+
+          <div className="rounded-2xl bg-white border border-[#2B1E1A]/10 p-4 shadow-sm">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-[9px] uppercase tracking-[0.14em] font-black text-slate-400">
+                  {t(
+                    'Expenses',
+                    'ወጪ',
+                  )}
+                </p>
+
+                <p className="mt-2 text-xl sm:text-2xl font-black text-[#2B1E1A] font-mono">
+                  {formatMoney(
+                    expenseSummary.total,
+                  )}
+                </p>
+              </div>
+
+              <div className="w-8 h-8 rounded-xl bg-rose-50 flex items-center justify-center">
+                <ArrowDownRight className="w-4 h-4 text-rose-600" />
+              </div>
+            </div>
+
+            <p className="mt-2 text-[9px] text-slate-400">
+              {formatNumber(
+                expenses.length,
+              )}{' '}
+              {t(
+                'expense records',
+                'የወጪ መዝገቦች',
+              )}
+            </p>
+          </div>
+
+          {/* Net */}
+
+          <div className="rounded-2xl bg-white border border-[#2B1E1A]/10 p-4 shadow-sm">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-[9px] uppercase tracking-[0.14em] font-black text-slate-400">
+                  {t(
+                    'Net Result',
+                    'የተጣራ ውጤት',
+                  )}
+                </p>
+
+                <p
+                  className={`mt-2 text-xl sm:text-2xl font-black font-mono ${
+                    netResult >= 0
+                      ? 'text-emerald-700'
+                      : 'text-rose-600'
+                  }`}
+                >
+                  {formatMoney(
+                    netResult,
+                  )}
+                </p>
+              </div>
+
+              <div
+                className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+                  netResult >= 0
+                    ? 'bg-emerald-50'
+                    : 'bg-rose-50'
+                }`}
+              >
+                {netResult >= 0 ? (
+                  <ArrowUpRight className="w-4 h-4 text-emerald-600" />
+                ) : (
+                  <ArrowDownRight className="w-4 h-4 text-rose-600" />
+                )}
+              </div>
+            </div>
+
+            <p className="mt-2 text-[9px] text-slate-400">
+              {t(
+                'Received minus expenses',
+                'የተቀበለ − ወጪ',
+              )}
+            </p>
+          </div>
+
+          {/* Orders */}
+
+          <div className="rounded-2xl bg-white border border-[#2B1E1A]/10 p-4 shadow-sm">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-[9px] uppercase tracking-[0.14em] font-black text-slate-400">
+                  {t(
+                    'Orders',
+                    'ትዕዛዞች',
+                  )}
+                </p>
+
+                <p className="mt-2 text-xl sm:text-2xl font-black text-[#2B1E1A] font-mono">
+                  {formatNumber(
+                    sales.length,
+                  )}
+                </p>
+              </div>
+
+              <div className="w-8 h-8 rounded-xl bg-amber-50 flex items-center justify-center">
+                <ShoppingBag className="w-4 h-4 text-amber-700" />
+              </div>
+            </div>
+
+            <p className="mt-2 text-[9px] text-slate-400">
+              {formatNumber(
+                itemsSold,
+              )}{' '}
+              {t(
+                'items sold',
+                'እቃዎች ተሸጡ',
+              )}
+            </p>
+          </div>
+        </section>
+        <section className="rounded-2xl bg-white border border-[#2B1E1A]/10 shadow-sm p-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">
+                {t(
+                  'Report Data',
+                  'የሪፖርት መረጃ',
+                )}
+              </p>
+
+              <p className="mt-1 text-xs font-bold text-[#2B1E1A]">
+                {t(
+                  'Today’s report combines remote records with genuinely local-only offline records.',
+                  'የዛሬ ሪፖርት remote መረጃን እና በእውነት local-only የሆኑ offline መረጃዎችን ያጣምራል።',
+                )}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 border border-emerald-100 px-2.5 py-1.5 text-[9px] font-bold text-emerald-700">
+                <Wifi className="w-3 h-3" />
+                {formatNumber(
+                  remoteSalesCount,
+                )}{' '}
+                {t(
+                  'remote sales',
+                  'remote ሽያጭ',
+                )}
+              </span>
+
+              {localOnlySalesCount > 0 && (
+                <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 border border-amber-100 px-2.5 py-1.5 text-[9px] font-bold text-amber-700">
+                  <WifiOff className="w-3 h-3" />
+                  {formatNumber(
+                    localOnlySalesCount,
+                  )}{' '}
+                  {t(
+                    'offline only',
+                    'offline ብቻ',
+                  )}
+                </span>
+              )}
+            </div>
+          </div>
+        </section>
+        <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <section className="bg-white rounded-2xl border border-[#2B1E1A]/10 shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-[#8B2635]" />
+
+              <div>
+                <h2 className="text-sm font-black text-[#2B1E1A]">
+                  {t(
+                    'Financial Overview',
+                    'የገንዘብ አጠቃላይ እይታ',
+                  )}
+                </h2>
+
+                <p className="text-[10px] text-slate-400">
+                  {t(
+                    'Where the business stands today',
+                    'የንግዱ የዛሬ ሁኔታ',
+                  )}
+                </p>
+              </div>
+            </div>
+
+            <div className="p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-slate-500">
+                  {t(
+                    'Sales',
+                    'ሽያጭ',
+                  )}
+                </span>
+
+                <span className="font-mono text-sm font-black text-[#2B1E1A]">
+                  {formatMoney(
+                    financials.salesTotal,
+                  )}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-slate-500">
+                  {t(
+                    'Tips',
+                    'ጉርሻ',
+                  )}
+                </span>
+
+                <span className="font-mono text-sm font-bold text-[#2B1E1A]">
+                  {formatMoney(
+                    financials.tips,
+                  )}
+                </span>
+              </div>
+
+              <div className="h-px bg-slate-100" />
+
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-[#2B1E1A]">
+                  {t(
+                    'Total Received',
+                    'ጠቅላላ የተቀበለ',
+                  )}
+                </span>
+
+                <span className="font-mono text-base font-black text-[#8B2635]">
+                  {formatMoney(
+                    financials.totalReceived,
+                  )}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-slate-500">
+                  {t(
+                    'Expenses',
+                    'ወጪ',
+                  )}
+                </span>
+
+                <span className="font-mono text-sm font-black text-rose-600">
+                  -{' '}
+                  {formatMoney(
+                    expenseSummary.total,
+                  )}
+                </span>
+              </div>
+
+              <div className="rounded-xl bg-[#F7F4EB] px-3.5 py-3 flex items-center justify-between">
+                <span className="text-xs font-black text-[#2B1E1A]">
+                  {t(
+                    'Net Result',
+                    'የተጣራ ውጤት',
+                  )}
+                </span>
+
+                <span
+                  className={`font-mono text-base font-black ${
+                    netResult >= 0
+                      ? 'text-emerald-700'
+                      : 'text-rose-600'
+                  }`}
+                >
+                  {formatMoney(
+                    netResult,
+                  )}
+                </span>
+              </div>
+            </div>
+          </section>
+
+          <section className="bg-white rounded-2xl border border-[#2B1E1A]/10 shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
+              <ArrowDownRight className="w-4 h-4 text-rose-600" />
+
+              <div>
+                <h2 className="text-sm font-black text-[#2B1E1A]">
+                  {t(
+                    'Today’s Expenses',
+                    'የዛሬ ወጪዎች',
+                  )}
+                </h2>
+
+                <p className="text-[10px] text-slate-400">
+                  {t(
+                    'Money spent by expense category',
+                    'በወጪ ምድብ የወጣ ገንዘብ',
+                  )}
+                </p>
+              </div>
+            </div>
+
+            <div className="p-4">
+              {expenseSummary.byCategory.length ===
+              0 ? (
+                <div className="py-8 text-center">
+                  <p className="text-xs font-bold text-slate-400">
+                    {t(
+                      'No expenses recorded today.',
+                      'ዛሬ ምንም ወጪ አልተመዘገበም።',
+                    )}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {expenseSummary.byCategory.map(
+                    (item) => {
+                      const percentage =
+                        expenseSummary.total >
+                        0
+                          ? (item.amount /
+                              expenseSummary.total) *
+                            100
+                          : 0
+
+                      return (
+                        <div
+                          key={
+                            item.category
+                          }
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-bold text-[#2B1E1A]">
+                              {
+                                item.category
+                              }
+                            </span>
+
+                            <span className="font-mono text-xs font-black text-rose-600">
+                              {formatMoney(
+                                item.amount,
+                              )}
+                            </span>
+                          </div>
+
+                          <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-rose-400"
+                              style={{
+                                width: `${Math.min(
+                                  percentage,
+                                  100,
+                                )}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      )
+                    },
+                  )}
+                </div>
+              )}
+
+              {expenses.length > 0 && (
+                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                  <span className="text-xs font-black">
+                    {t(
+                      'Total Expenses',
+                      'ጠቅላላ ወጪ',
+                    )}
+                  </span>
+
+                  <span className="font-mono font-black text-rose-600">
+                    {formatMoney(
+                      expenseSummary.total,
+                    )}
+                  </span>
+                </div>
+              )}
+            </div>
+          </section>
+        </section>
+
+        <section className="bg-white rounded-2xl border border-[#2B1E1A]/10 shadow-sm overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
+            <Wallet className="w-4 h-4 text-[#8B2635]" />
+
+            <div>
+              <h2 className="text-sm font-black text-[#2B1E1A]">
+                {t(
+                  'Payment Summary',
+                  'የክፍያ ማጠቃለያ',
+                )}
+              </h2>
+
+              <p className="text-[10px] text-slate-400">
+                {t(
+                  'How customers paid today',
+                  'ደንበኞች ዛሬ እንዴት እንደከፈሉ',
+                )}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-5 divide-x divide-slate-100">
+            {[
+              {
+                label: 'Cash',
+                am: 'ካሽ',
+                value:
+                  financials.cash,
+              },
+              {
+                label: 'Telebirr',
+                am: 'ቴሌብር',
+                value:
+                  financials.telebirr,
+              },
+              {
+                label: 'Bank',
+                am: 'ባንክ',
+                value:
+                  financials.bank,
+              },
+              {
+                label: 'Card',
+                am: 'ካርድ',
+                value:
+                  financials.card,
+              },
+              {
+                label: 'Other',
+                am: 'ሌላ',
+                value:
+                  financials.other,
+              },
+            ].map((item) => (
+              <div
+                key={item.label}
+                className="p-4"
+              >
+                <p className="text-[9px] font-bold text-slate-400">
+                  {t(
+                    item.label,
+                    item.am,
+                  )}
+                </p>
+
+                <p className="mt-1 font-mono text-sm font-black text-[#2B1E1A]">
+                  {formatMoney(
+                    item.value,
+                  )}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <div className="px-4 py-3 bg-[#F7F4EB]/60 border-t border-slate-100 flex items-center justify-between">
+            <span className="text-xs font-black">
+              {t(
+                'Payment Total',
+                'ጠቅላላ ክፍያ',
+              )}
+            </span>
+
+            <span className="font-mono font-black text-[#8B2635]">
+              {formatMoney(
+                financials.paymentTotal,
+              )}
+            </span>
+          </div>
+        </section>
+
+        <section className="bg-white rounded-2xl border border-[#2B1E1A]/10 shadow-sm overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
+            <ShoppingBag className="w-4 h-4 text-[#8B2635]" />
+
+            <div>
+              <h2 className="text-sm font-black text-[#2B1E1A]">
+                {t(
+                  'Products Sold Today',
+                  'ዛሬ የተሸጡ ምርቶች',
+                )}
+              </h2>
+
+              <p className="text-[10px] text-slate-400">
+                {t(
+                  'Best-selling products by quantity and revenue',
+                  'በብዛትና በገቢ የተሸጡ ምርቶች',
+                )}
+              </p>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] text-sm">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-4 py-2.5 text-left text-[9px] uppercase tracking-wider text-slate-400 font-black">
+                    #
+                  </th>
+
+                  <th className="px-4 py-2.5 text-left text-[9px] uppercase tracking-wider text-slate-400 font-black">
+                    {t(
+                      'Product',
+                      'ምርት',
+                    )}
+                  </th>
+
+                  <th className="px-4 py-2.5 text-right text-[9px] uppercase tracking-wider text-slate-400 font-black">
+                    {t(
+                      'Qty',
+                      'ብዛት',
+                    )}
+                  </th>
+
+                  <th className="px-4 py-2.5 text-right text-[9px] uppercase tracking-wider text-slate-400 font-black">
+                    {t(
+                      'Revenue',
+                      'ገቢ',
+                    )}
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {productReport.length ===
+                0 ? (
+                  <tr>
+                    <td
+                      colSpan={4}
+                      className="px-4 py-10 text-center text-xs text-slate-400"
+                    >
+                      {t(
+                        'No product sales recorded today.',
+                        'ዛሬ ምንም የምርት ሽያጭ አልተመዘገበም።',
+                      )}
+                    </td>
+                  </tr>
+                ) : (
+                  productReport.map(
+                    (
+                      product,
+                      index,
+                    ) => (
+                      <tr
+                        key={
+                          product.id
+                        }
+                        className="border-t border-slate-100 hover:bg-slate-50/70"
+                      >
+                        <td className="px-4 py-3 text-xs text-slate-400 font-mono">
+                          {index + 1}
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <p className="font-bold text-[#2B1E1A]">
+                            {
+                              product.name
+                            }
+                          </p>
+                        </td>
+
+                        <td className="px-4 py-3 text-right font-mono font-bold text-[#5A3E38]">
+                          {formatNumber(
+                            product.quantity,
+                          )}
+                        </td>
+
+                        <td className="px-4 py-3 text-right font-mono font-black text-emerald-700">
+                          {formatMoney(
+                            product.revenue,
+                          )}
+                        </td>
+                      </tr>
+                    ),
+                  )
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="bg-white rounded-2xl border border-[#2B1E1A]/10 shadow-sm overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
+            <BarChart3 className="w-4 h-4 text-[#8B2635]" />
+
+            <div>
+              <h2 className="text-sm font-black text-[#2B1E1A]">
+                {t(
+                  'Sales by Category',
+                  'ሽያጭ በምድብ',
+                )}
+              </h2>
+
+              <p className="text-[10px] text-slate-400">
+                {t(
+                  'Which category generated the most sales',
+                  'የትኛው ምድብ ብዙ ሽያጭ እንዳመጣ',
+                )}
+              </p>
+            </div>
+          </div>
+
+          <div className="p-4">
+            {categoryReport.length ===
+            0 ? (
+              <div className="py-8 text-center text-xs text-slate-400">
+                {t(
+                  'No category data available.',
+                  'የምድብ መረጃ የለም።',
+                )}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {categoryReport.map(
+                  (category) => {
+                    const percentage =
+                      financials.salesTotal >
+                      0
+                        ? (category.revenue /
+                            financials.salesTotal) *
+                          100
+                        : 0
+
+                    return (
+                      <div
+                        key={
+                          category.id
+                        }
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <div>
+                            <p className="text-xs font-black text-[#2B1E1A]">
+                              {
+                                category.name
+                              }
+                            </p>
+
+                            <p className="text-[9px] text-slate-400">
+                              {formatNumber(
+                                category.quantity,
+                              )}{' '}
+                              {t(
+                                'items',
+                                'እቃዎች',
+                              )}
+                            </p>
+                          </div>
+
+                          <div className="text-right">
+                            <p className="text-xs font-black font-mono text-emerald-700">
+                              {formatMoney(
+                                category.revenue,
+                              )}
+                            </p>
+
+                            <p className="text-[9px] text-slate-400">
+                              {Math.round(
+                                percentage,
+                              )}
+                              %
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-[#8B2635] rounded-full"
+                            style={{
+                              width: `${Math.min(
+                                percentage,
+                                100,
+                              )}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )
+                  },
+                )}
+              </div>
+            )}
+          </div>
+        </section>
+
+
+        <section className="bg-white rounded-2xl border border-[#2B1E1A]/10 shadow-sm overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-[#8B2635]" />
+
+            <div>
+              <h2 className="text-sm font-black text-[#2B1E1A]">
+                {t(
+                  'Shift & Cash Check',
+                  'የፈረቃና የካሽ ማረጋገጫ',
+                )}
+              </h2>
+
+              <p className="text-[10px] text-slate-400">
+                {t(
+                  'Expected cash compared with counted cash',
+                  'መኖር ያለበት ካሽ ከተቆጠረው ካሽ ጋር',
+                )}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-100">
+            <div className="p-4">
+              <p className="text-[9px] font-bold text-slate-400">
+                {t(
+                  'Opening Cash',
+                  'የመነሻ ካሽ',
+                )}
+              </p>
+
+              <p className="mt-1 font-mono text-sm font-black text-[#2B1E1A]">
+                {formatMoney(
+                  numberValue(
+                    activeShift?.opening_cash,
+                  ),
+                )}
+              </p>
+            </div>
+
+            <div className="p-4">
+              <p className="text-[9px] font-bold text-slate-400">
+                {t(
+                  'Cash Sales',
+                  'የካሽ ሽያጭ',
+                )}
+              </p>
+
+              <p className="mt-1 font-mono text-sm font-black text-[#2B1E1A]">
+                {formatMoney(
+                  financials.cash,
+                )}
+              </p>
+            </div>
+
+            <div className="p-4">
+              <p className="text-[9px] font-bold text-slate-400">
+                {t(
+                  'Expected Cash',
+                  'መኖር ያለበት ካሽ',
+                )}
+              </p>
+
+              <p className="mt-1 font-mono text-sm font-black text-[#8B2635]">
+                {formatMoney(
+                  expectedCash,
+                )}
+              </p>
+            </div>
+
+            <div className="p-4">
+              <p className="text-[9px] font-bold text-slate-400">
+                {t(
+                  'Actual Cash',
+                  'ትክክለኛ ካሽ',
+                )}
+              </p>
+
+              <p className="mt-1 font-mono text-sm font-black text-[#2B1E1A]">
+                {actualCash == null
+                  ? '—'
+                  : formatMoney(
+                      actualCash,
+                    )}
+              </p>
+            </div>
+          </div>
+
+          <div className="px-4 py-3 border-t border-slate-100 bg-[#F7F4EB]/50 flex items-center justify-between">
+            <span className="text-xs font-black">
+              {t(
+                'Difference',
+                'ልዩነት',
+              )}
+            </span>
+
+            {cashDifference ==
+            null ? (
+              <span className="text-[10px] text-slate-400 font-bold">
+                {t(
+                  'Cash has not been counted yet',
+                  'ካሽ ገና አልተቆጠረም',
+                )}
+              </span>
+            ) : cashDifference ===
+              0 ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-[10px] font-black text-emerald-700">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+
+                {t(
+                  'Balanced',
+                  'ተመጣጣኝ',
+                )}
+              </span>
+            ) : (
+              <span
+                className={`font-mono text-xs font-black ${
+                  cashDifference < 0
+                    ? 'text-rose-600'
+                    : 'text-amber-600'
+                }`}
+              >
+                {cashDifference >
+                0
+                  ? '+'
+                  : ''}
+                {formatMoney(
+                  cashDifference,
+                )}
+              </span>
+            )}
+          </div>
+        </section>
+
+        <section className="bg-white rounded-2xl border border-[#2B1E1A]/10 shadow-sm overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
+            <Package className="w-4 h-4 text-[#8B2635]" />
+
+            <div className="flex-1">
+              <h2 className="text-sm font-black text-[#2B1E1A]">
+                {t(
+                  'Inventory Alert',
+                  'የክምችት ማስጠንቀቂያ',
+                )}
+              </h2>
+
+              <p className="text-[10px] text-slate-400">
+                {t(
+                  'Products approaching or below their minimum stock',
+                  'ዝቅተኛ ክምችት ላይ ያሉ ምርቶች',
+                )}
+              </p>
+            </div>
+
+            {lowStockProducts.length >
+              0 && (
+              <AlertTriangle className="w-4 h-4 text-amber-500" />
+            )}
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[460px] text-sm">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-4 py-2.5 text-left text-[9px] uppercase tracking-wider text-slate-400 font-black">
+                    {t(
+                      'Product',
+                      'ምርት',
+                    )}
+                  </th>
+
+                  <th className="px-4 py-2.5 text-right text-[9px] uppercase tracking-wider text-slate-400 font-black">
+                    {t(
+                      'Current',
+                      'አሁን',
+                    )}
+                  </th>
+
+                  <th className="px-4 py-2.5 text-right text-[9px] uppercase tracking-wider text-slate-400 font-black">
+                    {t(
+                      'Minimum',
+                      'ዝቅተኛ',
+                    )}
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {lowStockProducts.length ===
+                0 ? (
+                  <tr>
+                    <td
+                      colSpan={3}
+                      className="px-4 py-8 text-center"
+                    >
+                      <span className="text-xs font-bold text-emerald-700">
+                        {t(
+                          'Inventory levels look healthy.',
+                          'የክምችት መጠን ጥሩ ነው።',
+                        )}
+                      </span>
+                    </td>
+                  </tr>
+                ) : (
+                  lowStockProducts.map(
+                    (product) => (
+                      <tr
+                        key={
+                          product.id
+                        }
+                        className="border-t border-slate-100"
+                      >
+                        <td className="px-4 py-3 font-bold text-[#2B1E1A]">
+                          {product.name ||
+                            'Unknown Product'}
+                        </td>
+
+                        <td
+                          className={`px-4 py-3 text-right font-mono font-black ${
+                            product.stock <=
+                            0
+                              ? 'text-rose-600'
+                              : 'text-amber-600'
+                          }`}
+                        >
+                          {formatNumber(
+                            product.stock,
+                          )}
+                        </td>
+
+                        <td className="px-4 py-3 text-right font-mono text-slate-500">
+                          {formatNumber(
+                            product.threshold,
+                          )}
+                        </td>
+                      </tr>
+                    ),
+                  )
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <footer className="px-4 pt-1 text-center">
+          <p className="text-[10px] leading-relaxed text-slate-400">
+            {t(
+              'Remote synced records are used as the primary source. Local records are included only when their transaction ID does not already exist remotely, preventing duplicate sales after synchronization.',
+              'Remote የተመሳሰሉ መረጃዎች ዋና የሪፖርት ምንጭ ናቸው። Local መረጃ የሚጨመረው የግብይቱ ID remote ላይ ከሌለ ብቻ ነው፣ ይህም ከsync በኋላ ድግግሞሽን ይከላከላል።',
+            )}
+          </p>
+          <p className="mt-1 text-[9px] text-slate-300">
+            Liyu POS • {remoteAvailable
+              ? t(
+                  'Remote + Offline',
+                  'Remote + Offline',
+                )
+              : t(
+                  'Offline mode',
+                  'Offline ሁኔታ',
+                )}
+          </p>
+        </footer>
       </div>
-    </div>
+    </main>
   )
 }

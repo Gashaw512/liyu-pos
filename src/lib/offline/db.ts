@@ -108,11 +108,11 @@ export interface LocalPendingStockReconciliation {
   counted_quantity: number
 
   adjustment_type?:
-    | 'stock_count'
-    | 'adjustment'
-    | 'waste'
-    | 'theft'
-    | 'return'
+  | 'stock_count'
+  | 'adjustment'
+  | 'waste'
+  | 'theft'
+  | 'return'
 
   notes?: string
 
@@ -120,6 +120,44 @@ export interface LocalPendingStockReconciliation {
 
   lastSyncAttempt?: string
 
+  lastSyncError?: string
+}
+
+
+
+/* =========================================================
+ * LOCAL EXPENSE
+ * ========================================================= */
+
+export interface LocalExpense {
+  localId: string
+
+  /**
+   * Server expense ID, when the record has been synced.
+   */
+  id?: string
+
+  business_id: string
+  branch_id: string
+  shift_id: string | null
+
+  amount: number
+
+  description?: string
+  note?: string
+  category?: string
+  expense_category?: string
+
+  expense_date: string
+  created_at: string
+
+  syncStatus: LocalSyncStatus
+
+  retryCount: number
+
+  offline_id?: string
+
+  lastSyncAttempt?: string
   lastSyncError?: string
 }
 
@@ -224,6 +262,24 @@ interface LiyuPOSDBSchema extends DBSchema {
     }
   }
 
+
+  /* -------------------------------------------------------
+ * EXPENSES
+ * ------------------------------------------------------- */
+
+  expenses: {
+    key: string
+
+    value: LocalExpense
+
+    indexes: {
+      'by-date': string
+      'by-shift': string
+      'by-branch': string
+      'by-sync-status': LocalSyncStatus
+    }
+  }
+
   /* -------------------------------------------------------
    * SYNC LOG
    * ------------------------------------------------------- */
@@ -235,15 +291,16 @@ interface LiyuPOSDBSchema extends DBSchema {
       id: string
 
       type:
-        | 'sale'
-        | 'inventory_recon'
-        | 'inventory_receipt'
-        | 'catalog_pull'
-        | 'outbound'
+      | 'sale'
+      | 'expense'
+      | 'inventory_recon'
+      | 'inventory_receipt'
+      | 'catalog_pull'
+      | 'outbound'
 
       status:
-        | 'success'
-        | 'failed'
+      | 'success'
+      | 'failed'
 
       error_message?: string
 
@@ -283,7 +340,7 @@ const DB_NAME = 'liyu-pos-core'
  * object store already exists, so existing local data
  * is preserved.
  */
-const DB_VERSION = 11
+const DB_VERSION = 12
 
 /* =========================================================
  * DATABASE INITIALIZATION
@@ -377,6 +434,42 @@ export const getDB = (): Promise<
           store.createIndex(
             'by-branch',
             'branch_id'
+          )
+        }
+
+
+        /* ===================================================
+ * EXPENSES
+ * ================================================= */
+
+        if (
+          !db.objectStoreNames.contains('expenses')
+        ) {
+          const store = db.createObjectStore(
+            'expenses',
+            {
+              keyPath: 'localId',
+            }
+          )
+
+          store.createIndex(
+            'by-date',
+            'expense_date'
+          )
+
+          store.createIndex(
+            'by-shift',
+            'shift_id'
+          )
+
+          store.createIndex(
+            'by-branch',
+            'branch_id'
+          )
+
+          store.createIndex(
+            'by-sync-status',
+            'syncStatus'
           )
         }
 

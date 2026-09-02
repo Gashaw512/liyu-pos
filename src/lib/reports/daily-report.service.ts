@@ -4,10 +4,12 @@ import type {
     CategorySummary,
     ProductSummary,
     ReportSale,
+    ReportExpense,
 } from './report.types'
 
 import {
     getExpenseAmount,
+    getItemGrossProfit,
     getItemRevenue,
     getPaymentMethod,
     getSaleId,
@@ -20,27 +22,63 @@ import {
     toNumber,
 } from './report.helpers'
 
-import {
-    loadLocalReportData,
-} from './report.local'
+import { loadLocalReportData } from './report.local'
+import { loadRemoteReportData } from './report.remote'
 
-import {
-    loadRemoteReportData,
-} from './report.remote'
+/* ============================================================
+ * TYPES
+ * ============================================================ */
+
+type InventoryRow = Record<string, unknown>
+type ProductRow = Record<string, unknown>
+type CategoryRow = Record<string, unknown>
+
+/* ============================================================
+ * SMALL SAFE HELPERS
+ * ============================================================ */
+
+function stringValue(value: unknown): string {
+    return value == null ? '' : String(value)
+}
+
+function getProductId(row: InventoryRow): string {
+    return stringValue(
+        row.product_id ??
+            row.productId,
+    )
+}
+
+function getBranchId(row: InventoryRow): string {
+    return stringValue(
+        row.branch_id ??
+            row.branchId,
+    )
+}
+
+function getInventoryQuantity(
+    row: InventoryRow,
+): number {
+    return toNumber(row.quantity)
+}
 
 /* ============================================================
  * MERGE SALES
+ *
+ * Remote data is authoritative when available.
+ * Local data fills sales that have not reached the server yet.
+ *
+ * Deduplication is done by stable sale ID.
  * ============================================================ */
 
 function mergeSales(
     localSales: ReportSale[],
     remoteSales: ReportSale[],
-) {
+): {
+    sales: ReportSale[]
+    localOnly: number
+} {
     const map = new Map<string, ReportSale>()
 
-    /*
-     * Remote is preferred when available.
-     */
     for (const sale of remoteSales) {
         const id = getSaleId(sale)
 
@@ -49,31 +87,29 @@ function mergeSales(
         }
     }
 
-    /*
-     * Local fills anything remote does not have yet.
-     */
     let localOnly = 0
 
     for (const sale of localSales) {
         const id = getSaleId(sale)
 
-        if (!id) {
+        if (!id || map.has(id)) {
             continue
         }
 
-        if (!map.has(id)) {
-            map.set(id, sale)
-            localOnly++
-        }
+        map.set(id, sale)
+        localOnly++
     }
 
-    return {
-        sales: Array.from(map.values()).sort(
-            (a, b) =>
-                new Date(getSaleDate(b)).getTime() -
-                new Date(getSaleDate(a)).getTime(),
-        ),
+    const sales = Array.from(map.values())
 
+    sales.sort(
+        (a, b) =>
+            new Date(getSaleDate(b)).getTime() -
+            new Date(getSaleDate(a)).getTime(),
+    )
+
+    return {
+        sales,
         localOnly,
     }
 }
@@ -83,27 +119,21 @@ function mergeSales(
  * ============================================================ */
 
 function mergeExpenses(
-    localExpenses: any[],
-    remoteExpenses: any[],
-) {
-    const map = new Map<string, any>()
+    localExpenses: ReportExpense[],
+    remoteExpenses: ReportExpense[],
+): ReportExpense[] {
+    const map = new Map<string, ReportExpense>()
 
-    /*
-     * Remote is preferred.
-     */
     for (const expense of remoteExpenses) {
-        const id = String(expense.id || '')
+        const id = String(expense.id ?? '')
 
         if (id) {
             map.set(id, expense)
         }
     }
 
-    /*
-     * Local fills anything remote does not have yet.
-     */
     for (const expense of localExpenses) {
-        const id = String(expense.id || '')
+        const id = String(expense.id ?? '')
 
         if (id && !map.has(id)) {
             map.set(id, expense)
@@ -114,151 +144,63 @@ function mergeExpenses(
 }
 
 /* ============================================================
- * SALE ITEM PROFIT
+ * INVENTORY INDEX
  *
- * IMPORTANT:
- *
- * Do NOT blindly trust sale_items.gross_profit for reporting.
- *
- * The database already gives us:
- *   unit_price
- *   cost_price
- *   quantity
- *   total_amount
- *
- * Therefore:
- *
- *   revenue = actual line total
- *   cost    = cost_price × quantity
- *   profit  = revenue - cost
- *
- * Example:
- *   selling = 50
- *   cost    = 10
- *   qty     = 1
- *
- *   profit = 50 - 10 = 40
+ * Building indexes once makes inventory calculations O(n)
+ * instead of repeatedly scanning the entire inventory array.
  * ============================================================ */
 
-function getCalculatedItemProfit(item: any): number {
-    const quantity = Math.max(
-        toNumber(item?.quantity),
-        0,
-    )
+function buildInventoryIndex(
+    inventory: InventoryRow[],
+    branchId?: string | null,
+): Map<string, number> {
+    const index = new Map<string, number>()
 
-    if (quantity <= 0) {
-        return 0
-    }
+    const selectedBranch =
+        branchId
+            ? String(branchId)
+            : null
 
-    /*
-     * Prefer actual line revenue because it already represents
-     * the final amount for the sold quantity and can include
-     * discounts correctly.
-     */
-    let revenue = toNumber(
-        item?.total_amount ??
-        item?.total ??
-        item?.line_total,
-    )
+    for (const row of inventory) {
+        const productId = getProductId(row)
 
-    /*
-     * If total_amount is unavailable, calculate it from
-     * selling price × quantity.
-     */
-    if (revenue === 0) {
-        const unitPrice = toNumber(
-            item?.unit_price ??
-            item?.unitPrice ??
-            item?.price,
+        if (!productId) {
+            continue
+        }
+
+        if (
+            selectedBranch &&
+            getBranchId(row) !== selectedBranch
+        ) {
+            continue
+        }
+
+        const quantity =
+            getInventoryQuantity(row)
+
+        index.set(
+            productId,
+            (index.get(productId) ?? 0) +
+                quantity,
         )
-
-        revenue = unitPrice * quantity
     }
 
-    /*
-     * cost_price is the authoritative cost for this sale item.
-     */
-    const costPrice = Math.max(
-        toNumber(
-            item?.cost_price ??
-            item?.costPrice ??
-            item?.unit_cost ??
-            item?.unitCost,
-        ),
-        0,
-    )
-
-    const totalCost = costPrice * quantity
-
-    return Math.max(
-        revenue - totalCost,
-        0,
-    )
+    return index
 }
 
 /* ============================================================
  * INVENTORY HELPERS
  * ============================================================ */
 
-/**
- * Get the current inventory quantity for a product.
- *
- * Inventory is branch-specific, so the report must not use
- * product.stock_quantity when branch inventory is available.
- */
-function getBranchInventoryQuantity(
-    productId: string,
-    inventory: any[],
-    branchId?: string | null,
-): number {
-    const matchingRows = inventory.filter(
-        (row: any) =>
-            String(
-                row.product_id ??
-                row.productId ??
-                '',
-            ) === productId &&
-            (
-                !branchId ||
-                String(
-                    row.branch_id ??
-                    row.branchId ??
-                    '',
-                ) === String(branchId)
-            ),
-    )
-
-    if (matchingRows.length === 0) {
-        return 0
-    }
-
-    /*
-     * Normally there should be one inventory row per
-     * product/branch.
-     *
-     * Summing is safer if the local database temporarily
-     * contains more than one matching inventory record.
-     */
-    return matchingRows.reduce(
-        (total: number, row: any) =>
-            total +
-            toNumber(row.quantity),
-        0,
-    )
-}
-
-/**
- * Get the configured low-stock/reorder level.
- */
 function getProductAlertLevel(
-    product: any,
+    product: ProductRow,
 ): number {
     return Math.max(
         toNumber(
             product.low_stock_alert ??
-            product.low_stock_threshold ??
-            product.reorder_level ??
-            0,
+                product.low_stock_threshold ??
+                product.reorder_level ??
+                0,
         ),
         0,
     )
@@ -270,80 +212,103 @@ function getProductAlertLevel(
 
 function buildReport(
     sales: ReportSale[],
-    expenses: any[],
+    expenses: ReportExpense[],
     localData: any,
     options: DailyReportOptions,
 ): DailyReport {
-    /* ==========================================================
-     * SAFE LOCAL DATA
-     * ========================================================== */
+    /* ----------------------------------------------------------
+     * SAFE DATA
+     * ---------------------------------------------------------- */
 
-    const products = Array.isArray(
-        localData?.products,
-    )
-        ? localData.products
-        : []
+    const products: ProductRow[] =
+        Array.isArray(localData?.products)
+            ? localData.products
+            : []
 
-    const categories = Array.isArray(
-        localData?.categories,
-    )
-        ? localData.categories
-        : []
+    const categories: CategoryRow[] =
+        Array.isArray(localData?.categories)
+            ? localData.categories
+            : []
 
-    const inventory = Array.isArray(
-        localData?.inventory,
-    )
-        ? localData.inventory
-        : []
+    const inventory: InventoryRow[] =
+        Array.isArray(localData?.inventory)
+            ? localData.inventory
+            : []
 
-    /* ==========================================================
-     * PRODUCT NAMES
-     * ========================================================== */
+    /* ----------------------------------------------------------
+     * PRODUCT INDEX
+     * ---------------------------------------------------------- */
 
-    const productNames = new Map<string, string>()
+    const productNames =
+        new Map<string, string>()
 
     for (const product of products) {
+        const id = stringValue(product.id)
+
+        if (!id) {
+            continue
+        }
+
         productNames.set(
-            String(product.id),
-            product.name || 'Unknown Product',
+            id,
+            stringValue(product.name) ||
+                'Unknown Product',
         )
     }
 
-    /* ==========================================================
-     * CATEGORY NAMES
-     * ========================================================== */
+    /* ----------------------------------------------------------
+     * CATEGORY INDEX
+     * ---------------------------------------------------------- */
 
-    const categoryNames = new Map<
-        string,
-        {
-            name: string
-            nameAm: string | null
-        }
-    >()
+    const categoryNames =
+        new Map<
+            string,
+            {
+                name: string
+                nameAm: string | null
+            }
+        >()
 
     for (const category of categories) {
-        categoryNames.set(
-            String(category.id),
-            {
-                name:
-                    category.name ||
-                    'General',
+        const id = stringValue(category.id)
 
-                nameAm:
-                    category.name_am ??
-                    null,
-            },
-        )
+        if (!id) {
+            continue
+        }
+
+        categoryNames.set(id, {
+            name:
+                stringValue(category.name) ||
+                'General',
+
+            nameAm:
+                category.name_am == null
+                    ? null
+                    : String(
+                        category.name_am,
+                    ),
+        })
     }
 
-    /* ==========================================================
-     * FINANCIALS
-     * ========================================================== */
+    /* ----------------------------------------------------------
+     * INVENTORY INDEX
+     * ---------------------------------------------------------- */
+
+    const inventoryIndex =
+        buildInventoryIndex(
+            inventory,
+            options.branchId,
+        )
+
+    /* ----------------------------------------------------------
+     * FINANCIAL STATE
+     * ---------------------------------------------------------- */
 
     let revenue = 0
     let tips = 0
     let itemsSold = 0
     let grossProfit = 0
+    let expenseTotal = 0
 
     const paymentTotals = {
         cash: 0,
@@ -353,128 +318,147 @@ function buildReport(
         other: 0,
     }
 
-    const productsMap = new Map<
-        string,
-        ProductSummary
-    >()
+    const productsMap =
+        new Map<string, ProductSummary>()
 
-    const categoriesMap = new Map<
-        string,
-        CategorySummary
-    >()
+    const categoriesMap =
+        new Map<string, CategorySummary>()
 
     /* ==========================================================
-     * PROCESS SALES
+     * SALES
      * ========================================================== */
 
     for (const sale of sales) {
-        /* --------------------------------------------------------
-         * SALE TOTAL
-         * -------------------------------------------------------- */
-
-        const saleTotal = getSaleTotal(sale)
+        const saleTotal =
+            Math.max(
+                getSaleTotal(sale),
+                0,
+            )
 
         revenue += saleTotal
 
-        tips += getSaleTip(sale)
-
-        /* --------------------------------------------------------
-         * PAYMENTS
-         * -------------------------------------------------------- */
-
-        const payments = Array.isArray(
-            sale.payments,
+        tips += Math.max(
+            getSaleTip(sale),
+            0,
         )
-            ? sale.payments
-            : []
+
+        /* ------------------------------------------------------
+         * PAYMENTS
+         * ------------------------------------------------------ */
+
+        const payments =
+            Array.isArray(sale.payments)
+                ? sale.payments
+                : []
 
         if (payments.length > 0) {
             for (const payment of payments) {
-                /*
-                 * Only completed payment rows should contribute
-                 * to received money.
-                 */
+                const amount =
+                    Math.max(
+                        toNumber(
+                            payment.amount,
+                        ),
+                        0,
+                    )
+
+                if (amount <= 0) {
+                    continue
+                }
+
                 const method =
                     normalizePaymentMethod(
-                        getPaymentMethod(payment),
+                        getPaymentMethod(
+                            payment,
+                        ),
                     )
 
                 paymentTotals[method] +=
-                    toNumber(payment.amount)
+                    amount
             }
         } else {
             /*
-             * Local offline sales may not yet have payment rows.
+             * Offline/local sales can temporarily exist
+             * without separate payment rows.
              */
             const method =
                 normalizePaymentMethod(
-                    getSalePaymentMethod(sale),
+                    getSalePaymentMethod(
+                        sale,
+                    ),
                 )
 
             paymentTotals[method] +=
                 saleTotal
         }
 
-        /* --------------------------------------------------------
+        /* ------------------------------------------------------
          * SALE ITEMS
-         * -------------------------------------------------------- */
+         * ------------------------------------------------------ */
 
-        const saleItems = getSaleItems(sale)
+        const saleItems =
+            getSaleItems(sale)
 
         for (const item of saleItems) {
-            const quantity = Math.max(
-                toNumber(item.quantity),
-                0,
-            )
+            const quantity =
+                Math.max(
+                    toNumber(
+                        item.quantity,
+                    ),
+                    0,
+                )
 
             if (quantity <= 0) {
                 continue
             }
 
-            /*
-             * Revenue for the product.
-             *
-             * Keep the existing helper because your total revenue
-             * is already correct.
-             */
             const itemRevenue =
-                getItemRevenue(item)
+                Math.max(
+                    getItemRevenue(item),
+                    0,
+                )
 
             /*
              * IMPORTANT:
              *
-             * Calculate profit from:
+             * Historical profit must use the value stored
+             * on sale_items.gross_profit.
              *
-             *   total_amount - (cost_price × quantity)
+             * This is the cost snapshot captured when the
+             * sale occurred.
              *
-             * instead of trusting sale_items.gross_profit.
+             * Do NOT use today's inventory cost here.
              */
             const itemProfit =
-                getCalculatedItemProfit(item)
+                getItemGrossProfit(item)
 
             itemsSold += quantity
-
             grossProfit += itemProfit
 
-            /* ------------------------------------------------------
-             * PRODUCT SUMMARY
-             * ------------------------------------------------------ */
+            /* --------------------------------------------------
+             * PRODUCT
+             * -------------------------------------------------- */
 
-            const productId = String(
-                item.product_id ??
-                item.productId ??
-                'unknown',
-            )
+            const productId =
+                stringValue(
+                    item.product_id ??
+                        item.productId,
+                ) || 'unknown'
 
             const productName =
-                item.product_name ||
-                item.productName ||
-                item.name ||
-                productNames.get(productId) ||
+                stringValue(
+                    item.product_name ??
+                        item.productName ??
+                        item.name,
+                ) ||
+                productNames.get(
+                    productId,
+                ) ||
                 'Unknown Product'
 
             const existingProduct =
-                productsMap.get(productId)
+                productsMap.get(
+                    productId,
+                )
 
             if (existingProduct) {
                 existingProduct.quantity +=
@@ -493,30 +477,35 @@ function buildReport(
                         name: productName,
                         quantity,
                         revenue: itemRevenue,
-                        grossProfit: itemProfit,
+                        grossProfit:
+                            itemProfit,
                     },
                 )
             }
 
-            /* ------------------------------------------------------
-             * CATEGORY SUMMARY
-             * ------------------------------------------------------ */
+            /* --------------------------------------------------
+             * CATEGORY
+             * -------------------------------------------------- */
 
-            const categoryId = String(
-                item.category_id ??
-                item.categoryId ??
-                'general',
-            )
+            const categoryId =
+                stringValue(
+                    item.category_id ??
+                        item.categoryId,
+                ) || 'general'
 
             const category =
-                categoryNames.get(categoryId)
+                categoryNames.get(
+                    categoryId,
+                )
 
             const categoryName =
                 category?.name ||
                 'General'
 
             const existingCategory =
-                categoriesMap.get(categoryId)
+                categoriesMap.get(
+                    categoryId,
+                )
 
             if (existingCategory) {
                 existingCategory.quantity +=
@@ -532,18 +521,15 @@ function buildReport(
                     categoryId,
                     {
                         id: categoryId,
-
                         name: categoryName,
-
                         nameAm:
                             category?.nameAm ??
                             null,
-
                         quantity,
-
-                        revenue: itemRevenue,
-
-                        grossProfit: itemProfit,
+                        revenue:
+                            itemRevenue,
+                        grossProfit:
+                            itemProfit,
                     },
                 )
             }
@@ -554,15 +540,15 @@ function buildReport(
      * EXPENSES
      * ========================================================== */
 
-    let expenseTotal = 0
-
     const expensesByCategory =
         new Map<string, number>()
 
     for (const expense of expenses) {
         const amount =
             Math.max(
-                getExpenseAmount(expense),
+                getExpenseAmount(
+                    expense,
+                ),
                 0,
             )
 
@@ -573,32 +559,23 @@ function buildReport(
         expenseTotal += amount
 
         const category =
-            String(
-                expense.category ||
-                expense.expense_category ||
-                'Other',
+            stringValue(
+                expense.category ??
+                    expense.expense_category,
             ).trim() || 'Other'
 
         expensesByCategory.set(
             category,
-            (
-                expensesByCategory.get(
-                    category,
-                ) || 0
-            ) + amount,
+            (expensesByCategory.get(
+                category,
+            ) ?? 0) + amount,
         )
     }
 
     /* ==========================================================
-     * PROFIT / FINANCIAL CALCULATIONS
+     * FINANCIAL CALCULATIONS
      * ========================================================== */
 
-    /*
-     * Customer received amount.
-     *
-     * Revenue is the sale value.
-     * Tips are additional money received.
-     */
     const totalReceived =
         revenue + tips
 
@@ -620,25 +597,14 @@ function buildReport(
             : 0
 
     /*
-     * Gross profit:
+     * Do not clamp gross profit to zero.
      *
-     *   Sales revenue
-     *   -
-     *   Product cost
+     * If a historical sale was genuinely sold below cost,
+     * the report must show the loss.
      */
     const calculatedGrossProfit =
-        Math.max(
-            grossProfit,
-            0,
-        )
+        grossProfit
 
-    /*
-     * Net profit:
-     *
-     *   Gross profit
-     *   -
-     *   Operating expenses
-     */
     const netProfit =
         calculatedGrossProfit -
         expenseTotal
@@ -665,177 +631,38 @@ function buildReport(
 
     const activeProducts =
         products.filter(
-            (product: any) =>
+            (product) =>
                 product.is_active !== false &&
                 !product.deleted_at,
         )
 
     /* ==========================================================
-     * INVENTORY BY SELECTED BRANCH
+     * INVENTORY
      * ========================================================== */
 
-    /*
-     * IMPORTANT:
-     *
-     * Do not use:
-     *
-     *   product.stock_quantity
-     *
-     * as the primary source.
-     *
-     * The real stock is stored in inventory and is
-     * branch-specific.
-     */
+    const lowStock: Array<{
+        id: string
+        productId: string
+        name: string
+        nameAm: string | null
+        quantity: number
+        alertLevel: number
+        shortage: number
+    }> = []
 
-    const lowStock = activeProducts
-        .map(
-            (product: any) => {
-                const productId =
-                    String(product.id)
-
-                const inventoryQuantity =
-                    getBranchInventoryQuantity(
-                        productId,
-                        inventory,
-                        options.branchId,
-                    )
-
-                /*
-                 * If a branch is selected, inventory is the
-                 * source of truth.
-                 *
-                 * If no branch is selected and there is no
-                 * matching inventory row, preserve the old
-                 * product-level fallback.
-                 */
-                const hasInventoryRow =
-                    inventory.some(
-                        (row: any) =>
-                            String(
-                                row.product_id ??
-                                row.productId ??
-                                '',
-                            ) === productId &&
-                            (
-                                !options.branchId ||
-                                String(
-                                    row.branch_id ??
-                                    row.branchId ??
-                                    '',
-                                ) ===
-                                String(
-                                    options.branchId,
-                                )
-                            ),
-                    )
-
-                const quantity =
-                    hasInventoryRow
-                        ? inventoryQuantity
-                        : toNumber(
-                            product.stock_quantity ??
-                            product.quantity ??
-                            0,
-                        )
-
-                const alertLevel =
-                    getProductAlertLevel(
-                        product,
-                    )
-
-                return {
-                    id: productId,
-
-                    productId,
-
-                    name:
-                        product.name ||
-                        'Unknown Product',
-
-                    nameAm:
-                        product.name_am ??
-                        null,
-
-                    quantity,
-
-                    alertLevel,
-
-                    shortage: Math.max(
-                        alertLevel -
-                        quantity,
-                        0,
-                    ),
-                }
-            },
-        )
-        .filter(
-            (product: any) =>
-                product.alertLevel > 0 &&
-                product.quantity <=
-                product.alertLevel,
-        )
-        .sort(
-            (a: any, b: any) =>
-                a.quantity -
-                b.quantity,
-        )
-
-    /* ==========================================================
-     * OUT OF STOCK
-     * ========================================================== */
-
-    const outOfStockCount =
-        activeProducts.filter(
-            (product: any) => {
-                const productId =
-                    String(product.id)
-
-                const hasInventoryRow =
-                    inventory.some(
-                        (row: any) =>
-                            String(
-                                row.product_id ??
-                                row.productId ??
-                                '',
-                            ) === productId &&
-                            (
-                                !options.branchId ||
-                                String(
-                                    row.branch_id ??
-                                    row.branchId ??
-                                    '',
-                                ) ===
-                                String(
-                                    options.branchId,
-                                )
-                            ),
-                    )
-
-                const quantity =
-                    hasInventoryRow
-                        ? getBranchInventoryQuantity(
-                            productId,
-                            inventory,
-                            options.branchId,
-                        )
-                        : toNumber(
-                            product.stock_quantity ??
-                            product.quantity ??
-                            0,
-                        )
-
-                return quantity <= 0
-            },
-        ).length
-
-    /* ==========================================================
-     * CATEGORY COUNT
-     * ========================================================== */
+    let outOfStockCount = 0
 
     const categoryIds =
         new Set<string>()
 
     for (const product of activeProducts) {
+        const productId =
+            stringValue(product.id)
+
+        if (!productId) {
+            continue
+        }
+
         if (product.category_id) {
             categoryIds.add(
                 String(
@@ -843,52 +670,91 @@ function buildReport(
                 ),
             )
         }
+
+        /*
+         * Inventory is branch-specific.
+         *
+         * If a matching inventory row exists, it is
+         * authoritative.
+         *
+         * Otherwise preserve the product-level fallback.
+         */
+        const hasInventory =
+            inventoryIndex.has(
+                productId,
+            )
+
+        const quantity =
+            hasInventory
+                ? inventoryIndex.get(
+                    productId,
+                ) ?? 0
+                : toNumber(
+                    product.stock_quantity ??
+                        product.quantity ??
+                        0,
+                )
+
+        if (quantity <= 0) {
+            outOfStockCount++
+        }
+
+        const alertLevel =
+            getProductAlertLevel(
+                product,
+            )
+
+        if (
+            alertLevel > 0 &&
+            quantity <= alertLevel
+        ) {
+            lowStock.push({
+                id: productId,
+                productId,
+                name:
+                    stringValue(
+                        product.name,
+                    ) ||
+                    'Unknown Product',
+                nameAm:
+                    product.name_am == null
+                        ? null
+                        : String(
+                            product.name_am,
+                        ),
+                quantity,
+                alertLevel,
+                shortage: Math.max(
+                    alertLevel -
+                        quantity,
+                    0,
+                ),
+            })
+        }
     }
+
+    lowStock.sort(
+        (a, b) =>
+            a.quantity -
+            b.quantity,
+    )
 
     /* ==========================================================
      * TOTAL INVENTORY UNITS
      * ========================================================== */
 
-    /*
-     * Only count inventory belonging to the selected branch.
-     *
-     * This prevents Branch A + Branch B stock from being
-     * incorrectly combined in a branch report.
-     */
-    const branchInventoryRows =
-        options.branchId
-            ? inventory.filter(
-                (row: any) =>
-                    String(
-                        row.branch_id ??
-                        row.branchId ??
-                        '',
-                    ) ===
-                    String(
-                        options.branchId,
-                    ),
-            )
-            : inventory
+    let totalInventoryUnits = 0
 
-    const totalInventoryUnits =
-        branchInventoryRows.reduce(
-            (
-                total: number,
-                row: any,
-            ) =>
-                total +
-                toNumber(
-                    row.quantity,
-                ),
-            0,
-        )
+    for (const quantity of inventoryIndex.values()) {
+        totalInventoryUnits += quantity
+    }
 
     /* ==========================================================
-     * RETURN COMPLETE REPORT
+     * RETURN REPORT
      * ========================================================== */
 
-    return {
-        date: options.date
+    const reportDate =
+        options.date
             ? new Date(
                 options.date,
             )
@@ -896,23 +762,17 @@ function buildReport(
                 .slice(0, 10)
             : new Date()
                 .toISOString()
-                .slice(0, 10),
+                .slice(0, 10)
 
-        /* --------------------------------------------------------
-         * FINANCIAL SUMMARY
-         * -------------------------------------------------------- */
+    return {
+        date: reportDate,
 
         financials: {
             revenue,
-
             tips,
-
             totalReceived,
-
             transactions,
-
             itemsSold,
-
             averageSale,
 
             cash:
@@ -945,10 +805,6 @@ function buildReport(
             netMargin,
         },
 
-        /* --------------------------------------------------------
-         * EXPENSE SUMMARY
-         * -------------------------------------------------------- */
-
         expenses: {
             total:
                 expenseTotal,
@@ -976,10 +832,6 @@ function buildReport(
                     ),
         },
 
-        /* --------------------------------------------------------
-         * INVENTORY SUMMARY
-         * -------------------------------------------------------- */
-
         inventory: {
             totalProducts:
                 activeProducts.length,
@@ -997,10 +849,6 @@ function buildReport(
             lowStock,
         },
 
-        /* --------------------------------------------------------
-         * PRODUCT PERFORMANCE
-         * -------------------------------------------------------- */
-
         products:
             Array.from(
                 productsMap.values(),
@@ -1009,10 +857,6 @@ function buildReport(
                     b.revenue -
                     a.revenue,
             ),
-
-        /* --------------------------------------------------------
-         * CATEGORY PERFORMANCE
-         * -------------------------------------------------------- */
 
         categories:
             Array.from(
@@ -1023,35 +867,27 @@ function buildReport(
                     a.revenue,
             ),
 
-        /* --------------------------------------------------------
-         * PAYMENT BREAKDOWN
-         * -------------------------------------------------------- */
-
         payments: [
             {
                 method: 'Cash',
                 amount:
                     paymentTotals.cash,
             },
-
             {
                 method: 'Telebirr',
                 amount:
                     paymentTotals.telebirr,
             },
-
             {
                 method: 'Bank Transfer',
                 amount:
                     paymentTotals.bank,
             },
-
             {
                 method: 'Card',
                 amount:
                     paymentTotals.card,
             },
-
             {
                 method: 'Other',
                 amount:
@@ -1062,22 +898,10 @@ function buildReport(
                 payment.amount > 0,
         ),
 
-        /* --------------------------------------------------------
-         * ACTUAL SALES
-         * -------------------------------------------------------- */
-
         sales,
-
-        /* --------------------------------------------------------
-         * ACTIVE SHIFT
-         * -------------------------------------------------------- */
 
         activeShift:
             localData.activeShift,
-
-        /* --------------------------------------------------------
-         * SYNC STATE
-         * -------------------------------------------------------- */
 
         sync: {
             source: 'local',
@@ -1105,7 +929,6 @@ export async function getDailyReport(
     options: DailyReportOptions,
 ): Promise<DailyReport> {
     /* ----------------------------------------------------------
-     * STEP 1
      * LOCAL FIRST
      * ---------------------------------------------------------- */
 
@@ -1113,34 +936,6 @@ export async function getDailyReport(
         await loadLocalReportData(
             options.date,
         )
-
-    console.log(
-        '[DailyReport] LOCAL DATA:',
-        {
-            sales:
-                localData.sales.length,
-
-            expenses:
-                localData.expenses.length,
-
-            products:
-                localData.products.length,
-
-            categories:
-                localData.categories.length,
-
-            inventory:
-                localData.inventory.length,
-
-            activeShift:
-                !!localData.activeShift,
-        },
-    )
-
-    /* ----------------------------------------------------------
-     * STEP 2
-     * BUILD FROM LOCAL DATA
-     * ---------------------------------------------------------- */
 
     let report =
         buildReport(
@@ -1150,148 +945,76 @@ export async function getDailyReport(
             options,
         )
 
-    console.log(
-        '[DailyReport] LOCAL REPORT:',
-        {
-            sales:
-                report.sales.length,
-
-            revenue:
-                report.financials.revenue,
-
-            grossProfit:
-                report.financials.grossProfit,
-
-            expenses:
-                report.financials.expenses,
-
-            netProfit:
-                report.financials.netProfit,
-
-            lowStock:
-                report.inventory.lowStockCount,
-
-            outOfStock:
-                report.inventory.outOfStockCount,
-        },
-    )
-
     /* ----------------------------------------------------------
-     * STEP 3
-     * OPTIONAL REMOTE RECONCILIATION
+     * REMOTE RECONCILIATION
+     *
+     * Local report is already available, so a remote failure
+     * must never make the report fail.
      * ---------------------------------------------------------- */
 
     if (
         options.allowRemote !== false
     ) {
-        const remoteData =
-            await loadRemoteReportData(
-                options,
-            )
-
-        console.log(
-            '[DailyReport] REMOTE DATA:',
-            {
-                remoteAvailable:
-                    remoteData.remoteAvailable,
-
-                sales:
-                    remoteData.sales.length,
-
-                expenses:
-                    remoteData.expenses.length,
-            },
-        )
-
-        if (
-            remoteData.remoteAvailable
-        ) {
-            const merged =
-                mergeSales(
-                    localData.sales,
-                    remoteData.sales,
-                )
-
-            console.log(
-                '[DailyReport] MERGED SALES:',
-                {
-                    count:
-                        merged.sales.length,
-
-                    localOnly:
-                        merged.localOnly,
-                },
-            )
-
-            const expenses =
-                mergeExpenses(
-                    localData.expenses,
-                    remoteData.expenses,
-                )
-
-            /*
-             * Rebuild the entire report from the final
-             * deduplicated sales/expenses.
-             *
-             * Inventory still comes from localData because
-             * that is the offline inventory snapshot already
-             * maintained by the POS.
-             */
-            report =
-                buildReport(
-                    merged.sales,
-                    expenses,
-                    localData,
+        try {
+            const remoteData =
+                await loadRemoteReportData(
                     options,
                 )
 
-            report.sync = {
-                source:
-                    merged.localOnly > 0
-                        ? 'merged'
-                        : 'remote',
+            if (
+                remoteData.remoteAvailable
+            ) {
+                const merged =
+                    mergeSales(
+                        localData.sales,
+                        remoteData.sales,
+                    )
 
-                remoteAvailable:
-                    true,
+                const expenses =
+                    mergeExpenses(
+                        localData.expenses,
+                        remoteData.expenses,
+                    )
 
-                localOnlySales:
-                    merged.localOnly,
+                report =
+                    buildReport(
+                        merged.sales,
+                        expenses,
+                        localData,
+                        options,
+                    )
 
-                remoteSales:
-                    remoteData.sales.length,
+                report.sync = {
+                    source:
+                        merged.localOnly > 0
+                            ? 'merged'
+                            : 'remote',
 
-                remoteExpenses:
-                    remoteData.expenses.length,
+                    remoteAvailable:
+                        true,
 
-                lastUpdated:
-                    new Date().toISOString(),
+                    localOnlySales:
+                        merged.localOnly,
+
+                    remoteSales:
+                        remoteData.sales.length,
+
+                    remoteExpenses:
+                        remoteData.expenses.length,
+
+                    lastUpdated:
+                        new Date().toISOString(),
+                }
             }
-
-            console.log(
-                '[DailyReport] FINAL REPORT:',
-                {
-                    sales:
-                        report.sales.length,
-
-                    revenue:
-                        report.financials.revenue,
-
-                    grossProfit:
-                        report.financials.grossProfit,
-
-                    expenses:
-                        report.financials.expenses,
-
-                    netProfit:
-                        report.financials.netProfit,
-
-                    lowStock:
-                        report.inventory.lowStockCount,
-
-                    outOfStock:
-                        report.inventory.outOfStockCount,
-                },
-            )
+        } catch {
+            /*
+             * Local-first resilience:
+             *
+             * Remote reporting is an enhancement,
+             * not a dependency.
+             *
+             * The already-built local report is returned.
+             */
         }
     }
 

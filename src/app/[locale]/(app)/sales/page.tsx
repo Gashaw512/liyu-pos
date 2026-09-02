@@ -52,7 +52,10 @@ const FALLBACK_TABLES = [
   'VIP Box',
 ]
 
-const DEFAULT_CASH_FLOAT = '1000'
+const DEFAULT_CASH_FLOAT = '0'
+
+const INVENTORY_REFRESH_EVENT = 'liyu:inventory-updated'
+const INVENTORY_CHANNEL_NAME = 'liyu-pos-inventory'
 
 // ============================================================
 // HELPERS
@@ -153,6 +156,39 @@ function serializeCart(
  * accidentally "unsaved".
  */
 const EMPTY_CART_SNAPSHOT = serializeCart([])
+
+
+
+function notifyInventoryUpdated(saleId?: string) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  // Same browser/tab
+  window.dispatchEvent(
+    new CustomEvent(INVENTORY_REFRESH_EVENT, {
+      detail: {
+        source: 'sale',
+        saleId,
+      },
+    }),
+  )
+
+  // Other tabs/windows
+  if (typeof BroadcastChannel !== 'undefined') {
+    const channel = new BroadcastChannel(
+      INVENTORY_CHANNEL_NAME,
+    )
+
+    channel.postMessage({
+      type: INVENTORY_REFRESH_EVENT,
+      source: 'sale',
+      saleId,
+    })
+
+    channel.close()
+  }
+}
 
 // ============================================================
 // PAGE
@@ -1492,6 +1528,10 @@ export default function SalesPage() {
 
             totalBill,
           })
+
+        // Sale successfully saved locally.
+        // Notify inventory immediately.
+        notifyInventoryUpdated(sale.localId)
 
         // ------------------------------------------------------
         // REMOVE OPEN TABLE AFTER SUCCESSFUL PAYMENT

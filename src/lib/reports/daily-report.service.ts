@@ -1,123 +1,117 @@
 import type {
-  DailyReport,
-  DailyReportOptions,
-  CategorySummary,
-  ProductSummary,
-  ReportSale,
+    DailyReport,
+    DailyReportOptions,
+    CategorySummary,
+    ProductSummary,
+    ReportSale,
+    ReportExpense,
 } from './report.types'
 
 import {
-  getExpenseAmount,
-  getItemGrossProfit,
-  getItemRevenue,
-  getPaymentMethod,
-  getSaleId,
-  getSaleItems,
-  getSalePaymentMethod,
-  getSaleTip,
-  getSaleTotal,
-  getSaleDate,
-  normalizePaymentMethod,
-  toNumber,
+    getExpenseAmount,
+    getItemGrossProfit,
+    getItemRevenue,
+    getPaymentMethod,
+    getSaleId,
+    getSaleItems,
+    getSalePaymentMethod,
+    getSaleTip,
+    getSaleTotal,
+    getSaleDate,
+    normalizePaymentMethod,
+    toNumber,
 } from './report.helpers'
 
-import {
-  loadLocalReportData,
-} from './report.local'
+import { loadLocalReportData } from './report.local'
+import { loadRemoteReportData } from './report.remote'
 
-import {
-  loadRemoteReportData,
-} from './report.remote'
+/* ============================================================
+ * TYPES
+ * ============================================================ */
+
+type InventoryRow = Record<string, unknown>
+type ProductRow = Record<string, unknown>
+type CategoryRow = Record<string, unknown>
+
+/* ============================================================
+ * SMALL SAFE HELPERS
+ * ============================================================ */
+
+function stringValue(value: unknown): string {
+    return value == null ? '' : String(value)
+}
+
+function getProductId(row: InventoryRow): string {
+    return stringValue(
+        row.product_id ??
+            row.productId,
+    )
+}
+
+function getBranchId(row: InventoryRow): string {
+    return stringValue(
+        row.branch_id ??
+            row.branchId,
+    )
+}
+
+function getInventoryQuantity(
+    row: InventoryRow,
+): number {
+    return toNumber(row.quantity)
+}
 
 /* ============================================================
  * MERGE SALES
+ *
+ * Remote data is authoritative when available.
+ * Local data fills sales that have not reached the server yet.
+ *
+ * Deduplication is done by stable sale ID.
  * ============================================================ */
 
 function mergeSales(
-  localSales: ReportSale[],
-  remoteSales: ReportSale[],
-) {
-  const map =
-    new Map<
-      string,
-      ReportSale
-    >()
+    localSales: ReportSale[],
+    remoteSales: ReportSale[],
+): {
+    sales: ReportSale[]
+    localOnly: number
+} {
+    const map = new Map<string, ReportSale>()
 
-  /*
-   * Remote is preferred when available.
-   */
-  for (
-    const sale of remoteSales
-  ) {
-    const id =
-      getSaleId(
-        sale,
-      )
+    for (const sale of remoteSales) {
+        const id = getSaleId(sale)
 
-    if (
-      id
-    ) {
-      map.set(
-        id,
-        sale,
-      )
-    }
-  }
-
-  /*
-   * Local fills anything remote does not have yet.
-   */
-  let localOnly = 0
-
-  for (
-    const sale of localSales
-  ) {
-    const id =
-      getSaleId(
-        sale,
-      )
-
-    if (
-      !id
-    ) {
-      continue
+        if (id) {
+            map.set(id, sale)
+        }
     }
 
-    if (
-      !map.has(id)
-    ) {
-      map.set(
-        id,
-        sale,
-      )
+    let localOnly = 0
 
-      localOnly++
+    for (const sale of localSales) {
+        const id = getSaleId(sale)
+
+        if (!id || map.has(id)) {
+            continue
+        }
+
+        map.set(id, sale)
+        localOnly++
     }
-  }
 
-  return {
-    sales:
-      Array.from(
-        map.values(),
-      ).sort(
-        (
-          a,
-          b,
-        ) =>
-          new Date(
-            getSaleDate(
-              b,
-            ),
-          ).getTime() -
-          new Date(
-            getSaleDate(
-              a,
-            ),
-          ).getTime(),
-      ),
+    const sales = Array.from(map.values())
 
-    localOnly,
-  }
+    sales.sort(
+        (a, b) =>
+            new Date(getSaleDate(b)).getTime() -
+            new Date(getSaleDate(a)).getTime(),
+    )
+
+    return {
+        sales,
+        localOnly,
+    }
 }
 
 /* ============================================================
@@ -125,63 +119,91 @@ function mergeSales(
  * ============================================================ */
 
 function mergeExpenses(
-  localExpenses: any[],
-  remoteExpenses: any[],
-) {
-  const map =
-    new Map<
-      string,
-      any
-    >()
+    localExpenses: ReportExpense[],
+    remoteExpenses: ReportExpense[],
+): ReportExpense[] {
+    const map = new Map<string, ReportExpense>()
 
-  /*
-   * Remote is preferred when available.
-   */
-  for (
-    const expense of remoteExpenses
-  ) {
-    const id =
-      String(
-        expense.id ||
-          '',
-      )
+    for (const expense of remoteExpenses) {
+        const id = String(expense.id ?? '')
 
-    if (
-      id
-    ) {
-      map.set(
-        id,
-        expense,
-      )
+        if (id) {
+            map.set(id, expense)
+        }
     }
-  }
 
-  /*
-   * Local fills anything remote does not have yet.
-   */
-  for (
-    const expense of localExpenses
-  ) {
-    const id =
-      String(
-        expense.id ||
-          '',
-      )
+    for (const expense of localExpenses) {
+        const id = String(expense.id ?? '')
 
-    if (
-      id &&
-      !map.has(id)
-    ) {
-      map.set(
-        id,
-        expense,
-      )
+        if (id && !map.has(id)) {
+            map.set(id, expense)
+        }
     }
-  }
 
-  return Array.from(
-    map.values(),
-  )
+    return Array.from(map.values())
+}
+
+/* ============================================================
+ * INVENTORY INDEX
+ *
+ * Building indexes once makes inventory calculations O(n)
+ * instead of repeatedly scanning the entire inventory array.
+ * ============================================================ */
+
+function buildInventoryIndex(
+    inventory: InventoryRow[],
+    branchId?: string | null,
+): Map<string, number> {
+    const index = new Map<string, number>()
+
+    const selectedBranch =
+        branchId
+            ? String(branchId)
+            : null
+
+    for (const row of inventory) {
+        const productId = getProductId(row)
+
+        if (!productId) {
+            continue
+        }
+
+        if (
+            selectedBranch &&
+            getBranchId(row) !== selectedBranch
+        ) {
+            continue
+        }
+
+        const quantity =
+            getInventoryQuantity(row)
+
+        index.set(
+            productId,
+            (index.get(productId) ?? 0) +
+                quantity,
+        )
+    }
+
+    return index
+}
+
+/* ============================================================
+ * INVENTORY HELPERS
+ * ============================================================ */
+
+function getProductAlertLevel(
+    product: ProductRow,
+): number {
+    return Math.max(
+        toNumber(
+            product.low_stock_alert ??
+                product.low_stock_threshold ??
+                product.reorder_level ??
+                0,
+        ),
+        0,
+    )
 }
 
 /* ============================================================
@@ -189,793 +211,714 @@ function mergeExpenses(
  * ============================================================ */
 
 function buildReport(
-  sales: ReportSale[],
-  expenses: any[],
-  localData: any,
-  options: DailyReportOptions,
+    sales: ReportSale[],
+    expenses: ReportExpense[],
+    localData: any,
+    options: DailyReportOptions,
 ): DailyReport {
-  /* ==========================================================
-   * PRODUCT NAMES
-   * ========================================================== */
+    /* ----------------------------------------------------------
+     * SAFE DATA
+     * ---------------------------------------------------------- */
 
-  const productNames =
-    new Map<
-      string,
-      string
-    >()
+    const products: ProductRow[] =
+        Array.isArray(localData?.products)
+            ? localData.products
+            : []
 
-  for (
-    const product of
-      localData.products
-  ) {
-    productNames.set(
-      String(
-        product.id,
-      ),
-      product.name ||
-        'Unknown Product',
-    )
-  }
+    const categories: CategoryRow[] =
+        Array.isArray(localData?.categories)
+            ? localData.categories
+            : []
 
-  /* ==========================================================
-   * CATEGORY NAMES
-   * ========================================================== */
+    const inventory: InventoryRow[] =
+        Array.isArray(localData?.inventory)
+            ? localData.inventory
+            : []
 
-  const categoryNames =
-    new Map<
-      string,
-      {
+    /* ----------------------------------------------------------
+     * PRODUCT INDEX
+     * ---------------------------------------------------------- */
+
+    const productNames =
+        new Map<string, string>()
+
+    for (const product of products) {
+        const id = stringValue(product.id)
+
+        if (!id) {
+            continue
+        }
+
+        productNames.set(
+            id,
+            stringValue(product.name) ||
+                'Unknown Product',
+        )
+    }
+
+    /* ----------------------------------------------------------
+     * CATEGORY INDEX
+     * ---------------------------------------------------------- */
+
+    const categoryNames =
+        new Map<
+            string,
+            {
+                name: string
+                nameAm: string | null
+            }
+        >()
+
+    for (const category of categories) {
+        const id = stringValue(category.id)
+
+        if (!id) {
+            continue
+        }
+
+        categoryNames.set(id, {
+            name:
+                stringValue(category.name) ||
+                'General',
+
+            nameAm:
+                category.name_am == null
+                    ? null
+                    : String(
+                        category.name_am,
+                    ),
+        })
+    }
+
+    /* ----------------------------------------------------------
+     * INVENTORY INDEX
+     * ---------------------------------------------------------- */
+
+    const inventoryIndex =
+        buildInventoryIndex(
+            inventory,
+            options.branchId,
+        )
+
+    /* ----------------------------------------------------------
+     * FINANCIAL STATE
+     * ---------------------------------------------------------- */
+
+    let revenue = 0
+    let tips = 0
+    let itemsSold = 0
+    let grossProfit = 0
+    let expenseTotal = 0
+
+    const paymentTotals = {
+        cash: 0,
+        telebirr: 0,
+        bank: 0,
+        card: 0,
+        other: 0,
+    }
+
+    const productsMap =
+        new Map<string, ProductSummary>()
+
+    const categoriesMap =
+        new Map<string, CategorySummary>()
+
+    /* ==========================================================
+     * SALES
+     * ========================================================== */
+
+    for (const sale of sales) {
+        const saleTotal =
+            Math.max(
+                getSaleTotal(sale),
+                0,
+            )
+
+        revenue += saleTotal
+
+        tips += Math.max(
+            getSaleTip(sale),
+            0,
+        )
+
+        /* ------------------------------------------------------
+         * PAYMENTS
+         * ------------------------------------------------------ */
+
+        const payments =
+            Array.isArray(sale.payments)
+                ? sale.payments
+                : []
+
+        if (payments.length > 0) {
+            for (const payment of payments) {
+                const amount =
+                    Math.max(
+                        toNumber(
+                            payment.amount,
+                        ),
+                        0,
+                    )
+
+                if (amount <= 0) {
+                    continue
+                }
+
+                const method =
+                    normalizePaymentMethod(
+                        getPaymentMethod(
+                            payment,
+                        ),
+                    )
+
+                paymentTotals[method] +=
+                    amount
+            }
+        } else {
+            /*
+             * Offline/local sales can temporarily exist
+             * without separate payment rows.
+             */
+            const method =
+                normalizePaymentMethod(
+                    getSalePaymentMethod(
+                        sale,
+                    ),
+                )
+
+            paymentTotals[method] +=
+                saleTotal
+        }
+
+        /* ------------------------------------------------------
+         * SALE ITEMS
+         * ------------------------------------------------------ */
+
+        const saleItems =
+            getSaleItems(sale)
+
+        for (const item of saleItems) {
+            const quantity =
+                Math.max(
+                    toNumber(
+                        item.quantity,
+                    ),
+                    0,
+                )
+
+            if (quantity <= 0) {
+                continue
+            }
+
+            const itemRevenue =
+                Math.max(
+                    getItemRevenue(item),
+                    0,
+                )
+
+            /*
+             * IMPORTANT:
+             *
+             * Historical profit must use the value stored
+             * on sale_items.gross_profit.
+             *
+             * This is the cost snapshot captured when the
+             * sale occurred.
+             *
+             * Do NOT use today's inventory cost here.
+             */
+            const itemProfit =
+                getItemGrossProfit(item)
+
+            itemsSold += quantity
+            grossProfit += itemProfit
+
+            /* --------------------------------------------------
+             * PRODUCT
+             * -------------------------------------------------- */
+
+            const productId =
+                stringValue(
+                    item.product_id ??
+                        item.productId,
+                ) || 'unknown'
+
+            const productName =
+                stringValue(
+                    item.product_name ??
+                        item.productName ??
+                        item.name,
+                ) ||
+                productNames.get(
+                    productId,
+                ) ||
+                'Unknown Product'
+
+            const existingProduct =
+                productsMap.get(
+                    productId,
+                )
+
+            if (existingProduct) {
+                existingProduct.quantity +=
+                    quantity
+
+                existingProduct.revenue +=
+                    itemRevenue
+
+                existingProduct.grossProfit +=
+                    itemProfit
+            } else {
+                productsMap.set(
+                    productId,
+                    {
+                        id: productId,
+                        name: productName,
+                        quantity,
+                        revenue: itemRevenue,
+                        grossProfit:
+                            itemProfit,
+                    },
+                )
+            }
+
+            /* --------------------------------------------------
+             * CATEGORY
+             * -------------------------------------------------- */
+
+            const categoryId =
+                stringValue(
+                    item.category_id ??
+                        item.categoryId,
+                ) || 'general'
+
+            const category =
+                categoryNames.get(
+                    categoryId,
+                )
+
+            const categoryName =
+                category?.name ||
+                'General'
+
+            const existingCategory =
+                categoriesMap.get(
+                    categoryId,
+                )
+
+            if (existingCategory) {
+                existingCategory.quantity +=
+                    quantity
+
+                existingCategory.revenue +=
+                    itemRevenue
+
+                existingCategory.grossProfit +=
+                    itemProfit
+            } else {
+                categoriesMap.set(
+                    categoryId,
+                    {
+                        id: categoryId,
+                        name: categoryName,
+                        nameAm:
+                            category?.nameAm ??
+                            null,
+                        quantity,
+                        revenue:
+                            itemRevenue,
+                        grossProfit:
+                            itemProfit,
+                    },
+                )
+            }
+        }
+    }
+
+    /* ==========================================================
+     * EXPENSES
+     * ========================================================== */
+
+    const expensesByCategory =
+        new Map<string, number>()
+
+    for (const expense of expenses) {
+        const amount =
+            Math.max(
+                getExpenseAmount(
+                    expense,
+                ),
+                0,
+            )
+
+        if (amount <= 0) {
+            continue
+        }
+
+        expenseTotal += amount
+
+        const category =
+            stringValue(
+                expense.category ??
+                    expense.expense_category,
+            ).trim() || 'Other'
+
+        expensesByCategory.set(
+            category,
+            (expensesByCategory.get(
+                category,
+            ) ?? 0) + amount,
+        )
+    }
+
+    /* ==========================================================
+     * FINANCIAL CALCULATIONS
+     * ========================================================== */
+
+    const totalReceived =
+        revenue + tips
+
+    const paymentTotal =
+        Object.values(
+            paymentTotals,
+        ).reduce(
+            (sum, value) =>
+                sum + value,
+            0,
+        )
+
+    const transactions =
+        sales.length
+
+    const averageSale =
+        transactions > 0
+            ? revenue / transactions
+            : 0
+
+    /*
+     * Do not clamp gross profit to zero.
+     *
+     * If a historical sale was genuinely sold below cost,
+     * the report must show the loss.
+     */
+    const calculatedGrossProfit =
+        grossProfit
+
+    const netProfit =
+        calculatedGrossProfit -
+        expenseTotal
+
+    const grossMargin =
+        revenue > 0
+            ? (
+                calculatedGrossProfit /
+                revenue
+            ) * 100
+            : 0
+
+    const netMargin =
+        revenue > 0
+            ? (
+                netProfit /
+                revenue
+            ) * 100
+            : 0
+
+    /* ==========================================================
+     * ACTIVE PRODUCTS
+     * ========================================================== */
+
+    const activeProducts =
+        products.filter(
+            (product) =>
+                product.is_active !== false &&
+                !product.deleted_at,
+        )
+
+    /* ==========================================================
+     * INVENTORY
+     * ========================================================== */
+
+    const lowStock: Array<{
+        id: string
+        productId: string
         name: string
         nameAm: string | null
-      }
-    >()
+        quantity: number
+        alertLevel: number
+        shortage: number
+    }> = []
 
-  for (
-    const category of
-      localData.categories
-  ) {
-    categoryNames.set(
-      String(
-        category.id,
-      ),
-      {
-        name:
-          category.name ||
-          'General',
+    let outOfStockCount = 0
 
-        nameAm:
-          category.name_am ??
-          null,
-      },
-    )
-  }
+    const categoryIds =
+        new Set<string>()
 
-  /* ==========================================================
-   * FINANCIALS
-   * ========================================================== */
+    for (const product of activeProducts) {
+        const productId =
+            stringValue(product.id)
 
-  let revenue = 0
-  let tips = 0
-  let itemsSold = 0
-  let grossProfit = 0
+        if (!productId) {
+            continue
+        }
 
-  const paymentTotals = {
-    cash: 0,
-    telebirr: 0,
-    bank: 0,
-    card: 0,
-    other: 0,
-  }
+        if (product.category_id) {
+            categoryIds.add(
+                String(
+                    product.category_id,
+                ),
+            )
+        }
 
-  const productsMap =
-    new Map<
-      string,
-      ProductSummary
-    >()
-
-  const categoriesMap =
-    new Map<
-      string,
-      CategorySummary
-    >()
-
-  /* ==========================================================
-   * PROCESS SALES
-   * ========================================================== */
-
-  for (
-    const sale of sales
-  ) {
-    /* --------------------------------------------------------
-     * SALE TOTALS
-     * -------------------------------------------------------- */
-
-    revenue +=
-      getSaleTotal(
-        sale,
-      )
-
-    tips +=
-      getSaleTip(
-        sale,
-      )
-
-    /* --------------------------------------------------------
-     * PAYMENTS
-     * -------------------------------------------------------- */
-
-    const payments =
-      Array.isArray(
-        sale.payments,
-      )
-        ? sale.payments
-        : []
-
-    if (
-      payments.length > 0
-    ) {
-      for (
-        const payment of payments
-      ) {
-        const method =
-          normalizePaymentMethod(
-            getPaymentMethod(
-              payment,
-            ),
-          )
-
-        paymentTotals[
-          method
-        ] +=
-          toNumber(
-            payment.amount,
-          )
-      }
-    } else {
-      /*
-       * Some locally stored sales may not have
-       * individual payment rows.
-       */
-      const method =
-        normalizePaymentMethod(
-          getSalePaymentMethod(
-            sale,
-          ),
-        )
-
-      paymentTotals[
-        method
-      ] +=
-        getSaleTotal(
-          sale,
-        )
-    }
-
-    /* --------------------------------------------------------
-     * SALE ITEMS
-     * -------------------------------------------------------- */
-
-    for (
-      const item of
-        getSaleItems(
-          sale,
-        )
-    ) {
-      const quantity =
-        toNumber(
-          item.quantity,
-        )
-
-      const itemRevenue =
-        getItemRevenue(
-          item,
-        )
-
-      const itemProfit =
-        getItemGrossProfit(
-          item,
-        )
-
-      itemsSold +=
-        quantity
-
-      grossProfit +=
-        itemProfit
-
-      /* ------------------------------------------------------
-       * PRODUCT SUMMARY
-       * ------------------------------------------------------ */
-
-      const productId =
-        String(
-          item.product_id ||
-            item.productId ||
-            item.id ||
-            'unknown',
-        )
-
-      const productName =
-        item.product_name ||
-        item.productName ||
-        item.name ||
-        productNames.get(
-          productId,
-        ) ||
-        'Unknown Product'
-
-      const existingProduct =
-        productsMap.get(
-          productId,
-        )
-
-      if (
-        existingProduct
-      ) {
-        existingProduct.quantity +=
-          quantity
-
-        existingProduct.revenue +=
-          itemRevenue
-
-        existingProduct.grossProfit +=
-          itemProfit
-      } else {
-        productsMap.set(
-          productId,
-          {
-            id:
-              productId,
-
-            name:
-              productName,
-
-            quantity,
-
-            revenue:
-              itemRevenue,
-
-            grossProfit:
-              itemProfit,
-          },
-        )
-      }
-
-      /* ------------------------------------------------------
-       * CATEGORY SUMMARY
-       * ------------------------------------------------------ */
-
-      const categoryId =
-        String(
-          item.category_id ||
-            item.categoryId ||
-            'general',
-        )
-
-      const category =
-        categoryNames.get(
-          categoryId,
-        )
-
-      const categoryName =
-        category?.name ||
-        'General'
-
-      const existingCategory =
-        categoriesMap.get(
-          categoryId,
-        )
-
-      if (
-        existingCategory
-      ) {
-        existingCategory.quantity +=
-          quantity
-
-        existingCategory.revenue +=
-          itemRevenue
-
-        existingCategory.grossProfit +=
-          itemProfit
-      } else {
-        categoriesMap.set(
-          categoryId,
-          {
-            id:
-              categoryId,
-
-            name:
-              categoryName,
-
-            nameAm:
-              category?.nameAm ??
-              null,
-
-            quantity,
-
-            revenue:
-              itemRevenue,
-
-            grossProfit:
-              itemProfit,
-          },
-        )
-      }
-    }
-  }
-
-  /* ==========================================================
-   * EXPENSES
-   * ========================================================== */
-
-  let expenseTotal = 0
-
-  const expensesByCategory =
-    new Map<
-      string,
-      number
-    >()
-
-  for (
-    const expense of expenses
-  ) {
-    const amount =
-      getExpenseAmount(
-        expense,
-      )
-
-    expenseTotal +=
-      amount
-
-    const category =
-      String(
-        expense.category ||
-          expense.expense_category ||
-          'Other',
-      ).trim() ||
-      'Other'
-
-    expensesByCategory.set(
-      category,
-      (
-        expensesByCategory.get(
-          category,
-        ) || 0
-      ) + amount,
-    )
-  }
-
-  /* ==========================================================
-   * PROFIT / FINANCIAL CALCULATIONS
-   * ========================================================== */
-
-  const totalReceived =
-    revenue + tips
-
-  const paymentTotal =
-    Object.values(
-      paymentTotals,
-    ).reduce(
-      (
-        sum,
-        value,
-      ) =>
-        sum + value,
-      0,
-    )
-
-  const transactions =
-    sales.length
-
-  const averageSale =
-    transactions > 0
-      ? revenue /
-        transactions
-      : 0
-
-  const netProfit =
-    grossProfit -
-    expenseTotal
-
-  const grossMargin =
-    revenue > 0
-      ? (
-          grossProfit /
-          revenue
-        ) * 100
-      : 0
-
-  const netMargin =
-    revenue > 0
-      ? (
-          netProfit /
-          revenue
-        ) * 100
-      : 0
-
-  /* ==========================================================
-   * INVENTORY
-   * ========================================================== */
-
-  const lowStock =
-    localData.products
-      .map(
-        (
-          product: any,
-        ) => {
-          const quantity =
-            toNumber(
-              product.stock_quantity ??
-                product.quantity ??
-                0,
+        /*
+         * Inventory is branch-specific.
+         *
+         * If a matching inventory row exists, it is
+         * authoritative.
+         *
+         * Otherwise preserve the product-level fallback.
+         */
+        const hasInventory =
+            inventoryIndex.has(
+                productId,
             )
 
-          const alertLevel =
-            toNumber(
-              product.low_stock_alert ??
-                product.low_stock_threshold ??
-                product.reorder_level ??
-                0,
+        const quantity =
+            hasInventory
+                ? inventoryIndex.get(
+                    productId,
+                ) ?? 0
+                : toNumber(
+                    product.stock_quantity ??
+                        product.quantity ??
+                        0,
+                )
+
+        if (quantity <= 0) {
+            outOfStockCount++
+        }
+
+        const alertLevel =
+            getProductAlertLevel(
+                product,
             )
 
-          return {
-            id:
-              String(
-                product.id,
-              ),
+        if (
+            alertLevel > 0 &&
+            quantity <= alertLevel
+        ) {
+            lowStock.push({
+                id: productId,
+                productId,
+                name:
+                    stringValue(
+                        product.name,
+                    ) ||
+                    'Unknown Product',
+                nameAm:
+                    product.name_am == null
+                        ? null
+                        : String(
+                            product.name_am,
+                        ),
+                quantity,
+                alertLevel,
+                shortage: Math.max(
+                    alertLevel -
+                        quantity,
+                    0,
+                ),
+            })
+        }
+    }
 
-            productId:
-              String(
-                product.id,
-              ),
+    lowStock.sort(
+        (a, b) =>
+            a.quantity -
+            b.quantity,
+    )
 
-            name:
-              product.name ||
-              'Unknown Product',
+    /* ==========================================================
+     * TOTAL INVENTORY UNITS
+     * ========================================================== */
 
-            nameAm:
-              product.name_am ??
-              null,
+    let totalInventoryUnits = 0
 
-            quantity,
+    for (const quantity of inventoryIndex.values()) {
+        totalInventoryUnits += quantity
+    }
 
-            alertLevel,
+    /* ==========================================================
+     * RETURN REPORT
+     * ========================================================== */
 
-            shortage:
-              Math.max(
-                alertLevel -
-                  quantity,
-                0,
-              ),
-          }
+    const reportDate =
+        options.date
+            ? new Date(
+                options.date,
+            )
+                .toISOString()
+                .slice(0, 10)
+            : new Date()
+                .toISOString()
+                .slice(0, 10)
+
+    return {
+        date: reportDate,
+
+        financials: {
+            revenue,
+            tips,
+            totalReceived,
+            transactions,
+            itemsSold,
+            averageSale,
+
+            cash:
+                paymentTotals.cash,
+
+            telebirr:
+                paymentTotals.telebirr,
+
+            bank:
+                paymentTotals.bank,
+
+            card:
+                paymentTotals.card,
+
+            other:
+                paymentTotals.other,
+
+            paymentTotal,
+
+            grossProfit:
+                calculatedGrossProfit,
+
+            grossMargin,
+
+            expenses:
+                expenseTotal,
+
+            netProfit,
+
+            netMargin,
         },
-      )
-      .filter(
-        (
-          product: any,
-        ) =>
-          product.alertLevel >
-            0 &&
-          product.quantity <=
-            product.alertLevel,
-      )
-      .sort(
-        (
-          a: any,
-          b: any,
-        ) =>
-          a.quantity -
-          b.quantity,
-      )
 
-  /* ==========================================================
-   * ACTIVE PRODUCTS
-   * ========================================================== */
+        expenses: {
+            total:
+                expenseTotal,
 
-  const activeProducts =
-    localData.products.filter(
-      (
-        product: any,
-      ) =>
-        product.is_active !==
-          false &&
-        !product.deleted_at,
-    )
+            transactions:
+                expenses.length,
 
-  /* ==========================================================
-   * CATEGORY COUNT
-   * ========================================================== */
+            byCategory:
+                Array.from(
+                    expensesByCategory.entries(),
+                )
+                    .map(
+                        ([
+                            category,
+                            amount,
+                        ]) => ({
+                            category,
+                            amount,
+                        }),
+                    )
+                    .sort(
+                        (a, b) =>
+                            b.amount -
+                            a.amount,
+                    ),
+        },
 
-  const categoryIds =
-    new Set<string>()
+        inventory: {
+            totalProducts:
+                activeProducts.length,
 
-  for (
-    const product of
-      activeProducts
-  ) {
-    const categoryId =
-      product.category_id
+            totalCategories:
+                categoryIds.size,
 
-    if (
-      categoryId
-    ) {
-      categoryIds.add(
-        String(
-          categoryId,
+            totalInventoryUnits,
+
+            lowStockCount:
+                lowStock.length,
+
+            outOfStockCount,
+
+            lowStock,
+        },
+
+        products:
+            Array.from(
+                productsMap.values(),
+            ).sort(
+                (a, b) =>
+                    b.revenue -
+                    a.revenue,
+            ),
+
+        categories:
+            Array.from(
+                categoriesMap.values(),
+            ).sort(
+                (a, b) =>
+                    b.revenue -
+                    a.revenue,
+            ),
+
+        payments: [
+            {
+                method: 'Cash',
+                amount:
+                    paymentTotals.cash,
+            },
+            {
+                method: 'Telebirr',
+                amount:
+                    paymentTotals.telebirr,
+            },
+            {
+                method: 'Bank Transfer',
+                amount:
+                    paymentTotals.bank,
+            },
+            {
+                method: 'Card',
+                amount:
+                    paymentTotals.card,
+            },
+            {
+                method: 'Other',
+                amount:
+                    paymentTotals.other,
+            },
+        ].filter(
+            (payment) =>
+                payment.amount > 0,
         ),
-      )
+
+        sales,
+
+        activeShift:
+            localData.activeShift,
+
+        sync: {
+            source: 'local',
+
+            remoteAvailable:
+                false,
+
+            localOnlySales: 0,
+
+            remoteSales: 0,
+
+            remoteExpenses: 0,
+
+            lastUpdated:
+                new Date().toISOString(),
+        },
     }
-  }
-
-  /* ==========================================================
-   * TOTAL INVENTORY UNITS
-   * ========================================================== */
-
-  const totalInventoryUnits =
-    localData.inventory.reduce(
-      (
-        total: number,
-        row: any,
-      ) =>
-        total +
-        toNumber(
-          row.quantity,
-        ),
-      0,
-    )
-
-  /* ==========================================================
-   * RETURN COMPLETE REPORT
-   * ========================================================== */
-
-  return {
-    date:
-      options.date
-        ? new Date(
-            options.date,
-          )
-            .toISOString()
-            .slice(0, 10)
-        : new Date()
-            .toISOString()
-            .slice(0, 10),
-
-    /* --------------------------------------------------------
-     * FINANCIAL SUMMARY
-     * -------------------------------------------------------- */
-
-    financials: {
-      revenue,
-
-      tips,
-
-      totalReceived,
-
-      transactions,
-
-      itemsSold,
-
-      averageSale,
-
-      cash:
-        paymentTotals.cash,
-
-      telebirr:
-        paymentTotals.telebirr,
-
-      bank:
-        paymentTotals.bank,
-
-      card:
-        paymentTotals.card,
-
-      other:
-        paymentTotals.other,
-
-      paymentTotal,
-
-      grossProfit,
-
-      grossMargin,
-
-      expenses:
-        expenseTotal,
-
-      netProfit,
-
-      netMargin,
-    },
-
-    /* --------------------------------------------------------
-     * EXPENSE SUMMARY
-     * -------------------------------------------------------- */
-
-    expenses: {
-      total:
-        expenseTotal,
-
-      transactions:
-        expenses.length,
-
-      byCategory:
-        Array.from(
-          expensesByCategory.entries(),
-        )
-          .map(
-            ([
-              category,
-              amount,
-            ]) => ({
-              category,
-              amount,
-            }),
-          )
-          .sort(
-            (
-              a,
-              b,
-            ) =>
-              b.amount -
-              a.amount,
-          ),
-    },
-
-    /* --------------------------------------------------------
-     * INVENTORY SUMMARY
-     * -------------------------------------------------------- */
-
-    inventory: {
-      totalProducts:
-        activeProducts.length,
-
-      totalCategories:
-        categoryIds.size,
-
-      totalInventoryUnits,
-
-      lowStockCount:
-        lowStock.length,
-
-      outOfStockCount:
-        activeProducts.filter(
-          (
-            product: any,
-          ) =>
-            toNumber(
-              product.stock_quantity ??
-                product.quantity ??
-                0,
-            ) <= 0,
-        ).length,
-
-      lowStock,
-    },
-
-    /* --------------------------------------------------------
-     * PRODUCT PERFORMANCE
-     * -------------------------------------------------------- */
-
-    products:
-      Array.from(
-        productsMap.values(),
-      ).sort(
-        (
-          a,
-          b,
-        ) =>
-          b.revenue -
-          a.revenue,
-      ),
-
-    /* --------------------------------------------------------
-     * CATEGORY PERFORMANCE
-     * -------------------------------------------------------- */
-
-    categories:
-      Array.from(
-        categoriesMap.values(),
-      ).sort(
-        (
-          a,
-          b,
-        ) =>
-          b.revenue -
-          a.revenue,
-      ),
-
-    /* --------------------------------------------------------
-     * PAYMENT BREAKDOWN
-     * -------------------------------------------------------- */
-
-    payments: [
-      {
-        method:
-          'Cash',
-
-        amount:
-          paymentTotals.cash,
-      },
-
-      {
-        method:
-          'Telebirr',
-
-        amount:
-          paymentTotals.telebirr,
-      },
-
-      {
-        method:
-          'Bank Transfer',
-
-        amount:
-          paymentTotals.bank,
-      },
-
-      {
-        method:
-          'Card',
-
-        amount:
-          paymentTotals.card,
-      },
-
-      {
-        method:
-          'Other',
-
-        amount:
-          paymentTotals.other,
-      },
-    ].filter(
-      (
-        payment,
-      ) =>
-        payment.amount >
-        0,
-    ),
-
-    /* --------------------------------------------------------
-     * ACTUAL SALES
-     *
-     * IMPORTANT:
-     * DailyReport.sales is ReportSale[].
-     *
-     * Do NOT put the sales financial summary here.
-     * -------------------------------------------------------- */
-
-    sales,
-
-    /* --------------------------------------------------------
-     * ACTIVE SHIFT
-     * -------------------------------------------------------- */
-
-    activeShift:
-      localData.activeShift,
-
-    /* --------------------------------------------------------
-     * SYNC STATE
-     * -------------------------------------------------------- */
-
-    sync: {
-      source:
-        'local',
-
-      remoteAvailable:
-        false,
-
-      localOnlySales:
-        0,
-
-      remoteSales:
-        0,
-
-      remoteExpenses:
-        0,
-
-      lastUpdated:
-        new Date().toISOString(),
-    },
-  }
 }
 
 /* ============================================================
@@ -983,113 +926,97 @@ function buildReport(
  * ============================================================ */
 
 export async function getDailyReport(
-  options: DailyReportOptions,
+    options: DailyReportOptions,
 ): Promise<DailyReport> {
-  /* ----------------------------------------------------------
-   * STEP 1
-   *
-   * LOCAL FIRST
-   * ---------------------------------------------------------- */
+    /* ----------------------------------------------------------
+     * LOCAL FIRST
+     * ---------------------------------------------------------- */
 
-  const localData =
-    await loadLocalReportData(
-      options.date,
-    )
+    const localData =
+        await loadLocalReportData(
+            options.date,
+        )
 
-  /* ----------------------------------------------------------
-   * STEP 2
-   *
-   * BUILD IMMEDIATELY FROM LOCAL DATA
-   *
-   * This guarantees that the report works offline.
-   * ---------------------------------------------------------- */
+    let report =
+        buildReport(
+            localData.sales,
+            localData.expenses,
+            localData,
+            options,
+        )
 
-  let report =
-    buildReport(
-      localData.sales,
-      localData.expenses,
-      localData,
-      options,
-    )
-
-  /* ----------------------------------------------------------
-   * STEP 3
-   *
-   * OPTIONAL REMOTE RECONCILIATION
-   * ---------------------------------------------------------- */
-
-  if (
-    options.allowRemote !== false
-  ) {
-    const remoteData =
-      await loadRemoteReportData(
-        options,
-      )
+    /* ----------------------------------------------------------
+     * REMOTE RECONCILIATION
+     *
+     * Local report is already available, so a remote failure
+     * must never make the report fail.
+     * ---------------------------------------------------------- */
 
     if (
-      remoteData.remoteAvailable
+        options.allowRemote !== false
     ) {
-      /* ------------------------------------------------------
-       * MERGE SALES
-       * ------------------------------------------------------ */
+        try {
+            const remoteData =
+                await loadRemoteReportData(
+                    options,
+                )
 
-      const merged =
-        mergeSales(
-          localData.sales,
-          remoteData.sales,
-        )
+            if (
+                remoteData.remoteAvailable
+            ) {
+                const merged =
+                    mergeSales(
+                        localData.sales,
+                        remoteData.sales,
+                    )
 
-      /* ------------------------------------------------------
-       * MERGE EXPENSES
-       * ------------------------------------------------------ */
+                const expenses =
+                    mergeExpenses(
+                        localData.expenses,
+                        remoteData.expenses,
+                    )
 
-      const expenses =
-        mergeExpenses(
-          localData.expenses,
-          remoteData.expenses,
-        )
+                report =
+                    buildReport(
+                        merged.sales,
+                        expenses,
+                        localData,
+                        options,
+                    )
 
-      /* ------------------------------------------------------
-       * REBUILD REPORT FROM MERGED DATA
-       * ------------------------------------------------------ */
+                report.sync = {
+                    source:
+                        merged.localOnly > 0
+                            ? 'merged'
+                            : 'remote',
 
-      report =
-        buildReport(
-          merged.sales,
-          expenses,
-          localData,
-          options,
-        )
+                    remoteAvailable:
+                        true,
 
-      /* ------------------------------------------------------
-       * UPDATE SYNC INFORMATION
-       * ------------------------------------------------------ */
+                    localOnlySales:
+                        merged.localOnly,
 
-      report.sync = {
-        source:
-          merged.localOnly >
-            0
-            ? 'merged'
-            : 'remote',
+                    remoteSales:
+                        remoteData.sales.length,
 
-        remoteAvailable:
-          true,
+                    remoteExpenses:
+                        remoteData.expenses.length,
 
-        localOnlySales:
-          merged.localOnly,
-
-        remoteSales:
-          remoteData.sales.length,
-
-        remoteExpenses:
-          remoteData.expenses.length,
-
-        lastUpdated:
-          new Date().toISOString(),
-      }
+                    lastUpdated:
+                        new Date().toISOString(),
+                }
+            }
+        } catch {
+            /*
+             * Local-first resilience:
+             *
+             * Remote reporting is an enhancement,
+             * not a dependency.
+             *
+             * The already-built local report is returned.
+             */
+        }
     }
-  }
 
-  return report
+    return report
 }
-

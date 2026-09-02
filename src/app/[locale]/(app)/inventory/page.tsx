@@ -1,63 +1,197 @@
-// src/app/[locale]/(app)/inventory/page.tsx
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
-import { useParams, useRouter } from 'next/navigation'
 import {
-  ArrowLeft,
-  RotateCcw,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from 'react'
+import { useParams } from 'next/navigation'
+import {
   PlusCircle,
+  RefreshCw,
+  RotateCcw,
 } from 'lucide-react'
-import { getDB } from '@/lib/offline/db'
 
+import { getDB } from '@/lib/offline/db'
 import { toast } from '@/lib/utils/toast'
 import { getLocalInventoryProducts } from '@/hooks/useInventoryData'
 import { useInventoryActions } from '@/hooks/useInventoryActions'
 import { computeLiveLocalStock } from '@/lib/calculations/stockCalculator'
-import { SearchInput } from "@/components/ui/SearchInput"
-import { Button } from "@/components/ui/Button";
-import { PageHeader } from "@/components/ui/PageHeader";
-import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+
+import { SearchInput } from '@/components/ui/SearchInput'
+import { Button } from '@/components/ui/Button'
+import { PageHeader } from '@/components/ui/PageHeader'
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+
 import ReceiveStockModal from '@/components/inventory/ReceiveStockModal'
-import InventoryBottomBar from '@/components/inventory/InventoryBottomBar'
 import InventoryCategoryTabs from '@/components/inventory/InventoryCategoryTabs'
 import InventoryValuation from '@/components/inventory/InventoryValuation'
-import InventorySummaryCard from '@/components/inventory/InventorySummaryCard'
 import InventoryEmptyState from '@/components/inventory/InventoryEmptyState'
 import InventoryProductList from '@/components/inventory/InventoryProductList'
 
-import type { InventoryProduct, LocalPendingStockCount } from '@/types/inventory'
+import type {
+  InventoryProduct,
+  LiveMetaData,
+} from '@/types/inventory'
 
-export const dynamic = 'force-dynamic';
+export const dynamic = 'force-dynamic'
 
-import type { LiveMetaData } from '@/types/inventory'
+// ============================================================
+// CONSTANTS
+// ============================================================
+
+const INVENTORY_REFRESH_EVENT = 'liyu:inventory-updated'
+const SYNC_COMPLETE_EVENT = 'liyu:sync-complete'
+const INVENTORY_CHANNEL_NAME = 'liyu-pos-inventory'
+
+const REFRESH_DEBOUNCE_MS = 180
+const AUTO_REFRESH_INTERVAL_MS = 60_000
+
+const COLORS = {
+  navy: '#1B2B50',
+  orange: '#F26522',
+  cream: '#F7F4EB',
+  text: '#2B1E1A',
+  muted: '#6B625D',
+  border: '#E8E0D6',
+  white: '#FFFFFF',
+} as const
+
+const LIVE_REFRESH_OPTIONS = {
+  silent: true,
+  preserveEditedCounts: true,
+} as const
+
+type RefreshOptions = {
+  silent?: boolean
+  preserveEditedCounts?: boolean
+}
+
+// ============================================================
+// HELPERS
+// ============================================================
+
+function getLocalizedValue(
+  english: string | null | undefined,
+  amharic: string | null | undefined,
+  isAm: boolean
+) {
+  return (isAm && amharic ? amharic : english) ?? ''
+}
+
+// ============================================================
+// PAGE
+// ============================================================
 
 export default function InventoryPage() {
   const params = useParams()
-  const router = useRouter()
-  const isAm = params.locale === 'am'
-  const locale = params.locale || 'am'
 
-  const [products, setProducts] = useState<InventoryProduct[] | null>(null)
-  const [liveStockMap, setLiveStockMap] = useState<Record<string, LiveMetaData>>({})
-  const [counts, setCounts] = useState<Record<string, number>>({})
-  const [searchQuery, setSearchQuery] = useState('')
-  const [selectedCategory, setSelectedCategory] = useState<string>('All')
-  const [isSaving, setIsSaving] = useState(false)
-  const [rowSavingId, setRowSavingId] = useState<string | null>(null)
+  const locale =
+    typeof params.locale === 'string'
+      ? params.locale
+      : 'am'
 
-  // const [isValuationExpanded, setIsValuationExpanded] = useState<boolean>(false)
-  const [showReceiveModal, setShowReceiveModal] = useState<boolean>(false)
+  const isAm = locale === 'am'
 
-  const [receiveProductId, setReceiveProductId] = useState<string>('')
-  const [receiveQty, setReceiveQty] = useState<number>(0)
-  const [receiveUnitCost, setReceiveUnitCost] = useState<number>(0)
+  // ==========================================================
+  // STATE
+  // ==========================================================
 
-  const t = (en: string, am: string) => (isAm ? am : en)
+  const [products, setProducts] =
+    useState<InventoryProduct[] | null>(null)
+
+  const [liveStockMap, setLiveStockMap] =
+    useState<Record<string, LiveMetaData>>({})
+
+  const [counts, setCounts] =
+    useState<Record<string, number>>({})
+
+  const [searchQuery, setSearchQuery] =
+    useState('')
+
+  const [selectedCategory, setSelectedCategory] =
+    useState('All')
+
+  const [isSaving, setIsSaving] =
+    useState(false)
+
+  const [rowSavingId, setRowSavingId] =
+    useState<string | null>(null)
+
+  const [isRefreshing, setIsRefreshing] =
+    useState(false)
+
+  const [isOnline, setIsOnline] =
+    useState(
+      typeof navigator !== 'undefined'
+        ? navigator.onLine
+        : true
+    )
+
+  const [lastUpdated, setLastUpdated] =
+    useState<Date | null>(null)
+
+  // Receive stock
+  const [showReceiveModal, setShowReceiveModal] =
+    useState(false)
+
+  const [receiveProductId, setReceiveProductId] =
+    useState('')
+
+  const [receiveQty, setReceiveQty] =
+    useState(0)
+
+  const [receiveUnitCost, setReceiveUnitCost] =
+    useState(0)
+
+  // ==========================================================
+  // REFS
+  // ==========================================================
+
+  const mountedRef =
+    useRef(true)
+
+  const refreshTimerRef =
+    useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const refreshingRef =
+    useRef(false)
+
+  const broadcastChannelRef =
+    useRef<BroadcastChannel | null>(null)
+
+  // ==========================================================
+  // LOCALIZATION
+  // ==========================================================
+
+  const t = useCallback(
+    (
+      english: string,
+      amharic: string
+    ) => (isAm ? amharic : english),
+    [isAm]
+  )
+
+  const getProductLabel = useCallback(
+    (product: InventoryProduct) =>
+      getLocalizedValue(
+        product.name,
+        product.name_am,
+        isAm
+      ),
+    [isAm]
+  )
+
+  // ==========================================================
+  // INVENTORY ACTIONS
+  // ==========================================================
 
   const {
     handleSaveSingleRow,
-    handleSaveAll
+    handleSaveAll,
   } = useInventoryActions(
     setLiveStockMap,
     setRowSavingId,
@@ -66,480 +200,1136 @@ export default function InventoryPage() {
     isAm
   )
 
-  useEffect(() => {
-    async function loadStockSheet() {
+  // ==========================================================
+  // REFRESH INVENTORY
+  // ==========================================================
+
+  const refreshInventory = useCallback(
+    async (
+      options: RefreshOptions = {}
+    ) => {
+      if (refreshingRef.current) {
+        return
+      }
+
+      refreshingRef.current = true
+
+      const silent =
+        options.silent ?? false
+
+      const preserveEditedCounts =
+        options.preserveEditedCounts ?? true
+
+      if (!silent && mountedRef.current) {
+        setIsRefreshing(true)
+      }
+
       try {
-        const db = await getDB();
-        const baseProducts = await getLocalInventoryProducts();
-        const computedMap = await computeLiveLocalStock(db, baseProducts);
+        const db = await getDB()
 
-        setProducts(baseProducts);
-        setLiveStockMap(computedMap);
+        const baseProducts =
+          await getLocalInventoryProducts()
 
-        const initialCounts: Record<string, number> = {};
-        baseProducts.forEach((p) => {
-          initialCounts[p.id] = computedMap[p.id]?.systemCount ?? p.opening_count;
-        });
-        setCounts(initialCounts);
-      } catch (err) {
-        console.error('Critical snapshot assembly loop failure:', err);
+        const computedMap =
+          await computeLiveLocalStock(
+            db,
+            baseProducts
+          )
+
+        if (!mountedRef.current) {
+          return
+        }
+
+        setProducts(baseProducts)
+        setLiveStockMap(computedMap)
+
+        setCounts(previous => {
+          const next: Record<string, number> = {}
+
+          for (const product of baseProducts) {
+            const systemCount =
+              computedMap[product.id]?.systemCount ??
+              product.opening_count ??
+              0
+
+            const hasExistingCount =
+              Object.prototype.hasOwnProperty.call(
+                previous,
+                product.id
+              )
+
+            next[product.id] =
+              preserveEditedCounts &&
+                hasExistingCount
+                ? previous[product.id]
+                : systemCount
+          }
+
+          return next
+        })
+
+        setLastUpdated(new Date())
+      } catch (error) {
+        console.error(
+          '[InventoryPage] refresh failed',
+          error
+        )
+
+        if (
+          !silent &&
+          mountedRef.current
+        ) {
+          toast(
+            t(
+              'Unable to refresh inventory right now.',
+              'የእቃ መረጃውን አሁን ማደስ አልተቻለም።'
+            ),
+            'error'
+          )
+        }
+      } finally {
+        refreshingRef.current = false
+
+        if (mountedRef.current) {
+          setIsRefreshing(false)
+        }
+      }
+    },
+    [t]
+  )
+
+  // ==========================================================
+  // DEBOUNCED REFRESH
+  // ==========================================================
+
+  const scheduleInventoryRefresh =
+    useCallback(
+      (
+        options: RefreshOptions = {}
+      ) => {
+        if (refreshTimerRef.current) {
+          clearTimeout(
+            refreshTimerRef.current
+          )
+        }
+
+        refreshTimerRef.current =
+          setTimeout(() => {
+            void refreshInventory(
+              options
+            )
+          }, REFRESH_DEBOUNCE_MS)
+      },
+      [refreshInventory]
+    )
+
+  // ==========================================================
+  // INITIAL LOAD
+  // ==========================================================
+
+  useEffect(() => {
+    mountedRef.current = true
+
+    void refreshInventory({
+      silent: true,
+      preserveEditedCounts: false,
+    })
+
+    return () => {
+      mountedRef.current = false
+
+      if (refreshTimerRef.current) {
+        clearTimeout(
+          refreshTimerRef.current
+        )
       }
     }
-    loadStockSheet();
-  }, []);
+  }, [refreshInventory])
 
-  const dynamicCategories = useMemo(() => {
-    if (!products) return ['All']
-    const tags = new Set<string>()
-    products.forEach(p => {
-      const name = isAm && p.category_name_am ? p.category_name_am : p.category_name
-      if (name) tags.add(name)
-    })
-    return ['All', ...Array.from(tags)]
-  }, [products, isAm])
+  // ==========================================================
+  // AUTOMATIC REFRESH
+  //
+  // Refresh every 60 seconds while the page is visible.
+  // Existing event-based refresh remains active below.
+  // ==========================================================
 
-  const filteredProducts = useMemo(() => {
-    if (!products) return [];
-    let list = products;
+  useEffect(() => {
+    const interval =
+      window.setInterval(() => {
+        if (
+          document.visibilityState !==
+          'visible'
+        ) {
+          return
+        }
 
-    if (selectedCategory !== 'All') {
-      list = list.filter(p => {
-        const catName = isAm && p.category_name_am ? p.category_name_am : p.category_name
-        return catName === selectedCategory
-      })
+        void refreshInventory(
+          LIVE_REFRESH_OPTIONS
+        )
+      }, AUTO_REFRESH_INTERVAL_MS)
+
+    return () => {
+      window.clearInterval(
+        interval
+      )
+    }
+  }, [refreshInventory])
+
+  // ==========================================================
+  // ONLINE / OFFLINE
+  // ==========================================================
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true)
+
+      scheduleInventoryRefresh(
+        LIVE_REFRESH_OPTIONS
+      )
     }
 
-    const query = searchQuery.toLowerCase().trim();
-    if (!query) return list;
-
-    return list.filter((p) =>
-      p.name.toLowerCase().includes(query) ||
-      (p.name_am && p.name_am.toLowerCase().includes(query)) ||
-      p.category_name.toLowerCase().includes(query) ||
-      p.barcode?.toLowerCase().includes(query)
-    );
-  }, [searchQuery, products, selectedCategory, isAm]);
-
-  const handleCountChange = (productId: string, value: number) => {
-    setCounts((prev) => ({ ...prev, [productId]: Math.max(0, value) }));
-  }
-
-  const handleResetForm = () => {
-    if (!products) return
-    if (confirm(t('Reset all modifications back to current system baselines?', 'ሁሉንም ማስተካከያዎች ወደ ነበረበት የስርዓት መለኪያ ይመልሱ?'))) {
-      const initialCounts: Record<string, number> = {}
-      products.forEach((p) => {
-        initialCounts[p.id] = liveStockMap[p.id]?.systemCount ?? p.opening_count
-      })
-      setCounts(initialCounts)
+    const handleOffline = () => {
+      setIsOnline(false)
     }
-  }
 
-  const handleReceiveStockSubmit = async (
-  e: React.FormEvent
-) => {
-  e.preventDefault()
-
-  // ---------------------------------------------
-  // Basic validation
-  // ---------------------------------------------
-
-  if (!receiveProductId) {
-    toast(
-      t(
-        'Please select a product.',
-        'እባክዎ ምርት ይምረጡ።'
-      ),
-      'error'
-    )
-    return
-  }
-
-  if (!Number.isFinite(receiveQty) || receiveQty <= 0) {
-    toast(
-      t(
-        'Quantity must be greater than zero.',
-        'ብዛቱ ከዜሮ በላይ መሆን አለበት።'
-      ),
-      'error'
-    )
-    return
-  }
-
-  if (
-    !Number.isFinite(receiveUnitCost) ||
-    receiveUnitCost < 0
-  ) {
-    toast(
-      t(
-        'Please enter a valid unit cost.',
-        'እባክዎ ትክክለኛ የመግዣ ዋጋ ያስገቡ።'
-      ),
-      'error'
-    )
-    return
-  }
-
-  const matchedProd =
-    products?.find(
-      p => p.id === receiveProductId
+    window.addEventListener(
+      'online',
+      handleOnline
     )
 
-  if (!matchedProd) {
-    toast(
-      t(
-        'Product could not be found.',
-        'ምርቱ አልተገኘም።'
-      ),
-      'error'
+    window.addEventListener(
+      'offline',
+      handleOffline
     )
-    return
-  }
 
-  try {
-
-    const db = await getDB()
-
-    // ---------------------------------------------
-    // Active shift is required
-    // ---------------------------------------------
-
-    const activeShift =
-      await db.get(
-        'active_shift',
-        'current'
+    return () => {
+      window.removeEventListener(
+        'online',
+        handleOnline
       )
 
-    if (!activeShift) {
-      toast(
-        t(
-          'Please open an active shift first.',
-          'እባክዎ መጀመሪያ ክፍት የፈረቃ ስራ ይጀምሩ።'
-        ),
-        'error'
+      window.removeEventListener(
+        'offline',
+        handleOffline
       )
+    }
+  }, [scheduleInventoryRefresh])
+
+  // ==========================================================
+  // REFRESH WHEN USER RETURNS TO PAGE
+  // ==========================================================
+
+  useEffect(() => {
+    const refresh = () => {
+      scheduleInventoryRefresh(
+        LIVE_REFRESH_OPTIONS
+      )
+    }
+
+    const handleVisibility = () => {
+      if (
+        document.visibilityState ===
+        'visible'
+      ) {
+        refresh()
+      }
+    }
+
+    document.addEventListener(
+      'visibilitychange',
+      handleVisibility
+    )
+
+    window.addEventListener(
+      'focus',
+      refresh
+    )
+
+    return () => {
+      document.removeEventListener(
+        'visibilitychange',
+        handleVisibility
+      )
+
+      window.removeEventListener(
+        'focus',
+        refresh
+      )
+    }
+  }, [scheduleInventoryRefresh])
+
+  // ==========================================================
+  // INVENTORY / SYNC EVENTS
+  // ==========================================================
+
+  useEffect(() => {
+    const refresh = () => {
+      scheduleInventoryRefresh(
+        LIVE_REFRESH_OPTIONS
+      )
+    }
+
+    window.addEventListener(
+      INVENTORY_REFRESH_EVENT,
+      refresh
+    )
+
+    window.addEventListener(
+      SYNC_COMPLETE_EVENT,
+      refresh
+    )
+
+    return () => {
+      window.removeEventListener(
+        INVENTORY_REFRESH_EVENT,
+        refresh
+      )
+
+      window.removeEventListener(
+        SYNC_COMPLETE_EVENT,
+        refresh
+      )
+    }
+  }, [scheduleInventoryRefresh])
+
+  // ==========================================================
+  // CROSS-TAB / CROSS-WINDOW SYNC
+  // ==========================================================
+
+  useEffect(() => {
+    if (
+      typeof window === 'undefined' ||
+      typeof BroadcastChannel ===
+      'undefined'
+    ) {
       return
     }
 
-    // ---------------------------------------------
-    // Normalize numbers
-    // ---------------------------------------------
-
-    const quantity =
-      Math.floor(Number(receiveQty))
-
-    const unitCost =
-      Number(receiveUnitCost)
-
-    const totalCost =
-      quantity * unitCost
-
-    if (quantity <= 0) {
-      throw new Error(
-        'Invalid receiving quantity.'
+    const channel =
+      new BroadcastChannel(
+        INVENTORY_CHANNEL_NAME
       )
-    }
 
-    // ---------------------------------------------
-    // Create local receipt
-    // ---------------------------------------------
+    broadcastChannelRef.current =
+      channel
 
-    const receipt = {
-      localId: crypto.randomUUID(),
+    const handleMessage = (
+      event: MessageEvent
+    ) => {
+      const type =
+        event.data?.type
 
-      createdAt:
-        new Date().toISOString(),
+      const shouldRefresh =
+        type ===
+        INVENTORY_REFRESH_EVENT ||
+        type ===
+        SYNC_COMPLETE_EVENT
 
-      syncStatus:
-        'pending' as const,
-
-      retryCount: 0,
-
-      product_id:
-        matchedProd.id,
-
-      business_id:
-        activeShift.business_id,
-
-      branch_id:
-        activeShift.branch_id,
-
-      shift_id:
-        activeShift.id,
-
-      quantity,
-
-      unit_cost:
-        unitCost,
-
-      total_cost:
-        totalCost,
-
-      notes:
-        'Stock received from inventory screen',
-    }
-
-    // ---------------------------------------------
-    // Save atomically
-    // ---------------------------------------------
-
-    const tx = db.transaction(
-      'pending_stock_receipts',
-      'readwrite'
-    )
-
-    await tx.objectStore(
-      'pending_stock_receipts'
-    ).put(receipt)
-
-    await tx.done
-
-    // ---------------------------------------------
-    // Update local UI immediately
-    //
-    // IMPORTANT:
-    // We do NOT modify `inventory`.
-    //
-    // The receipt is pending and the sync engine
-    // will eventually update the server inventory.
-    // ---------------------------------------------
-
-    setLiveStockMap(prev => {
-
-      const current =
-        prev[matchedProd.id]?.systemCount ??
-        matchedProd.opening_count ??
-        0
-
-      return {
-        ...prev,
-
-        [matchedProd.id]: {
-          ...prev[matchedProd.id],
-
-          systemCount:
-            current + quantity,
-
-          hasPendingTransactions:
-            true,
-        },
+      if (shouldRefresh) {
+        scheduleInventoryRefresh(
+          LIVE_REFRESH_OPTIONS
+        )
       }
-    })
+    }
 
-    // Keep the editable count aligned
-    setCounts(prev => ({
-      ...prev,
-      [matchedProd.id]:
-        (
-          liveStockMap[matchedProd.id]
-            ?.systemCount ??
-          matchedProd.opening_count ??
+    channel.addEventListener(
+      'message',
+      handleMessage
+    )
+
+    return () => {
+      channel.removeEventListener(
+        'message',
+        handleMessage
+      )
+
+      channel.close()
+
+      broadcastChannelRef.current =
+        null
+    }
+  }, [scheduleInventoryRefresh])
+
+  // ==========================================================
+  // RESET CATEGORY WHEN LANGUAGE CHANGES
+  // ==========================================================
+
+  useEffect(() => {
+    setSelectedCategory('All')
+  }, [isAm])
+
+  // ==========================================================
+  // CATEGORIES
+  // ==========================================================
+
+  const dynamicCategories =
+    useMemo(() => {
+      if (!products) {
+        return ['All']
+      }
+
+      const categories =
+        new Set<string>()
+
+      for (const product of products) {
+        const category =
+          getLocalizedValue(
+            product.category_name,
+            product.category_name_am,
+            isAm
+          )
+
+        if (category) {
+          categories.add(
+            category
+          )
+        }
+      }
+
+      return [
+        'All',
+        ...Array.from(
+          categories
+        ).sort((a, b) =>
+          a.localeCompare(b)
+        ),
+      ]
+    }, [products, isAm])
+
+  // ==========================================================
+  // FILTER PRODUCTS
+  // ==========================================================
+
+  const filteredProducts =
+    useMemo(() => {
+      if (!products) {
+        return []
+      }
+
+      let result = products
+
+      if (
+        selectedCategory !==
+        'All'
+      ) {
+        result =
+          result.filter(
+            product => {
+              const category =
+                getLocalizedValue(
+                  product.category_name,
+                  product.category_name_am,
+                  isAm
+                )
+
+              return (
+                category ===
+                selectedCategory
+              )
+            }
+          )
+      }
+
+      const query =
+        searchQuery
+          .toLowerCase()
+          .trim()
+
+      if (!query) {
+        return result
+      }
+
+      return result.filter(
+        product => {
+          const searchableValues = [
+            product.name,
+            product.name_am,
+            product.category_name,
+            product.category_name_am,
+            product.barcode,
+          ]
+
+          return searchableValues.some(
+            value =>
+              value
+                ?.toLowerCase()
+                .includes(query)
+          )
+        }
+      )
+    }, [
+      products,
+      selectedCategory,
+      searchQuery,
+      isAm,
+    ])
+
+  // ==========================================================
+  // COUNT CHANGE
+  // ==========================================================
+
+  const handleCountChange =
+    useCallback(
+      (
+        productId: string,
+        value: number
+      ) => {
+        if (
+          !Number.isFinite(value)
+        ) {
+          return
+        }
+
+        setCounts(previous => ({
+          ...previous,
+
+          [productId]:
+            Math.max(
+              0,
+              Math.floor(value)
+            ),
+        }))
+      },
+      []
+    )
+
+  // ==========================================================
+  // RESET COUNTS
+  // ==========================================================
+
+  const handleResetForm =
+    useCallback(() => {
+      if (!products) {
+        return
+      }
+
+      const confirmed =
+        window.confirm(
+          t(
+            'Clear all unsaved count changes?',
+            'ሁሉንም ያልተቀመጡ የቆጠራ ለውጦች ማጥፋት ይፈልጋሉ?'
+          )
+        )
+
+      if (!confirmed) {
+        return
+      }
+
+      const nextCounts: Record<
+        string,
+        number
+      > = {}
+
+      for (const product of products) {
+        nextCounts[product.id] =
+          liveStockMap[
+            product.id
+          ]?.systemCount ??
+          product.opening_count ??
           0
-        ) + quantity,
-    }))
+      }
 
-    // ---------------------------------------------
-    // Success
-    // ---------------------------------------------
+      setCounts(nextCounts)
 
-    const label =
-      isAm && matchedProd.name_am
-        ? matchedProd.name_am
-        : matchedProd.name
+      toast(
+        t(
+          'Count changes cleared.',
+          'የቆጠራ ለውጦች ጸድተዋል።'
+        ),
+        'success'
+      )
+    }, [
+      products,
+      liveStockMap,
+      t,
+    ])
 
-    toast(
-      t(
-        `Received ${quantity} units of ${label}.`,
-        `${quantity} ፍሬ ${label} ገቢ ተደርጓል።`
-      ),
-      'success'
+  // ==========================================================
+  // RECEIVE STOCK
+  // ==========================================================
+
+  const handleReceiveStockSubmit =
+    useCallback(
+      async (
+        e: FormEvent
+      ) => {
+        e.preventDefault()
+
+        // ----------------------------------------------------
+        // Product
+        // ----------------------------------------------------
+
+        if (!receiveProductId) {
+          toast(
+            t(
+              'Please select a product.',
+              'እባክዎ ምርት ይምረጡ።'
+            ),
+            'error'
+          )
+          return
+        }
+
+        // ----------------------------------------------------
+        // Quantity
+        // ----------------------------------------------------
+
+        const rawQuantity =
+          Number(receiveQty)
+
+        if (
+          !Number.isFinite(
+            rawQuantity
+          ) ||
+          rawQuantity <= 0
+        ) {
+          toast(
+            t(
+              'Quantity must be greater than zero.',
+              'ብዛቱ ከዜሮ በላይ መሆን አለበት።'
+            ),
+            'error'
+          )
+          return
+        }
+
+        const quantity =
+          Math.floor(
+            rawQuantity
+          )
+
+        if (quantity <= 0) {
+          toast(
+            t(
+              'Please enter a valid quantity.',
+              'እባክዎ ትክክለኛ የእቃ ብዛት ያስገቡ።'
+            ),
+            'error'
+          )
+          return
+        }
+
+        // ----------------------------------------------------
+        // Unit cost
+        // ----------------------------------------------------
+
+        const unitCost =
+          Number(
+            receiveUnitCost
+          )
+
+        if (
+          !Number.isFinite(
+            unitCost
+          ) ||
+          unitCost < 0
+        ) {
+          toast(
+            t(
+              'Please enter a valid unit cost.',
+              'እባክዎ ትክክለኛ የመግዣ ዋጋ ያስገቡ።'
+            ),
+            'error'
+          )
+          return
+        }
+
+        // ----------------------------------------------------
+        // Product
+        // ----------------------------------------------------
+
+        const matchedProduct =
+          products?.find(
+            product =>
+              product.id ===
+              receiveProductId
+          )
+
+        if (!matchedProduct) {
+          toast(
+            t(
+              'Product could not be found.',
+              'ምርቱ አልተገኘም።'
+            ),
+            'error'
+          )
+          return
+        }
+
+        try {
+          const db =
+            await getDB()
+
+          // --------------------------------------------------
+          // Active shift
+          // --------------------------------------------------
+
+          const activeShift =
+            await db.get(
+              'active_shift',
+              'current'
+            )
+
+          if (!activeShift) {
+            toast(
+              t(
+                'Please open an active shift first.',
+                'እባክዎ መጀመሪያ ክፍት የፈረቃ ስራ ይጀምሩ።'
+              ),
+              'error'
+            )
+            return
+          }
+
+          // --------------------------------------------------
+          // Total cost
+          // --------------------------------------------------
+
+          const totalCost =
+            quantity *
+            unitCost
+
+          if (
+            !Number.isFinite(
+              totalCost
+            )
+          ) {
+            throw new Error(
+              'Invalid receipt total.'
+            )
+          }
+
+          // --------------------------------------------------
+          // Save receipt locally
+          //
+          // Sync layer will process it later.
+          // --------------------------------------------------
+
+          const receipt = {
+            localId:
+              crypto.randomUUID(),
+
+            createdAt:
+              new Date().toISOString(),
+
+            syncStatus:
+              'pending' as const,
+
+            retryCount: 0,
+
+            product_id:
+              matchedProduct.id,
+
+            business_id:
+              activeShift.business_id,
+
+            branch_id:
+              activeShift.branch_id,
+
+            shift_id:
+              activeShift.id,
+
+            quantity,
+
+            unit_cost:
+              unitCost,
+
+            total_cost:
+              totalCost,
+
+            notes:
+              'Stock received from inventory screen',
+          }
+
+          const tx =
+            db.transaction(
+              'pending_stock_receipts',
+              'readwrite'
+            )
+
+          await tx
+            .objectStore(
+              'pending_stock_receipts'
+            )
+            .put(receipt)
+
+          await tx.done
+
+          // --------------------------------------------------
+          // Update visible stock immediately
+          // --------------------------------------------------
+
+          const currentStock =
+            liveStockMap[
+              matchedProduct.id
+            ]?.systemCount ??
+            matchedProduct.opening_count ??
+            0
+
+          const newStock =
+            currentStock +
+            quantity
+
+          setLiveStockMap(
+            previous => ({
+              ...previous,
+
+              [matchedProduct.id]: {
+                ...previous[
+                matchedProduct.id
+                ],
+
+                systemCount:
+                  newStock,
+
+                hasPendingTransactions:
+                  true,
+              },
+            })
+          )
+
+          setCounts(
+            previous => ({
+              ...previous,
+
+              [matchedProduct.id]:
+                newStock,
+            })
+          )
+
+          // --------------------------------------------------
+          // Notify other inventory views/tabs
+          // --------------------------------------------------
+
+          window.dispatchEvent(
+            new CustomEvent(
+              INVENTORY_REFRESH_EVENT
+            )
+          )
+
+          broadcastChannelRef.current?.postMessage(
+            {
+              type:
+                INVENTORY_REFRESH_EVENT,
+
+              productId:
+                matchedProduct.id,
+            }
+          )
+
+          // --------------------------------------------------
+          // Success message
+          // --------------------------------------------------
+
+          const label =
+            getProductLabel(
+              matchedProduct
+            )
+
+          toast(
+            t(
+              `Received ${quantity} units of ${label}.`,
+              `${quantity} ፍሬ ${label} ገቢ ተደርጓል።`
+            ),
+            'success'
+          )
+
+          // --------------------------------------------------
+          // Reset modal
+          // --------------------------------------------------
+
+          setShowReceiveModal(
+            false
+          )
+
+          setReceiveProductId(
+            ''
+          )
+
+          setReceiveQty(0)
+
+          setReceiveUnitCost(0)
+        } catch (error) {
+          console.error(
+            '[InventoryPage] receive stock failed',
+            error
+          )
+
+          toast(
+            t(
+              'Failed to save received stock locally.',
+              'የገቢ ዕቃውን በአካባቢው ማስቀመጥ አልተቻለም።'
+            ),
+            'error'
+          )
+        }
+      },
+      [
+        products,
+        receiveProductId,
+        receiveQty,
+        receiveUnitCost,
+        liveStockMap,
+        getProductLabel,
+        t,
+      ]
     )
 
-    // ---------------------------------------------
-    // Reset modal
-    // ---------------------------------------------
+  // ==========================================================
+  // HEADER
+  // ==========================================================
 
-    setShowReceiveModal(false)
-    setReceiveQty(0)
-    setReceiveUnitCost(0)
-    setReceiveProductId('')
+  const lastUpdatedLabel =
+    lastUpdated
+      ? lastUpdated.toLocaleTimeString(
+        [],
+        {
+          hour: '2-digit',
+          minute: '2-digit',
+        }
+      )
+      : '--:--'
 
-  } catch (error) {
-
-    console.error(
-      '[RECEIVE_STOCK]',
-      error
-    )
-
-    toast(
-      t(
-        'Failed to save received stock locally.',
-        'የገቢ ዕቃውን በአካባቢው ማስቀመጥ አልተቻለም።'
-      ),
-      'error'
-    )
-  }
-}
+  // ==========================================================
+  // LOADING
+  // ==========================================================
 
   if (!products) {
     return (
-      <div className="min-h-screen bg-[#F7F4EB]">
+      <div
+        className="flex min-h-screen items-center justify-center"
+        style={{
+          backgroundColor:
+            COLORS.cream,
+        }}
+      >
         <LoadingSpinner />
       </div>
-    );
+    )
   }
+
+  // ==========================================================
+  // RENDER
+  // ==========================================================
 
   return (
     <div
-      className="
-    min-h-screen
-    bg-[#F7F4EB]
-    text-[#2B1E1A]
-    pb-32
-  "
+      className="min-h-screen"
+      style={{
+        backgroundColor:
+          COLORS.cream,
+        color: COLORS.text,
+      }}
     >
+      {/* ======================================================
+          HEADER
+      ====================================================== */}
 
-      {/* Top Action Header Control Grid */}
       <PageHeader
-        title={t("Inventory Count", "የእቃ ቆጠራ")}
+        title={t(
+          'Inventory',
+          'የእቃ ማስተዳደሪያ',
+        )}
         subtitle={t(
-          "Manage stock quantities",
-          "የእቃ ብዛት ያስተዳድሩ"
+          'Check stock, receive items, and correct counts',
+          'እቃዎን ይመልከቱ፣ ይቀበሉ እና ቆጠራዎን ያስተካክሉ',
         )}
         actions={
           <div className="flex items-center gap-2">
             <Button
-              variant="ghost"
-              onClick={() =>
-                router.push(`/${locale}/reports`)
-              }
+              onClick={() => setShowReceiveModal(true)}
             >
-              <ArrowLeft className="w-4 h-4" />
+              <PlusCircle className="h-4 w-4" />
+
+              <span>
+                {t(
+                  'Receive',
+                  'ተቀበል',
+                )}
+              </span>
             </Button>
 
             <Button
               onClick={() =>
-                setShowReceiveModal(true)
+                handleSaveAll(
+                  products,
+                  counts,
+                  liveStockMap,
+                )
               }
+              disabled={isSaving}
             >
-              <PlusCircle className="w-4 h-4" />
-
-              {t(
-                "Receive",
-                "ተቀበል"
+              {isSaving ? (
+                <RefreshCw className="h-4 w-4 animate-spin" />
+              ) : (
+                <span>
+                  {t(
+                    'Save All',
+                    'ሁሉንም አስቀምጥ',
+                  )}
+                </span>
               )}
-            </Button>
-
-            <Button
-              variant="ghost"
-              onClick={handleResetForm}
-            >
-              <RotateCcw className="w-4 h-4" />
             </Button>
           </div>
         }
       />
 
-      <main
-        className="
-            max-w-3xl
-            mx-auto
-            px-4
-            py-4
-            space-y-4
-            "
-      >
+      {/* ======================================================
+          MAIN CONTENT
+      ====================================================== */}
 
-        {/* Expanded Evaluation Summary Panel Dropdown */}
-        <InventorySummaryCard
+      <main className="mx-auto w-full max-w-5xl space-y-4 px-4 py-4 sm:px-5 lg:px-6">
+
+        {/* ----------------------------------------------------
+            VALUATION
+        ----------------------------------------------------- */}
+
+        <InventoryValuation
           products={products}
           liveStockMap={liveStockMap}
           isAm={isAm}
-          t={t}
         />
 
-        {/* Global Catalog Text Query Filter Control Input */}
+        {/* ----------------------------------------------------
+            SEARCH
+        ----------------------------------------------------- */}
+
         <SearchInput
           value={searchQuery}
-          onChange={setSearchQuery}
+          onChange={
+            setSearchQuery
+          }
           placeholder={t(
-            "Search products...",
-            "ምርቶችን ይፈልጉ..."
+            'Search products or barcode...',
+            'ምርቶችን ወይም ባርኮድ ይፈልጉ...'
           )}
         />
 
-        {/* Categories Tab Row Selection List */}
+        {/* ----------------------------------------------------
+            CATEGORIES
+        ----------------------------------------------------- */}
+
         <InventoryCategoryTabs
-          categories={dynamicCategories}
-          selected={selectedCategory}
-          onSelect={setSelectedCategory}
+          categories={
+            dynamicCategories
+          }
+          selected={
+            selectedCategory
+          }
+          onSelect={
+            setSelectedCategory
+          }
           allLabel={t(
             'All Groups',
-            'ሁሉም ምድብ'
+            'ሁሉም ምድቦች'
           )}
         />
 
-        {/* Clean Main Feed List Loop Container */}
-        <div className="space-y-4">
-          {filteredProducts.length === 0 ? (
-            <InventoryEmptyState t={t} />
-          ) : (
-            <InventoryProductList
-              products={filteredProducts}
-              counts={counts}
-              liveStockMap={liveStockMap}
-              rowSavingId={rowSavingId}
-              isAm={isAm}
-              t={t}
-              onCountChange={handleCountChange}
-              // onSaveRow={handleSaveSingleRow}
+        {/* ----------------------------------------------------
+            PRODUCTS
+        ----------------------------------------------------- */}
 
-
-
-              onSaveRow={(product) =>
+        {filteredProducts.length ===
+          0 ? (
+          <InventoryEmptyState
+            t={t}
+          />
+        ) : (
+          <InventoryProductList
+            products={
+              filteredProducts
+            }
+            counts={counts}
+            liveStockMap={
+              liveStockMap
+            }
+            rowSavingId={
+              rowSavingId
+            }
+            isAm={isAm}
+            t={t}
+            onCountChange={
+              handleCountChange
+            }
+            onSaveRow={
+              product =>
                 handleSaveSingleRow(
                   product,
                   counts,
                   liveStockMap
                 )
-              }
-            />
-          )}
+            }
+          />
+        )}
+
+        {/* ----------------------------------------------------
+            CLEAR UNSAVED CHANGES
+        ----------------------------------------------------- */}
+
+        <div className="flex justify-end pt-1">
+          <Button
+            variant="ghost"
+            onClick={
+              handleResetForm
+            }
+            className="text-xs"
+            aria-label={t(
+              'Clear unsaved count changes',
+              'ያልተቀመጡ የቆጠራ ለውጦችን አጽዳ'
+            )}
+            title={t(
+              'Clear unsaved count changes',
+              'ያልተቀመጡ የቆጠራ ለውጦችን አጽዳ'
+            )}
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+
+            {t(
+              'Clear Changes',
+              'ለውጦችን አጽዳ'
+            )}
+          </Button>
         </div>
       </main>
 
-      {/* Persistent App Sync Floating Trigger Action Tray */}
-      <InventoryBottomBar
-        loading={isSaving}
-        onSave={() =>
-          handleSaveAll(
-            products!,
-            counts,
-            liveStockMap
+      {/* ======================================================
+          RECEIVE STOCK MODAL
+      ====================================================== */}
+
+      <ReceiveStockModal
+        open={
+          showReceiveModal
+        }
+        onClose={() =>
+          setShowReceiveModal(
+            false
           )
         }
-        label={t(
-          'Save All Changes',
-          'ሁሉንም አስቀምጥ'
-        )}
-      />
-
-      {/* Stock Reception Popover Menu Dialog Window Box */}
-      <ReceiveStockModal
-        open={showReceiveModal}
-        onClose={() => setShowReceiveModal(false)}
         products={products}
         isAm={isAm}
-        receiveProductId={receiveProductId}
-        setReceiveProductId={setReceiveProductId}
-        receiveQty={receiveQty}
-        setReceiveQty={setReceiveQty}
-        receiveUnitCost={receiveUnitCost}
-        setReceiveUnitCost={setReceiveUnitCost}
-        onSubmit={handleReceiveStockSubmit}
+        receiveProductId={
+          receiveProductId
+        }
+        setReceiveProductId={
+          setReceiveProductId
+        }
+        receiveQty={
+          receiveQty
+        }
+        setReceiveQty={
+          setReceiveQty
+        }
+        receiveUnitCost={
+          receiveUnitCost
+        }
+        setReceiveUnitCost={
+          setReceiveUnitCost
+        }
+        onSubmit={
+          handleReceiveStockSubmit
+        }
         t={t}
       />
-
     </div>
   )
 }

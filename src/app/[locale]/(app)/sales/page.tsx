@@ -1,5 +1,3 @@
-// src/app/[locale]/(app)/sales/page.tsx
-
 'use client'
 
 import {
@@ -8,7 +6,9 @@ import {
   useMemo,
   useState,
 } from 'react'
+
 import { useParams, useRouter } from 'next/navigation'
+
 import {
   Coins,
   Loader2,
@@ -18,17 +18,19 @@ import {
   X,
 } from 'lucide-react'
 
-import POSTableSelector from '../../../../components/pos/POSTableSelector'
-
 import { getDB } from '../../../../lib/offline/db'
+
 import type { Shift } from '../../../../types/database/operations'
-import { finalizeSale } from '@/lib/offline/saleService'
+
+import {
+  finalizeSale,
+} from '@/lib/offline/saleService'
 
 import POSHeader from '../../../../components/pos/POSHeader'
-import POSCategories from '../../../../components/pos/POSCategories'
-import POSProductGrid from '../../../../components/pos/POSProductGrid'
-import POSCart from '../../../../components/pos/POSCart'
-import POSCheckout from '../../../../components/pos/POSCheckout'
+import POSBillDropdown from '@/components/pos/POSBillDropdown'
+import POSLiveOrderBar from '@/components/pos/POSLiveOrderBar'
+import POSWorkspace from '@/components/pos/POSWorkspace'
+import POSCheckoutView from '@/components/pos/POSCheckoutView'
 
 import type {
   POSCartItem,
@@ -38,121 +40,22 @@ import type {
   PaymentSplit,
 } from '../../../../components/pos/types'
 
-// ============================================================
-// CONSTANTS
-// ============================================================
-
-const FALLBACK_TABLES = [
-  'Table 1',
-  'Table 2',
-  'Table 3',
-  'Table 4',
-  'Table 5',
-  'Table 6',
-  'VIP Box',
-]
-
-const DEFAULT_CASH_FLOAT = '1000'
-
-// ============================================================
-// HELPERS
-// ============================================================
-
-function normalizeString(value: unknown): string {
-  return value == null ? '' : String(value)
-}
-
-function normalizeNumber(
-  value: unknown,
-  fallback = 0,
-): number {
-  const number = Number(value)
-
-  return Number.isFinite(number)
-    ? number
-    : fallback
-}
-
-function getTableNumber(table: POSTable): string {
-  return normalizeString(
-    table.table_number ?? table.name,
-  )
-}
-
-function tabBelongsToTable(
-  tab: any,
-  table: POSTable,
-): boolean {
-  const tableId = normalizeString(table.id)
-  const tableNumber = getTableNumber(table)
-
-  const tabId = normalizeString(tab?.id)
-  const tabTableId = normalizeString(
-    tab?.table_id,
-  )
-
-  const tabTableNumber = normalizeString(
-    tab?.table_number,
-  )
-
-  const matchesTableId =
-    tableId.length > 0 &&
-    (tabId === tableId ||
-      tabTableId === tableId)
-
-  const matchesTableNumber =
-    tableNumber.length > 0 &&
-    tabTableNumber === tableNumber
-
-  return (
-    matchesTableId ||
-    matchesTableNumber
-  )
-}
-
-/**
- * Creates a stable representation of a cart.
- *
- * Used only to determine whether the current
- * table order differs from its saved order.
- */
-function serializeCart(
-  cart: POSCartItem[],
-): string {
-  return JSON.stringify(
-    cart
-      .map((item) => ({
-        id: normalizeString(item.id),
-        name: normalizeString(item.name),
-        price: normalizeNumber(item.price),
-        quantity: normalizeNumber(
-          item.quantity,
-        ),
-      }))
-      .sort((a, b) =>
-        a.id.localeCompare(b.id),
-      ),
-  )
-}
-
-/**
- * IMPORTANT:
- *
- * Always use the same serialized value for
- * an empty cart.
- *
- * This prevents:
- *
- * serializeCart([]) === "[]"
- *
- * from being compared against:
- *
- * "".
- *
- * An empty table therefore never becomes
- * accidentally "unsaved".
- */
-const EMPTY_CART_SNAPSHOT = serializeCart([])
+import {
+  FALLBACK_TABLES,
+  DEFAULT_CASH_FLOAT,
+  EMPTY_CART_SNAPSHOT,
+  normalizeNumber,
+  normalizeString,
+  getTableNumber,
+  serializeCart,
+  tabBelongsToTable,
+  notifyInventoryUpdated,
+} from '../../../../components/pos/posUtils'
+import POSTableSelector from '@/components/pos/POSTableSelector'
+import POSCategories from '@/components/pos/POSCategories'
+import POSProductGrid from '@/components/pos/POSProductGrid'
+import POSCheckout from '@/components/pos/POSCheckout'
+import POSSearch from '@/components/ui/Search'
 
 // ============================================================
 // PAGE
@@ -188,6 +91,7 @@ export default function SalesPage() {
     selectedCategoryId,
     setSelectedCategoryId,
   ] = useState('all')
+
 
   const [
     productSearch,
@@ -633,16 +537,18 @@ export default function SalesPage() {
     [cart],
   )
 
-  const cartProductIds =
-    useMemo(
-      () =>
-        new Set(
-          cart.map(
-            (item) => item.id,
-          ),
-        ),
-      [cart],
-    )
+  const cartQuantities = useMemo(() => {
+    const quantities = new Map<string, number>()
+
+    for (const item of cart) {
+      quantities.set(
+        item.id,
+        (quantities.get(item.id) ?? 0) + Number(item.quantity ?? 0),
+      )
+    }
+
+    return quantities
+  }, [cart])
 
   const cartHasItems =
     cart.length > 0
@@ -1493,6 +1399,10 @@ export default function SalesPage() {
             totalBill,
           })
 
+        // Sale successfully saved locally.
+        // Notify inventory immediately.
+        notifyInventoryUpdated(sale.localId)
+
         // ------------------------------------------------------
         // REMOVE OPEN TABLE AFTER SUCCESSFUL PAYMENT
         // ------------------------------------------------------
@@ -1761,43 +1671,20 @@ export default function SalesPage() {
 
   return (
     <div className="flex h-dvh w-full flex-col overflow-hidden bg-cream-100 font-sans text-coffee-700">
-
-      {/* ======================================================
-          HEADER
-      ====================================================== */}
-
-      <div className="relative z-30 shrink-0">
+      {/* Header */}
+      <div className="relative z-50 shrink-0">
         <POSHeader
           isAm={isAm}
-          activeShift={
-            activeShift
-          }
-          selectedTable={
-            selectedTable
-          }
-          totalItems={
-            totalItems
-          }
-          totalBill={
-            totalBill
-          }
-          onCloseShift={
-            handleCloseShift
-          }
-          closingShift={
-            closingShift
-          }
-          cartHasItems={
-            cartHasItems
-          }
-          billOpen={
-            billOpen
-          }
+          activeShift={activeShift}
+          selectedTable={selectedTable}
+          totalItems={totalItems}
+          totalBill={totalBill}
+          onCloseShift={handleCloseShift}
+          closingShift={closingShift}
+          cartHasItems={cartHasItems}
+          billOpen={billOpen}
           onToggleBill={() =>
-            setBillOpen(
-              (current) =>
-                !current,
-            )
+            setBillOpen((current) => !current)
           }
         />
 
@@ -1805,57 +1692,26 @@ export default function SalesPage() {
             BILL DROPDOWN
         ==================================================== */}
 
-        {billOpen &&
-          cartHasItems && (
-            <>
-              <div
-                className="fixed inset-0 z-20 bg-black/5"
-                onClick={() =>
-                  setBillOpen(false)
-                }
-                aria-hidden="true"
-              />
-
-              <div className="absolute inset-x-0 top-full z-30 flex max-h-[72dvh] flex-col overflow-hidden border-x border-b border-cream-300 bg-cream-50 shadow-[0_14px_28px_rgba(65,45,30,0.14)] lg:inset-x-auto lg:right-3 lg:w-[380px] lg:rounded-b-2xl">
-                <POSCart
-                  cart={cart}
-                  totalBill={
-                    totalBill
-                  }
-                  selectedTable={
-                    selectedTable
-                  }
-                  savingTab={
-                    savingTab
-                  }
-                  onIncrease={
-                    increaseQuantity
-                  }
-                  onDecrease={
-                    decreaseQuantity
-                  }
-                  onClearItem={
-                    clearCartItem
-                  }
-                  onSaveTab={
-                    handleSaveTab
-                  }
-                  onCheckout={() => {
-                    setShowCheckout(
-                      true,
-                    )
-
-                    setBillOpen(
-                      false,
-                    )
-                  }}
-                  isAm={isAm}
-                  hideHeader
-                />
-              </div>
-            </>
-          )}
+        {billOpen && cartHasItems && (
+          <POSBillDropdown
+            cart={cart}
+            totalBill={totalBill}
+            selectedTable={selectedTable}
+            savingTab={savingTab}
+            onIncrease={increaseQuantity}
+            onDecrease={decreaseQuantity}
+            onClearItem={clearCartItem}
+            onSaveTab={handleSaveTab}
+            onCheckout={() => {
+              setShowCheckout(true)
+              setBillOpen(false)
+            }}
+            onClose={() => setBillOpen(false)}
+            isAm={isAm}
+          />
+        )}
       </div>
+
 
       {/* ======================================================
           CONTENT
@@ -1995,69 +1851,12 @@ export default function SalesPage() {
               ================================================== */}
 
               <section className="mt-2 shrink-0 overflow-hidden rounded-2xl border border-cream-300 bg-cream-50 shadow-sm sm:mt-3">
-
-                <div className="p-2.5 sm:p-3">
-                  <div className="relative">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-coffee-400" />
-
-                    <input
-                      type="search"
-                      value={
-                        productSearch
-                      }
-                      onChange={(
-                        event,
-                      ) =>
-                        setProductSearch(
-                          event.target
-                            .value,
-                        )
-                      }
-                      placeholder={
-                        isAm
-                          ? 'ምርት ይፈልጉ...'
-                          : 'Search products...'
-                      }
-                      className="h-10 w-full rounded-xl border border-cream-300 bg-cream-100 pl-10 pr-10 text-sm font-bold text-coffee-800 outline-none transition placeholder:text-coffee-400 focus:border-berbere-400 focus:ring-2 focus:ring-berbere-100 sm:h-11"
-                      aria-label={
-                        isAm
-                          ? 'ምርት ይፈልጉ'
-                          : 'Search products'
-                      }
-                    />
-
-                    {productSearch && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setProductSearch(
-                            '',
-                          )
-                        }
-                        className="absolute right-3 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-coffee-400 transition hover:bg-cream-200 hover:text-coffee-700"
-                        aria-label={
-                          isAm
-                            ? 'ፍለጋ አጽዳ'
-                            : 'Clear search'
-                        }
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    )}
-                  </div>
-
-                  {productSearch.trim() && (
-                    <div className="mt-1.5 px-1 text-[10px] font-bold text-coffee-400">
-                      {isAm
-                        ? `${filteredProducts.length} ምርቶች ተገኝተዋል`
-                        : `${filteredProducts.length} product${filteredProducts.length ===
-                          1
-                          ? ''
-                          : 's'
-                        } found`}
-                    </div>
-                  )}
-                </div>
+                <POSSearch
+                  value={productSearch}
+                  onChange={setProductSearch}
+                  resultCount={filteredProducts.length}
+                  isAm={isAm}
+                />
 
                 <div className="border-t border-cream-200 px-2.5 py-2 sm:px-3">
                   <POSCategories
@@ -2114,74 +1913,16 @@ export default function SalesPage() {
                   )}
                 </div>
 
-                <div className="min-h-[360px] rounded-2xl border border-cream-300 bg-cream-50 p-2.5 shadow-sm sm:p-3">
+                <div className="rounded-xl">
                   <POSProductGrid
-                    products={
-                      filteredProducts
-                    }
-                    cartProductIds={
-                      cartProductIds
-                    }
-                    onAddProduct={
-                      addToCart
-                    }
+                    products={filteredProducts}
+                    cartQuantities={cartQuantities}
+                    onAddProduct={addToCart}
                     isAm={isAm}
                   />
                 </div>
               </section>
             </div>
-
-            {/* ==================================================
-                SAVE BAR
-            ================================================== */}
-
-            {canSaveTableOrder && (
-              <div className="fixed inset-x-0 bottom-0 z-40 border-t border-cream-300 bg-cream-50/95 p-2 shadow-[0_-8px_24px_rgba(65,45,30,0.12)] backdrop-blur sm:p-3 lg:static lg:mt-4 lg:border lg:shadow-sm lg:backdrop-blur-0">
-                <div className="mx-auto flex w-full max-w-[1600px] items-center gap-2 lg:px-1">
-
-                  <div className="hidden min-w-0 flex-1 sm:block">
-                    <p className="truncate text-xs font-black text-coffee-900">
-                      {selectedTable?.name}
-                    </p>
-
-                    <p className="text-[10px] font-semibold text-coffee-400">
-                      {totalItems}{' '}
-                      {isAm
-                        ? 'እቃ'
-                        : totalItems ===
-                          1
-                          ? 'item'
-                          : 'items'}{' '}
-                      ·{' '}
-                      {totalBill.toLocaleString()}{' '}
-                      ETB
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setBillOpen(
-                        true,
-                      )
-                    }
-                    className="flex h-12 flex-1 items-center justify-center gap-2 rounded-xl border border-cream-300 bg-cream-100 px-3 text-sm font-black text-coffee-800 transition hover:bg-cream-200 sm:flex-none"
-                  >
-                    <ShoppingCart className="h-4 w-4" />
-
-                    <span>
-                      {isAm
-                        ? 'ትዕዛዝ'
-                        : 'Order'}
-                    </span>
-                  </button>
-
-                  <div className="flex-[1.4] sm:flex-none">
-                    <DirectSaveOrderButton />
-                  </div>
-                </div>
-              </div>
-            )}
           </main>
         ) : (
           // ====================================================

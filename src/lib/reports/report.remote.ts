@@ -12,9 +12,7 @@ import {
 
 export interface RemoteReportData {
   sales: ReportSale[]
-
   expenses: ReportExpense[]
-
   remoteAvailable: boolean
 }
 
@@ -25,9 +23,7 @@ export interface RemoteReportData {
 export async function loadRemoteReportData(
   options: DailyReportOptions,
 ): Promise<RemoteReportData> {
-  if (
-    options.allowRemote === false
-  ) {
+  if (options.allowRemote === false) {
     return {
       sales: [],
       expenses: [],
@@ -35,277 +31,208 @@ export async function loadRemoteReportData(
     }
   }
 
-  const supabase =
-    createClient()
+  const supabase = createClient()
 
-  const range =
-    getReportDateRange(
-      options.date,
-    )
+  const range = getReportDateRange(options.date)
 
   try {
     /* --------------------------------------------------------
      * SALES
+     *
+     * IMPORTANT:
+     * Payment method does NOT come from sales.
+     * Payment information is loaded from payments below.
      * -------------------------------------------------------- */
 
-    let salesQuery =
-      supabase
-        .from('sales')
-        .select(`
-          id,
-          business_id,
-          branch_id,
-          created_at,
-          subtotal,
-          total_amount,
-          tip_amount,
-          payment_method,
-          status,
-          is_offline_sync,
-          deleted_at
-        `)
-        .eq(
-          'business_id',
-          options.businessId,
-        )
-        .eq(
-          'status',
-          'completed',
-        )
-        .is(
-          'deleted_at',
-          null,
-        )
-        .gte(
-          'created_at',
-          range.fromISO,
-        )
-        .lt(
-          'created_at',
-          range.toISO,
-        )
-        .order(
-          'created_at',
-          {
-            ascending: false,
-          },
-        )
+    let salesQuery = supabase
+      .from('sales')
+      .select('*')
+      .eq(
+        'business_id',
+        options.businessId,
+      )
+      .eq(
+        'status',
+        'completed',
+      )
+      .is(
+        'deleted_at',
+        null,
+      )
+      .gte(
+        'created_at',
+        range.fromISO,
+      )
+      .lt(
+        'created_at',
+        range.toISO,
+      )
+      .order(
+        'created_at',
+        {
+          ascending: false,
+        },
+      )
 
-    if (
-      options.branchId
-    ) {
-      salesQuery =
-        salesQuery.eq(
-          'branch_id',
-          options.branchId,
-        )
+    if (options.branchId) {
+      salesQuery = salesQuery.eq(
+        'branch_id',
+        options.branchId,
+      )
     }
 
     const {
       data: salesData,
       error: salesError,
-    } =
-      await salesQuery
+    } = await salesQuery
 
-    if (
-      salesError
-    ) {
+    if (salesError) {
       throw salesError
     }
 
-    const sales =
-      (
-        salesData ||
-        []
-      ) as ReportSale[]
+    const sales = (
+      salesData || []
+    ) as ReportSale[]
+
+    /* --------------------------------------------------------
+     * SALE IDS
+     * -------------------------------------------------------- */
+
+    const saleIds = sales
+      .map(
+        (sale) =>
+          sale.id ||
+          sale.sale_id,
+      )
+      .filter(
+        (
+          id,
+        ): id is string =>
+          Boolean(id),
+      )
 
     /* --------------------------------------------------------
      * SALE ITEMS
      * -------------------------------------------------------- */
 
-    const saleIds =
-      sales
-        .map(
-          (sale) =>
-            sale.id ||
-            sale.sale_id,
-        )
-        .filter(
-          (
-            id,
-          ): id is string =>
-            Boolean(id),
-        )
-
-    if (
-      saleIds.length > 0
-    ) {
+    if (saleIds.length > 0) {
       const {
         data: items,
-      } =
-        await supabase
-          .from('sale_items')
-          .select(`
-            id,
-            sale_id,
-            product_id,
-            quantity,
-            unit_price,
-            total_amount,
-            gross_profit
-          `)
-          .in(
-            'sale_id',
-            saleIds,
-          )
+        error: itemsError,
+      } = await supabase
+        .from('sale_items')
+        .select('*')
+        .in(
+          'sale_id',
+          saleIds,
+        )
 
-      if (items) {
-        const itemsBySale =
-          new Map<
-            string,
-            any[]
-          >()
+      if (itemsError) {
+        throw itemsError
+      }
 
-        for (
-          const item of items
-        ) {
-          const saleId =
-            String(
-              item.sale_id ||
-                '',
-            )
+      const itemsBySale =
+        new Map<string, any[]>()
 
-          if (
-            !saleId
-          ) {
-            continue
-          }
+      for (const item of items || []) {
+        const saleId = String(
+          item.sale_id || '',
+        )
 
-          const existing =
-            itemsBySale.get(
-              saleId,
-            ) || []
+        if (!saleId) {
+          continue
+        }
 
-          existing.push(
-            item,
-          )
-
-          itemsBySale.set(
+        const existing =
+          itemsBySale.get(
             saleId,
-            existing,
-          )
-        }
+          ) || []
 
-        for (
-          const sale of sales
-        ) {
-          const id =
-            String(
-              sale.id ||
-                sale.sale_id ||
-                '',
-            )
+        existing.push(item)
 
-          const saleItems =
-            itemsBySale.get(
-              id,
-            )
+        itemsBySale.set(
+          saleId,
+          existing,
+        )
+      }
 
-          if (
-            saleItems
-          ) {
-            sale.items =
-              saleItems
-          }
-        }
+      for (const sale of sales) {
+        const id = String(
+          sale.id ||
+            sale.sale_id ||
+            '',
+        )
+
+        sale.items =
+          itemsBySale.get(id) || []
+      }
+    } else {
+      for (const sale of sales) {
+        sale.items = []
       }
     }
 
     /* --------------------------------------------------------
      * PAYMENTS
+     *
+     * Payment method belongs here, not on sales.
+     * Using * keeps this compatible with the actual schema.
      * -------------------------------------------------------- */
 
-    if (
-      saleIds.length > 0
-    ) {
+    if (saleIds.length > 0) {
       const {
         data: payments,
-      } =
-        await supabase
-          .from('payments')
-          .select(`
-            id,
-            sale_id,
-            method,
-            payment_method,
-            amount
-          `)
-          .in(
-            'sale_id',
-            saleIds,
-          )
+        error: paymentsError,
+      } = await supabase
+        .from('payments')
+        .select('*')
+        .in(
+          'sale_id',
+          saleIds,
+        )
 
-      if (
-        payments
-      ) {
-        const paymentsBySale =
-          new Map<
-            string,
-            any[]
-          >()
+      if (paymentsError) {
+        throw paymentsError
+      }
 
-        for (
-          const payment of payments
-        ) {
-          const saleId =
-            String(
-              payment.sale_id ||
-                '',
-            )
+      const paymentsBySale =
+        new Map<string, any[]>()
 
-          if (
-            !saleId
-          ) {
-            continue
-          }
+      for (const payment of payments || []) {
+        const saleId = String(
+          payment.sale_id || '',
+        )
 
-          const existing =
-            paymentsBySale.get(
-              saleId,
-            ) || []
+        if (!saleId) {
+          continue
+        }
 
-          existing.push(
-            payment,
-          )
-
-          paymentsBySale.set(
+        const existing =
+          paymentsBySale.get(
             saleId,
-            existing,
-          )
-        }
+          ) || []
 
-        for (
-          const sale of sales
-        ) {
-          const id =
-            String(
-              sale.id ||
-                sale.sale_id ||
-                '',
-            )
+        existing.push(payment)
 
-          const salePayments =
-            paymentsBySale.get(
-              id,
-            )
+        paymentsBySale.set(
+          saleId,
+          existing,
+        )
+      }
 
-          if (
-            salePayments
-          ) {
-            sale.payments =
-              salePayments
-          }
-        }
+      for (const sale of sales) {
+        const id = String(
+          sale.id ||
+            sale.sale_id ||
+            '',
+        )
+
+        sale.payments =
+          paymentsBySale.get(id) || []
+      }
+    } else {
+      for (const sale of sales) {
+        sale.payments = []
       }
     }
 
@@ -313,46 +240,31 @@ export async function loadRemoteReportData(
      * EXPENSES
      * -------------------------------------------------------- */
 
-    let expenseQuery =
-      supabase
-        .from('expenses')
-        .select(`
-          id,
-          business_id,
-          branch_id,
-          amount,
-          description,
-          category,
-          expense_category,
-          expense_date,
-          created_at,
-          status,
-          deleted_at
-        `)
-        .eq(
-          'business_id',
-          options.businessId,
-        )
-        .is(
-          'deleted_at',
-          null,
-        )
-        .gte(
-          'expense_date',
-          range.from
-            .toISOString()
-            .slice(0, 10),
-        )
-        .lt(
-          'expense_date',
-          range.to
-            .toISOString()
-            .slice(0, 10),
-        )
+    let expenseQuery = supabase
+      .from('expenses')
+      .select('*')
+      .eq(
+        'business_id',
+        options.businessId,
+      )
+      .is(
+        'deleted_at',
+        null,
+      )
+      .gte(
+        'expense_date',
+        range.from
+          .toISOString()
+          .slice(0, 10),
+      )
+      .lt(
+        'expense_date',
+        range.to
+          .toISOString()
+          .slice(0, 10),
+      )
 
-    if (
-      options.branchId
-    ) {
+    if (options.branchId) {
       expenseQuery =
         expenseQuery.eq(
           'branch_id',
@@ -362,20 +274,57 @@ export async function loadRemoteReportData(
 
     const {
       data: expenseData,
-    } =
-      await expenseQuery
+      error: expenseError,
+    } = await expenseQuery
+
+    if (expenseError) {
+      throw expenseError
+    }
+
+    /* --------------------------------------------------------
+     * SUCCESS
+     * -------------------------------------------------------- */
+
+    console.log(
+      '[DailyReport] Remote loaded:',
+      {
+        sales: sales.length,
+        expenses:
+          expenseData?.length || 0,
+        saleItems: sales.reduce(
+          (
+            total,
+            sale,
+          ) =>
+            total +
+            (
+              sale.items
+                ?.length || 0
+            ),
+          0,
+        ),
+        payments: sales.reduce(
+          (
+            total,
+            sale,
+          ) =>
+            total +
+            (
+              sale.payments
+                ?.length || 0
+            ),
+          0,
+        ),
+      },
+    )
 
     return {
       sales,
-
       expenses:
         (
-          expenseData ||
-          []
+          expenseData || []
         ) as ReportExpense[],
-
-      remoteAvailable:
-        true,
+      remoteAvailable: true,
     }
   } catch (error) {
     console.warn(

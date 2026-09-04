@@ -144,9 +144,8 @@ export default function AppShell({
    * Other pages continue using the AppShell
    * workspace as their scroll container.
    */
-  const isPOSPage =
-    pathname === `/${locale}/sales` ||
-    pathname.startsWith(`/${locale}/sales/`)
+const isPOSPage =
+  pathname === `/${locale}/sales`
 
   const useInternalScroll = noScroll || isPOSPage
 

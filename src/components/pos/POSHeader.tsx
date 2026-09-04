@@ -56,18 +56,19 @@ export default function POSHeader({
       <div
         className="
           mx-auto flex
-          h-14
-          w-full
+          h-12
+          w-full max-w-[1600px]
           items-center
-          gap-2
-          px-2.5
-          sm:px-4
-          lg:px-5
+          gap-1.5
+          px-2
+          sm:gap-2
+          sm:px-3
+          lg:px-4
         "
       >
         {/* ==========================================================
-            SALES AREA
-            The most important information on the screen.
+            CURRENT SALES AREA
+            Flexible section. Everything else stays visible.
         ========================================================== */}
 
         <div
@@ -76,7 +77,8 @@ export default function POSHeader({
             min-w-0
             flex-1
             items-center
-            gap-2
+            gap-1.5
+            sm:gap-2
           "
         >
           {/* SALES ICON */}
@@ -85,12 +87,12 @@ export default function POSHeader({
             className={[
               `
                 flex
-                h-9
-                w-9
+                h-8
+                w-8
                 shrink-0
                 items-center
                 justify-center
-                rounded-xl
+                rounded-lg
               `,
               isWalkIn
                 ? 'bg-cream-200 text-coffee-500'
@@ -98,19 +100,21 @@ export default function POSHeader({
             ].join(' ')}
             aria-hidden="true"
           >
-            <Utensils className="h-4 w-4" />
+            <Utensils className="h-3.5 w-3.5" />
           </div>
 
-          {/* LOCATION */}
+          {/* SALES AREA */}
 
           <div className="min-w-0 leading-none">
             <div
               className="
-                text-[8px]
+                hidden
+                text-[7px]
                 font-black
                 uppercase
                 tracking-[0.12em]
                 text-coffee-400
+                sm:block
               "
             >
               {isAm ? 'የሽያጭ ቦታ' : 'SALES AREA'}
@@ -118,26 +122,26 @@ export default function POSHeader({
 
             <div
               className="
-                mt-1
                 flex
                 min-w-0
                 items-center
                 gap-1.5
+                sm:mt-0.5
               "
             >
               <span
                 className="
+                  max-w-[110px]
                   truncate
-                  text-sm
+                  text-xs
                   font-black
                   text-coffee-900
-                  sm:text-base
+                  sm:max-w-[180px]
+                  sm:text-sm
                 "
               >
                 {orderPlace}
               </span>
-
-              {/* Small status indicator */}
 
               <span
                 className={[
@@ -164,16 +168,15 @@ export default function POSHeader({
         <div
           className="
             flex
+            h-8
             shrink-0
             items-center
-            gap-1.5
-            rounded-xl
+            gap-1
+            rounded-lg
             border
             border-cream-200
             bg-cream-100
             px-2
-            py-1.5
-            sm:px-2.5
           "
           title={
             isAm
@@ -197,7 +200,6 @@ export default function POSHeader({
               text-xs
               font-black
               text-coffee-900
-              sm:text-sm
             "
           >
             {totalItems}
@@ -209,7 +211,7 @@ export default function POSHeader({
               text-[9px]
               font-bold
               text-coffee-400
-              sm:inline
+              md:inline
             "
           >
             {isAm ? 'እቃ' : 'items'}
@@ -235,11 +237,11 @@ export default function POSHeader({
             className="
               whitespace-nowrap
               font-mono
-              text-base
+              text-sm
               font-black
               leading-none
               text-berbere-500
-              sm:text-lg
+              sm:text-base
             "
           >
             {totalBill.toLocaleString()}
@@ -248,9 +250,9 @@ export default function POSHeader({
           <div
             className="
               mt-0.5
-              text-[7px]
+              text-[6px]
               font-black
-              tracking-widest
+              tracking-[0.18em]
               text-coffee-400
             "
           >
@@ -259,8 +261,7 @@ export default function POSHeader({
         </div>
 
         {/* ==========================================================
-            ORDER BUTTON
-            Clear action for viewing the current bill.
+            CURRENT ORDER / BILL
         ========================================================== */}
 
         <button
@@ -281,26 +282,32 @@ export default function POSHeader({
           className={[
             `
               flex
-              h-9
+              h-8
               shrink-0
               items-center
               justify-center
-              gap-1.5
-              rounded-xl
-              px-2.5
+              gap-1
+              rounded-lg
+              px-2
               text-[9px]
               font-black
               transition-all
-              active:scale-[0.97]
-              sm:px-3
+              active:scale-95
+              sm:px-2.5
             `,
             cartHasItems
-              ? `
-                bg-berbere-500
-                text-white
-                shadow-sm
-                hover:bg-berbere-600
-              `
+              ? billOpen
+                ? `
+                  bg-berbere-600
+                  text-white
+                  shadow-sm
+                `
+                : `
+                  bg-berbere-500
+                  text-white
+                  shadow-sm
+                  hover:bg-berbere-600
+                `
               : `
                 cursor-default
                 bg-cream-200
@@ -309,7 +316,7 @@ export default function POSHeader({
           ].join(' ')}
         >
           <ShoppingBag
-            className="h-3.5 w-3.5"
+            className="h-3.5 w-3.5 shrink-0"
             aria-hidden="true"
           />
 
@@ -326,12 +333,12 @@ export default function POSHeader({
           {cartHasItems &&
             (billOpen ? (
               <ChevronUp
-                className="h-3 w-3"
+                className="h-3 w-3 shrink-0"
                 aria-hidden="true"
               />
             ) : (
               <ChevronDown
-                className="h-3 w-3"
+                className="h-3 w-3 shrink-0"
                 aria-hidden="true"
               />
             ))}
@@ -357,19 +364,19 @@ export default function POSHeader({
           }
           className="
             flex
-            h-9
-            w-9
+            h-8
+            w-8
             shrink-0
             items-center
             justify-center
-            rounded-xl
+            rounded-lg
             border
             border-cream-300
             bg-cream-50
             text-danger
             transition-all
             hover:bg-cream-100
-            active:scale-[0.97]
+            active:scale-95
             disabled:cursor-not-allowed
             disabled:opacity-50
           "
@@ -381,10 +388,12 @@ export default function POSHeader({
                 w-3.5
                 animate-spin
               "
+              aria-hidden="true"
             />
           ) : (
             <LogOut
               className="h-3.5 w-3.5"
+              aria-hidden="true"
             />
           )}
         </button>

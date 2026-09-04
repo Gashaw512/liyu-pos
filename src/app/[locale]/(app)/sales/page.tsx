@@ -13,24 +13,17 @@ import {
   Coins,
   Loader2,
   Save,
-  Search,
   ShoppingCart,
-  X,
 } from 'lucide-react'
 
 import { getDB } from '../../../../lib/offline/db'
 
 import type { Shift } from '../../../../types/database/operations'
 
-import {
-  finalizeSale,
-} from '@/lib/offline/saleService'
+import { finalizeSale } from '@/lib/offline/saleService'
 
 import POSHeader from '../../../../components/pos/POSHeader'
 import POSBillDropdown from '@/components/pos/POSBillDropdown'
-import POSLiveOrderBar from '@/components/pos/POSLiveOrderBar'
-import POSWorkspace from '@/components/pos/POSWorkspace'
-import POSCheckoutView from '@/components/pos/POSCheckoutView'
 
 import type {
   POSCartItem,
@@ -41,16 +34,32 @@ import type {
 } from '../../../../components/pos/types'
 
 import {
-  FALLBACK_TABLES,
-  DEFAULT_CASH_FLOAT,
-  EMPTY_CART_SNAPSHOT,
-  normalizeNumber,
-  normalizeString,
-  getTableNumber,
+  calculateCartTotal,
+  calculateCartItemCount,
+  createCartQuantityMap,
+
+  addToCart as addToCartLogic,
+  increaseCartQuantity,
+  decreaseCartQuantity,
+  removeCartItem,
+
+  filterPOSProducts,
+
   serializeCart,
-  tabBelongsToTable,
+  EMPTY_CART_SNAPSHOT,
+
   notifyInventoryUpdated,
-} from '../../../../components/pos/posUtils'
+
+  DEFAULT_CASH_FLOAT,
+
+  tabBelongsToTable,
+  loadPOSDataFromDB,
+  restoreCartFromTab,
+
+  saveTableTab,
+  removeOpenTabsForTable,
+} from '@/components/pos/posUtils'
+
 import POSTableSelector from '@/components/pos/POSTableSelector'
 import POSCategories from '@/components/pos/POSCategories'
 import POSProductGrid from '@/components/pos/POSProductGrid'
@@ -91,7 +100,6 @@ export default function SalesPage() {
     selectedCategoryId,
     setSelectedCategoryId,
   ] = useState('all')
-
 
   const [
     productSearch,
@@ -145,8 +153,8 @@ export default function SalesPage() {
   ] = useState('')
 
   /**
-   * TRUE only when the selected table has
-   * actual items that differ from its saved order.
+   * True only when the selected table
+   * contains changes that are not saved.
    */
   const [
     hasUnsavedChanges,
@@ -154,7 +162,8 @@ export default function SalesPage() {
   ] = useState(false)
 
   /**
-   * Snapshot of the last saved table order.
+   * Last saved snapshot for the
+   * currently selected table.
    */
   const [
     savedCartSnapshot,
@@ -172,262 +181,23 @@ export default function SalesPage() {
       try {
         const db = await getDB()
 
-        // ------------------------------------------------------
-        // ACTIVE SHIFT
-        // ------------------------------------------------------
-
-        const shift =
-          await db.get(
-            'active_shift',
-            'current',
-          )
+        const data =
+          await loadPOSDataFromDB(db)
 
         setActiveShift(
-          shift || null,
+          data.activeShift,
         )
-
-        // ------------------------------------------------------
-        // PRODUCTS
-        // ------------------------------------------------------
-
-        const productRows =
-          await db.getAll('products')
-
-        const normalizedProducts: POSProduct[] =
-          (productRows || [])
-            .map(
-              (product: any) => ({
-                id: normalizeString(
-                  product.id,
-                ),
-
-                name: normalizeString(
-                  product.name ||
-                  'Unnamed Product',
-                ),
-
-                category_id:
-                  product.category_id ??
-                  product.categoryId ??
-                  null,
-
-                retail_price:
-                  normalizeNumber(
-                    product.retail_price ??
-                    product.price ??
-                    0,
-                  ),
-
-                image_url:
-                  product.image_url ??
-                  null,
-
-                is_active:
-                  product.is_active !==
-                  false,
-
-                sku:
-                  product.sku ??
-                  null,
-              }),
-            )
-            .filter(
-              (product) =>
-                product.id.length > 0,
-            )
 
         setProducts(
-          normalizedProducts,
+          data.products,
         )
 
-        // ------------------------------------------------------
-        // CATEGORIES
-        // ------------------------------------------------------
-
-        if (
-          db.objectStoreNames.contains(
-            'categories',
-          )
-        ) {
-          const categoryRows =
-            await db.getAll(
-              'categories',
-            )
-
-          const normalizedCategories: POSCategory[] =
-            (categoryRows || [])
-              .filter(
-                (category: any) =>
-                  category.is_active !==
-                  false,
-              )
-              .map(
-                (
-                  category: any,
-                ) => ({
-                  id: normalizeString(
-                    category.id,
-                  ),
-
-                  name: normalizeString(
-                    category.name ??
-                    category.category_name ??
-                    'Category',
-                  ),
-
-                  sort_order:
-                    normalizeNumber(
-                      category.sort_order ??
-                      0,
-                    ),
-
-                  is_active: true,
-                }),
-              )
-              .filter(
-                (category) =>
-                  category.id.length > 0,
-              )
-              .sort(
-                (a, b) =>
-                  (a.sort_order ?? 0) -
-                  (b.sort_order ?? 0),
-              )
-
-          setCategories(
-            normalizedCategories,
-          )
-        } else {
-          setCategories([])
-        }
-
-        // ------------------------------------------------------
-        // OPEN TABS
-        // ------------------------------------------------------
-
-        let openTabs: any[] = []
-
-        if (
-          db.objectStoreNames.contains(
-            'open_tabs',
-          )
-        ) {
-          openTabs =
-            await db.getAll(
-              'open_tabs',
-            )
-        }
-
-        // ------------------------------------------------------
-        // TABLES
-        // ------------------------------------------------------
-
-        let normalizedTables: POSTable[] =
-          []
-
-        if (
-          db.objectStoreNames.contains(
-            'tables',
-          )
-        ) {
-          const tableRows =
-            await db.getAll(
-              'tables',
-            )
-
-          normalizedTables =
-            (tableRows || [])
-              .map(
-                (
-                  table: any,
-                  index: number,
-                ) => {
-                  const id =
-                    normalizeString(
-                      table.id ??
-                      table.table_number ??
-                      `table_${index + 1}`,
-                    )
-
-                  const name =
-                    normalizeString(
-                      table.name ??
-                      table.table_number ??
-                      `Table ${index + 1}`,
-                    )
-
-                  const tableNumber =
-                    normalizeString(
-                      table.table_number ??
-                      name,
-                    )
-
-                  const hasOpenTab =
-                    openTabs.some(
-                      (tab: any) =>
-                        tabBelongsToTable(
-                          tab,
-                          {
-                            id,
-                            name,
-                            table_number:
-                              tableNumber,
-                            has_open_tab:
-                              false,
-                          },
-                        ),
-                    )
-
-                  return {
-                    id,
-                    name,
-                    table_number:
-                      tableNumber,
-                    has_open_tab:
-                      hasOpenTab,
-                  }
-                },
-              )
-              .filter(
-                (table) =>
-                  table.id.length > 0,
-              )
-        }
-
-        // ------------------------------------------------------
-        // FALLBACK TABLES
-        // ------------------------------------------------------
-
-        if (
-          normalizedTables.length ===
-          0
-        ) {
-          normalizedTables =
-            FALLBACK_TABLES.map(
-              (
-                name,
-                index,
-              ) => ({
-                id: `fallback_${index + 1
-                  }`,
-
-                name,
-
-                table_number: name,
-
-                has_open_tab:
-                  openTabs.some(
-                    (tab: any) =>
-                      normalizeString(
-                        tab?.table_number,
-                      ) === name,
-                  ),
-              }),
-            )
-        }
+        setCategories(
+          data.categories,
+        )
 
         setTables(
-          normalizedTables,
+          data.tables,
         )
       } catch (error) {
         console.error(
@@ -452,103 +222,45 @@ export default function SalesPage() {
   // ==========================================================
 
   const filteredProducts =
-    useMemo(() => {
-      const search =
-        productSearch
-          .trim()
-          .toLowerCase()
-
-      return products.filter(
-        (product) => {
-          const matchesCategory =
-            selectedCategoryId ===
-            'all' ||
-            String(
-              product.category_id ??
-              '',
-            ) ===
-            String(
-              selectedCategoryId,
-            )
-
-          const productName =
-            normalizeString(
-              product.name,
-            ).toLowerCase()
-
-          const productSku =
-            normalizeString(
-              product.sku,
-            ).toLowerCase()
-
-          const matchesSearch =
-            !search ||
-            productName.includes(
-              search,
-            ) ||
-            productSku.includes(
-              search,
-            )
-
-          return (
-            product.is_active !==
-            false &&
-            matchesCategory &&
-            matchesSearch
-          )
-        },
-      )
-    }, [
-      products,
-      selectedCategoryId,
-      productSearch,
-    ])
+    useMemo(
+      () =>
+        filterPOSProducts({
+          products,
+          categoryId:
+            selectedCategoryId,
+          search: productSearch,
+        }),
+      [
+        products,
+        selectedCategoryId,
+        productSearch,
+      ],
+    )
 
   // ==========================================================
   // CART CALCULATIONS
   // ==========================================================
 
-  const totalBill = useMemo(
-    () =>
-      cart.reduce(
-        (total, item) =>
-          total +
-          normalizeNumber(
-            item.price,
-          ) *
-          normalizeNumber(
-            item.quantity,
-          ),
-        0,
-      ),
-    [cart],
-  )
+  const totalBill =
+    useMemo(
+      () =>
+        calculateCartTotal(cart),
+      [cart],
+    )
 
-  const totalItems = useMemo(
-    () =>
-      cart.reduce(
-        (total, item) =>
-          total +
-          normalizeNumber(
-            item.quantity,
-          ),
-        0,
-      ),
-    [cart],
-  )
+  const totalItems =
+    useMemo(
+      () =>
+        calculateCartItemCount(cart),
+      [cart],
+    )
 
-  const cartQuantities = useMemo(() => {
-    const quantities = new Map<string, number>()
-
-    for (const item of cart) {
-      quantities.set(
-        item.id,
-        (quantities.get(item.id) ?? 0) + Number(item.quantity ?? 0),
-      )
-    }
-
-    return quantities
-  }, [cart])
+  const cartQuantities =
+    useMemo(
+      () =>
+        createCartQuantityMap(cart),
+      [cart],
+    )
 
   const cartHasItems =
     cart.length > 0
@@ -558,13 +270,10 @@ export default function SalesPage() {
   // ==========================================================
 
   /**
-   * IMPORTANT:
+   * Empty carts are always considered clean.
    *
-   * An empty cart is NEVER considered an
-   * unsaved table order.
-   *
-   * Therefore switching between empty tables
-   * will never show the save confirmation.
+   * This prevents unnecessary confirmation
+   * dialogs when switching between empty tables.
    */
   useEffect(() => {
     if (
@@ -590,31 +299,14 @@ export default function SalesPage() {
   ])
 
   /**
-   * Automatically close the bill when
-   * there are no items.
+   * Automatically close the bill
+   * when the cart becomes empty.
    */
   useEffect(() => {
     if (!cartHasItems) {
       setBillOpen(false)
     }
   }, [cartHasItems])
-
-  /**
-   * Save is possible only when:
-   *
-   * - a table is selected
-   * - there are items
-   * - there are actual unsaved changes
-   * - we are not already saving
-   */
-  const canSaveTableOrder =
-    Boolean(
-      selectedTable &&
-      cartHasItems &&
-      hasUnsavedChanges &&
-      !savingTab,
-    )
-
   // ==========================================================
   // LOAD EXISTING TABLE ORDER
   // ==========================================================
@@ -659,87 +351,24 @@ export default function SalesPage() {
                 ),
             )
 
-          // ----------------------------------------------------
-          // RESTORE SAVED ORDER
-          // ----------------------------------------------------
-
-          if (
-            existingTab &&
-            Array.isArray(
-              existingTab.items,
+          const restoredCart =
+            restoreCartFromTab(
+              existingTab,
             )
-          ) {
-            const restoredCart: POSCartItem[] =
-              existingTab.items
-                .map(
-                  (item: any) => ({
-                    id: normalizeString(
-                      item.product_id ??
-                      item.id,
-                    ),
 
-                    name: normalizeString(
-                      item.product_name ??
-                      item.name ??
-                      'Product',
-                    ),
+          setCart(
+            restoredCart,
+          )
 
-                    price:
-                      normalizeNumber(
-                        item.unit_price ??
-                        item.price ??
-                        0,
-                      ),
-
-                    quantity:
-                      normalizeNumber(
-                        item.quantity ??
-                        1,
-                      ),
-                  }),
-                )
-                .filter(
-                  (item) =>
-                    item.id.length >
-                    0 &&
-                    item.quantity >
-                    0,
-                )
-
-            setCart(
+          setSavedCartSnapshot(
+            serializeCart(
               restoredCart,
-            )
+            ),
+          )
 
-            /**
-             * The restored order is already
-             * saved, so this becomes the
-             * clean baseline.
-             */
-            setSavedCartSnapshot(
-              serializeCart(
-                restoredCart,
-              ),
-            )
-
-            setHasUnsavedChanges(
-              false,
-            )
-          } else {
-            /**
-             * EMPTY TABLE
-             *
-             * This is the important fix.
-             */
-            setCart([])
-
-            setSavedCartSnapshot(
-              EMPTY_CART_SNAPSHOT,
-            )
-
-            setHasUnsavedChanges(
-              false,
-            )
-          }
+          setHasUnsavedChanges(
+            false,
+          )
         } catch (error) {
           console.error(
             '[POS] Failed to load table tab:',
@@ -769,16 +398,13 @@ export default function SalesPage() {
       table: POSTable,
     ) => {
       /**
-       * IMPORTANT:
-       *
-       * Ask ONLY when the CURRENT table
-       * has actual unsaved items.
-       *
-       * Empty table => NO confirmation.
+       * Confirm only when the current
+       * table actually has unsaved items.
        */
       if (
         selectedTable &&
-        selectedTable.id !== table.id &&
+        selectedTable.id !==
+        table.id &&
         cartHasItems &&
         hasUnsavedChanges
       ) {
@@ -794,17 +420,8 @@ export default function SalesPage() {
         }
       }
 
-      /**
-       * Select the new table.
-       */
       setSelectedTable(table)
 
-      /**
-       * Restore its saved order.
-       *
-       * Empty table => empty cart +
-       * clean snapshot + no warning.
-       */
       await loadTableTab(table)
 
       setShowCheckout(false)
@@ -819,8 +436,8 @@ export default function SalesPage() {
   const handleWalkIn =
     () => {
       /**
-       * Ask only when there is an actual
-       * unsaved order on the current table.
+       * Confirm only when leaving
+       * a table with unsaved work.
        */
       if (
         selectedTable &&
@@ -860,49 +477,21 @@ export default function SalesPage() {
   // CART - ADD
   // ==========================================================
 
+  /**
+   * Keep the existing page-level function name.
+   *
+   * Actual cart logic lives in posUtils.ts.
+   */
   const addToCart =
     (
       product: POSProduct,
     ) => {
-      const price =
-        normalizeNumber(
-          product.retail_price,
-        )
-
       setCart(
-        (currentCart) => {
-          const existingItem =
-            currentCart.find(
-              (item) =>
-                item.id ===
-                product.id,
-            )
-
-          if (existingItem) {
-            return currentCart.map(
-              (item) =>
-                item.id ===
-                  product.id
-                  ? {
-                    ...item,
-                    quantity:
-                      item.quantity +
-                      1,
-                  }
-                  : item,
-            )
-          }
-
-          return [
-            ...currentCart,
-            {
-              id: product.id,
-              name: product.name,
-              price,
-              quantity: 1,
-            },
-          ]
-        },
+        (currentCart) =>
+          addToCartLogic(
+            currentCart,
+            product,
+          ),
       )
 
       if (selectedTable) {
@@ -916,6 +505,11 @@ export default function SalesPage() {
   // CART - INCREASE
   // ==========================================================
 
+  /**
+   * Keep the existing page-level API.
+   *
+   * Actual mutation logic lives in posUtils.ts.
+   */
   const increaseQuantity =
     (
       id: string,
@@ -927,16 +521,10 @@ export default function SalesPage() {
 
       setCart(
         (currentCart) =>
-          currentCart.map(
-            (item) =>
-              item.id === id
-                ? {
-                  ...item,
-                  quantity:
-                    item.quantity +
-                    amount,
-                }
-                : item,
+          increaseCartQuantity(
+            currentCart,
+            id,
+            amount,
           ),
       )
 
@@ -951,25 +539,17 @@ export default function SalesPage() {
   // CART - DECREASE
   // ==========================================================
 
+  /**
+   * Keep the existing page-level API.
+   */
   const decreaseQuantity =
     (id: string) => {
       setCart(
         (currentCart) =>
-          currentCart
-            .map((item) =>
-              item.id === id
-                ? {
-                  ...item,
-                  quantity:
-                    item.quantity -
-                    1,
-                }
-                : item,
-            )
-            .filter(
-              (item) =>
-                item.quantity > 0,
-            ),
+          decreaseCartQuantity(
+            currentCart,
+            id,
+          ),
       )
 
       if (selectedTable) {
@@ -979,17 +559,43 @@ export default function SalesPage() {
       }
     }
 
+  const setCartQuantity = (id: string, quantity: number) => {
+  const nextQuantity = Math.max(
+    0,
+    Math.floor(Number(quantity) || 0),
+  )
+
+  setCart((currentCart) =>
+    currentCart
+      .map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              quantity: nextQuantity,
+            }
+          : item,
+      )
+      .filter((item) => item.quantity > 0),
+  )
+
+  if (selectedTable) {
+    setHasUnsavedChanges(true)
+  }
+}
   // ==========================================================
   // CART - CLEAR ITEM
   // ==========================================================
 
+  /**
+   * Keep the existing page-level API.
+   */
   const clearCartItem =
     (id: string) => {
       setCart(
         (currentCart) =>
-          currentCart.filter(
-            (item) =>
-              item.id !== id,
+          removeCartItem(
+            currentCart,
+            id,
           ),
       )
 
@@ -1180,189 +786,80 @@ export default function SalesPage() {
   // SAVE TABLE ORDER
   // ==========================================================
 
-  const handleSaveTab =
-    async () => {
-      if (!selectedTable) {
-        return
-      }
-
-      if (!cartHasItems) {
-        return
-      }
-
-      if (!hasUnsavedChanges) {
-        return
-      }
-
-      if (savingTab) {
-        return
-      }
-
-      setSavingTab(true)
-
-      try {
-        const db =
-          await getDB()
-
-        if (
-          !db.objectStoreNames.contains(
-            'open_tabs',
-          )
-        ) {
-          throw new Error(
-            'IndexedDB open_tabs store is not available.',
-          )
-        }
-
-        const items =
-          cart
-            .map(
-              (item) => ({
-                product_id:
-                  normalizeString(
-                    item.id,
-                  ),
-
-                product_name:
-                  normalizeString(
-                    item.name,
-                  ),
-
-                quantity:
-                  normalizeNumber(
-                    item.quantity,
-                  ),
-
-                unit_price:
-                  normalizeNumber(
-                    item.price,
-                  ),
-              }),
-            )
-            .filter(
-              (item) =>
-                item.product_id.length >
-                0 &&
-                item.quantity > 0,
-            )
-
-        if (items.length === 0) {
-          throw new Error(
-            'Cannot save an empty table order.',
-          )
-        }
-
-        const allTabs =
-          await db.getAll(
-            'open_tabs',
-          )
-
-        const existingTab =
-          allTabs.find(
-            (tab: any) =>
-              tabBelongsToTable(
-                tab,
-                selectedTable,
-              ),
-          )
-
-        const now =
-          new Date().toISOString()
-
-        /**
-         * Reuse existing tab ID.
-         *
-         * Prevents duplicate open_tabs.
-         */
-        const tabId =
-          existingTab?.id ??
-          selectedTable.id
-
-        const tab = {
-          id: tabId,
-
-          table_id:
-            selectedTable.id,
-
-          table_number:
-            getTableNumber(
-              selectedTable,
-            ),
-
-          items,
-
-          total_accumulated:
-            Number(totalBill),
-
-          updated_at: now,
-        }
-
-        await db.put(
-          'open_tabs',
-          tab,
-        )
-
-        /**
-         * Saved cart becomes the new
-         * clean baseline.
-         */
-        const newSnapshot =
-          serializeCart(cart)
-
-        setSavedCartSnapshot(
-          newSnapshot,
-        )
-
-        setHasUnsavedChanges(
-          false,
-        )
-
-        await loadPOSData()
-
-        /**
-         * Start a fresh order after saving.
-         *
-         * The saved order remains in
-         * open_tabs.
-         */
-        setCart([])
-
-        setSelectedTable(null)
-
-        setSavedCartSnapshot(
-          EMPTY_CART_SNAPSHOT,
-        )
-
-        setHasUnsavedChanges(
-          false,
-        )
-
-        setShowCheckout(false)
-
-        setBillOpen(false)
-
-        setManualTip('')
-
-        window.alert(
-          isAm
-            ? 'ትዕዛዙ በጠረጴዛው ላይ ተቀምጧል!'
-            : 'Order saved to table successfully.',
-        )
-      } catch (error) {
-        console.error(
-          '[POS] Failed to save table tab:',
-          error,
-        )
-
-        window.alert(
-          isAm
-            ? 'ትዕዛዙን ማስቀመጥ አልተቻለም'
-            : 'Failed to save table order.',
-        )
-      } finally {
-        setSavingTab(false)
-      }
+  const handleSaveTab = async () => {
+    if (!selectedTable) {
+      return
     }
+
+    if (!cartHasItems) {
+      return
+    }
+
+    if (!hasUnsavedChanges) {
+      return
+    }
+
+    if (savingTab) {
+      return
+    }
+
+    setSavingTab(true)
+
+    try {
+      const db = await getDB()
+
+      const result =
+        await saveTableTab({
+          db,
+          table: selectedTable,
+          cart,
+          totalBill,
+        })
+
+      setSavedCartSnapshot(
+        result.snapshot,
+      )
+
+      setHasUnsavedChanges(false)
+
+      await loadPOSData()
+
+      // Start a fresh order.
+      // The saved order remains in IndexedDB.
+      setCart([])
+
+      setSelectedTable(null)
+
+      setSavedCartSnapshot(
+        EMPTY_CART_SNAPSHOT,
+      )
+
+      setHasUnsavedChanges(false)
+
+      setShowCheckout(false)
+      setBillOpen(false)
+      setManualTip('')
+
+      window.alert(
+        isAm
+          ? 'ትዕዛዙ በጠረጴዛው ላይ ተቀምጧል!'
+          : 'Order saved to table successfully.',
+      )
+    } catch (error) {
+      console.error(
+        '[POS] Failed to save table tab:',
+        error,
+      )
+
+      window.alert(
+        isAm
+          ? 'ትዕዛዙን ማስቀመጥ አልተቻለም'
+          : 'Failed to save table order.',
+      )
+    } finally {
+      setSavingTab(false)
+    }
+  }
 
   // ==========================================================
   // CHECKOUT / FINALIZE SALE
@@ -1386,63 +883,29 @@ export default function SalesPage() {
         const sale =
           await finalizeSale({
             splitPayments,
-
             manualTip,
-
             activeShift,
-
             selectedTable:
               paidTable,
-
             cart,
-
             totalBill,
           })
 
         // Sale successfully saved locally.
-        // Notify inventory immediately.
-        notifyInventoryUpdated(sale.localId)
+        notifyInventoryUpdated(
+          sale.localId,
+        )
 
-        // ------------------------------------------------------
-        // REMOVE OPEN TABLE AFTER SUCCESSFUL PAYMENT
-        // ------------------------------------------------------
-
+        // Remove the saved table order
+        // after successful payment.
         if (paidTable) {
           const db =
             await getDB()
 
-          if (
-            db.objectStoreNames.contains(
-              'open_tabs',
-            )
-          ) {
-            const allTabs =
-              await db.getAll(
-                'open_tabs',
-              )
-
-            const matchingTabs =
-              allTabs.filter(
-                (tab: any) =>
-                  tabBelongsToTable(
-                    tab,
-                    paidTable,
-                  ),
-              )
-
-            for (
-              const tab of matchingTabs
-            ) {
-              if (
-                tab?.id != null
-              ) {
-                await db.delete(
-                  'open_tabs',
-                  tab.id,
-                )
-              }
-            }
-          }
+          await removeOpenTabsForTable(
+            db,
+            paidTable,
+          )
         }
 
         await loadPOSData()
@@ -1455,14 +918,10 @@ export default function SalesPage() {
           EMPTY_CART_SNAPSHOT,
         )
 
-        setHasUnsavedChanges(
-          false,
-        )
+        setHasUnsavedChanges(false)
 
         setShowCheckout(false)
-
         setManualTip('')
-
         setBillOpen(false)
 
         router.push(
@@ -1488,13 +947,6 @@ export default function SalesPage() {
 
   const DirectSaveOrderButton =
     () => {
-      /**
-       * Completely hidden unless:
-       *
-       * - table selected
-       * - cart has items
-       * - actual unsaved changes exist
-       */
       if (
         !selectedTable ||
         !cartHasItems ||
@@ -1624,7 +1076,9 @@ export default function SalesPage() {
                   value={
                     cashFloat
                   }
-                  onChange={(event) =>
+                  onChange={(
+                    event,
+                  ) =>
                     setCashFloat(
                       event.target
                         .value,
@@ -1664,14 +1118,16 @@ export default function SalesPage() {
       </div>
     )
   }
-
   // ==========================================================
   // MAIN POS
   // ==========================================================
 
   return (
-    <div className="flex h-dvh w-full flex-col overflow-hidden bg-cream-100 font-sans text-coffee-700">
-      {/* Header */}
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-cream-100 font-sans text-coffee-700">
+      {/* ======================================================
+        POS HEADER
+    ====================================================== */}
+
       <div className="relative z-50 shrink-0">
         <POSHeader
           isAm={isAm}
@@ -1689,8 +1145,8 @@ export default function SalesPage() {
         />
 
         {/* ====================================================
-            BILL DROPDOWN
-        ==================================================== */}
+          CURRENT BILL / ORDER DROPDOWN
+      ==================================================== */}
 
         {billOpen && cartHasItems && (
           <POSBillDropdown
@@ -1712,145 +1168,136 @@ export default function SalesPage() {
         )}
       </div>
 
-
       {/* ======================================================
-          CONTENT
-      ====================================================== */}
+        POS CONTENT
+    ====================================================== */}
 
       <div className="min-h-0 flex-1 overflow-hidden">
         {!showCheckout ? (
-          <main className="h-full overflow-y-auto subtle-scrollbar">
-            <div className="mx-auto flex min-h-full w-full max-w-[1600px] flex-col px-2 pb-24 pt-2 sm:px-3 sm:pb-28 sm:pt-3 lg:px-4 lg:pb-6 lg:pt-4">
-
+          <main className="h-full min-h-0 overflow-y-auto overflow-x-hidden subtle-scrollbar">
+            <div
+              className="
+    mx-auto
+    flex
+    w-full
+    max-w-[1600px]
+    flex-col
+    px-2
+    pb-[calc(5rem+env(safe-area-inset-bottom))]
+    pt-1.5
+    sm:px-3
+    sm:pb-[calc(5rem+env(safe-area-inset-bottom))]
+    sm:pt-2
+    lg:px-4
+    lg:pb-6
+    lg:pt-2.5
+  "
+            >
               {/* ==================================================
-                  TABLE WORKSPACE
-              ================================================== */}
+                TABLE + ORDER ACTIONS
+            ================================================== */}
 
-              <section className="shrink-0 overflow-hidden rounded-2xl border border-cream-300 bg-cream-50 shadow-sm">
-                <div className="flex items-center gap-2 border-b border-cream-200 px-3 py-2 sm:px-4">
-                  <div className="min-w-0">
-                    <p className="truncate text-[10px] font-black uppercase tracking-[0.08em] text-coffee-400">
-                      {isAm
-                        ? 'የሽያጭ ቦታ'
-                        : 'Sales Area'}
-                    </p>
-
-                    <p className="truncate text-xs font-black text-coffee-800">
-                      {selectedTable
-                        ? selectedTable.name
-                        : isAm
-                          ? 'ቀጥታ ሽያጭ'
-                          : 'Walk-in Sale'}
-                    </p>
-                  </div>
-
-                  <div className="ml-auto h-6 w-px bg-cream-300" />
+              <section
+                className="
+                sticky
+                top-0
+                z-30
+                shrink-0
+                overflow-hidden
+                rounded-lg
+                border
+                border-cream-300
+                bg-cream-50/95
+                shadow-sm
+                backdrop-blur-md
+              "
+              >
+                <div
+                  className="
+                  flex
+                  min-h-10
+                  items-center
+                  gap-1.5
+                  px-1.5
+                  py-1
+                  sm:px-2
+                "
+                >
+                  {/* TABLE SELECTOR */}
 
                   <div className="min-w-0 flex-1 overflow-hidden">
                     <POSTableSelector
                       tables={tables}
-                      selectedTable={
-                        selectedTable
-                      }
+                      selectedTable={selectedTable}
                       isAm={isAm}
-                      onSelectTable={(
-                        table,
-                      ) => {
-                        void handleSelectTable(
-                          table,
-                        )
+                      onSelectTable={(table) => {
+                        void handleSelectTable(table)
                       }}
-                      onWalkIn={
-                        handleWalkIn
-                      }
+                      onWalkIn={handleWalkIn}
                     />
                   </div>
-                </div>
-              </section>
 
-              {/* ==================================================
-                  CURRENT ORDER STATUS
-              ================================================== */}
+                  {/* ORDER ACTIONS */}
 
-              {cartHasItems && (
-                <div className="sticky top-2 z-20 mx-1 mt-2 animate-in slide-in-from-top-2 duration-300 sm:mx-0 sm:mt-3">
-                  <div className="flex items-center gap-2 rounded-2xl border border-berbere-200 bg-berbere-50/95 p-2 shadow-lg backdrop-blur-md sm:p-2.5">
-
-                    <div className="flex min-w-0 flex-1 items-center gap-2">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-berbere-100">
-                        <ShoppingCart className="h-4 w-4 text-berbere-600" />
-                      </div>
-
-                      <div className="min-w-0">
-                        <p className="truncate text-[10px] font-black text-berbere-600">
-                          {selectedTable
-                            ? selectedTable.name
-                            : isAm
-                              ? 'ቀጥታ ሽያጭ'
-                              : 'Walk-in'}
-                        </p>
-
-                        <p className="text-xs font-black text-coffee-900">
-                          {totalItems} ·{' '}
-                          {totalBill.toLocaleString()}{' '}
-                          ETB
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex shrink-0 items-center gap-1.5">
-                      {selectedTable &&
-                        hasUnsavedChanges && (
-                          <DirectSaveOrderButton />
-                        )}
+                  {cartHasItems && (
+                    <div className="flex shrink-0 items-center gap-1">
+                      {selectedTable && hasUnsavedChanges && (
+                        <DirectSaveOrderButton />
+                      )}
 
                       <button
                         type="button"
                         onClick={() => {
-                          setShowCheckout(
-                            true,
-                          )
-
-                          setBillOpen(
-                            false,
-                          )
+                          setShowCheckout(true)
+                          setBillOpen(false)
                         }}
                         className="
-                            flex
-                            h-10
-                            items-center
-                            gap-1.5
-                            rounded-xl
-                            bg-berbere-500
-                            px-3
-                            text-xs
-                            font-black
-                            text-white
-                            shadow-md
-                            transition-all
-                            duration-200
-                            hover:bg-berbere-600
-                            active:scale-95
-                          "
+                        flex
+                        h-8
+                        shrink-0
+                        items-center
+                        justify-center
+                        gap-1
+                        rounded-lg
+                        bg-berbere-500
+                        px-2.5
+                        text-[11px]
+                        font-black
+                        text-white
+                        shadow-sm
+                        transition
+                        hover:bg-berbere-600
+                        active:scale-95
+                      "
                       >
-                        <Coins className="h-4 w-4" />
+                        <Coins className="h-3.5 w-3.5" />
 
                         <span>
-                          {isAm
-                            ? 'ክፍያ'
-                            : 'Pay'}
+                          {isAm ? 'ክፍያ' : 'Pay'}
                         </span>
                       </button>
                     </div>
-                  </div>
+                  )}
                 </div>
-              )}
+              </section>
 
               {/* ==================================================
-                  SEARCH + CATEGORY CONTROLS
-              ================================================== */}
+                SEARCH + CATEGORIES
+            ================================================== */}
 
-              <section className="mt-2 shrink-0 overflow-hidden rounded-2xl border border-cream-300 bg-cream-50 shadow-sm sm:mt-3">
+              <section
+                className="
+                mt-1.5
+                shrink-0
+                overflow-hidden
+                rounded-lg
+                border
+                border-cream-300
+                bg-cream-50
+                shadow-sm
+                sm:mt-2
+              "
+              >
                 <POSSearch
                   value={productSearch}
                   onChange={setProductSearch}
@@ -1858,68 +1305,56 @@ export default function SalesPage() {
                   isAm={isAm}
                 />
 
-                <div className="border-t border-cream-200 px-2.5 py-2 sm:px-3">
+                <div
+                  className="
+                  border-t
+                  border-cream-200
+                  px-1.5
+                  py-1
+                  sm:px-2
+                "
+                >
                   <POSCategories
-                    categories={
-                      categories
-                    }
-                    selectedCategoryId={
-                      selectedCategoryId
-                    }
-                    onSelectCategory={
-                      setSelectedCategoryId
-                    }
+                    categories={categories}
+                    selectedCategoryId={selectedCategoryId}
+                    onSelectCategory={setSelectedCategoryId}
                     isAm={isAm}
                   />
                 </div>
               </section>
 
               {/* ==================================================
-                  PRODUCTS
-              ================================================== */}
+                PRODUCTS
+            ================================================== */}
 
-              <section className="mt-2 min-h-[420px] flex-1 sm:mt-3">
-                <div className="mb-2 flex items-center justify-between px-1">
+              <section className="mt-2 shrink-0 sm:mt-2.5">
+                <div className="mb-1.5 flex items-center px-1">
                   <div>
                     <h2 className="text-sm font-black text-coffee-900 sm:text-base">
-                      {isAm
-                        ? 'ምርቶች'
-                        : 'Products'}
+                      {isAm ? 'ምርቶች' : 'Products'}
                     </h2>
 
                     <p className="text-[10px] font-semibold text-coffee-400">
-                      {
-                        filteredProducts.length
-                      }{' '}
+                      {filteredProducts.length}{' '}
                       {isAm
                         ? 'ምርቶች'
-                        : filteredProducts.length ===
-                          1
+                        : filteredProducts.length === 1
                           ? 'product'
                           : 'products'}
                     </p>
                   </div>
-
-                  {cartHasItems && (
-                    <div className="rounded-full bg-berbere-50 px-2.5 py-1 text-[10px] font-black text-berbere-600">
-                      {totalItems}{' '}
-                      {isAm
-                        ? 'እቃ'
-                        : 'items'}{' '}
-                      ·{' '}
-                      {totalBill.toLocaleString()}{' '}
-                      ETB
-                    </div>
-                  )}
                 </div>
 
-                <div className="rounded-xl">
-                  <POSProductGrid
-                    products={filteredProducts}
-                    cartQuantities={cartQuantities}
-                    onAddProduct={addToCart}
-                    isAm={isAm}
-                  />
+                <div className="w-full">
+                 <POSProductGrid
+  products={filteredProducts}
+  cartQuantities={cartQuantities}
+  onAddProduct={addToCart}
+  onIncreaseQuantity={(id) => increaseQuantity(id)}
+  onDecreaseQuantity={(id) => decreaseQuantity(id)}
+  onSetQuantity={setCartQuantity}
+  isAm={isAm}
+/>
                 </div>
               </section>
             </div>
@@ -1929,30 +1364,16 @@ export default function SalesPage() {
           // CHECKOUT
           // ====================================================
 
-          <main className="h-full overflow-y-auto subtle-scrollbar">
+          <main className="h-full min-h-0 overflow-y-auto overflow-x-hidden subtle-scrollbar">
             <div className="mx-auto w-full max-w-2xl p-3 sm:p-4 lg:p-6">
               <POSCheckout
                 cart={cart}
-                totalBill={
-                  totalBill
-                }
-                selectedTable={
-                  selectedTable
-                }
-                manualTip={
-                  manualTip
-                }
-                onManualTipChange={
-                  setManualTip
-                }
-                onBack={() =>
-                  setShowCheckout(
-                    false,
-                  )
-                }
-                onConfirmPayment={
-                  handleFinalizeSale
-                }
+                totalBill={totalBill}
+                selectedTable={selectedTable}
+                manualTip={manualTip}
+                onManualTipChange={setManualTip}
+                onBack={() => setShowCheckout(false)}
+                onConfirmPayment={handleFinalizeSale}
                 isAm={isAm}
               />
             </div>

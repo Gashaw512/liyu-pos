@@ -1,12 +1,19 @@
 'use client'
 
-import { Plus, ShoppingCart } from 'lucide-react'
+import {
+  Minus,
+  Plus,
+  ShoppingCart,
+} from 'lucide-react'
 import type { POSProduct } from './types'
 
 interface POSProductGridProps {
   products: POSProduct[]
   cartQuantities: Map<string, number>
   onAddProduct: (product: POSProduct) => void
+  onIncreaseQuantity: (id: string) => void
+  onDecreaseQuantity: (id: string) => void
+  onSetQuantity: (id: string, quantity: number) => void
   isAm: boolean
 }
 
@@ -14,6 +21,9 @@ export default function POSProductGrid({
   products,
   cartQuantities,
   onAddProduct,
+  onIncreaseQuantity,
+  onDecreaseQuantity,
+  onSetQuantity,
   isAm,
 }: POSProductGridProps) {
   if (products.length === 0) {
@@ -46,30 +56,21 @@ export default function POSProductGrid({
         const price = Number(product.retail_price ?? 0)
 
         return (
-          <button
+          <div
             key={product.id}
-            type="button"
-            onClick={() => onAddProduct(product)}
-            aria-label={
-              isAdded
-                ? `${product.name}, quantity ${quantity}`
-                : `Add ${product.name}`
-            }
             className={`
               group
               relative
               flex
-              min-h-[78px]
+              min-h-[88px]
               flex-col
               justify-between
               overflow-hidden
               rounded-xl
               border
               p-2
-              text-left
               transition-all
               duration-100
-              active:scale-[0.97]
               ${
                 isAdded
                   ? 'border-berbere-400 bg-berbere-50 shadow-sm'
@@ -77,35 +78,40 @@ export default function POSProductGrid({
               }
             `}
           >
-            {/* Quantity badge */}
-            {isAdded && (
-              <span className="absolute right-1.5 top-1.5 flex h-6 min-w-6 items-center justify-center rounded-full bg-berbere-600 px-1.5 text-[10px] font-black text-white shadow-sm">
-                {quantity}
-              </span>
-            )}
-
             {/* Product name */}
-            <div className="min-w-0 pr-7">
-              <p
-                className={`
-                  line-clamp-2
-                  text-[11px]
-                  font-black
-                  leading-[1.25]
-                  ${
-                    isAdded
-                      ? 'text-berbere-800'
-                      : 'text-coffee-700'
-                  }
-                `}
-              >
-                {product.name}
-              </p>
-            </div>
+            <button
+              type="button"
+              onClick={() => onAddProduct(product)}
+              aria-label={
+                isAdded
+                  ? `${product.name}, quantity ${quantity}`
+                  : `Add ${product.name}`
+              }
+              className="min-w-0 flex-1 text-left active:scale-[0.98]"
+            >
+              <div className="min-w-0 pr-1">
+                <p
+                  className={`
+                    line-clamp-2
+                    text-[11px]
+                    font-black
+                    leading-[1.25]
+                    ${
+                      isAdded
+                        ? 'text-berbere-800'
+                        : 'text-coffee-700'
+                    }
+                  `}
+                >
+                  {product.name}
+                </p>
+              </div>
+            </button>
 
-            {/* Bottom */}
-            <div className="mt-2 flex items-center justify-between gap-1">
-              <div className="min-w-0">
+            {/* Price + quantity controls */}
+            <div className="mt-2 flex items-center justify-between gap-1.5">
+              {/* Price */}
+              <div className="min-w-0 shrink">
                 <span
                   className={`
                     font-mono
@@ -126,26 +132,174 @@ export default function POSProductGrid({
                 </span>
               </div>
 
-              <span
-                className={`
-                  flex
-                  h-6
-                  w-6
-                  shrink-0
-                  items-center
-                  justify-center
-                  rounded-full
-                  ${
-                    isAdded
-                      ? 'bg-white text-berbere-600'
-                      : 'bg-cream-100 text-coffee-500 group-hover:bg-berbere-100 group-hover:text-berbere-600'
+              {!isAdded ? (
+                /* Add button */
+                <button
+                  type="button"
+                  onClick={() => onAddProduct(product)}
+                  aria-label={
+                    isAm
+                      ? `${product.name} ወደ ትዕዛዝ ጨምር`
+                      : `Add ${product.name}`
                   }
-                `}
-              >
-                <Plus className="h-3.5 w-3.5" strokeWidth={3} />
-              </span>
+                  className="
+                    flex
+                    h-7
+                    w-7
+                    shrink-0
+                    items-center
+                    justify-center
+                    rounded-lg
+                    bg-cream-100
+                    text-coffee-500
+                    transition-all
+                    hover:bg-berbere-100
+                    hover:text-berbere-600
+                    active:scale-90
+                  "
+                >
+                  <Plus
+                    className="h-3.5 w-3.5"
+                    strokeWidth={3}
+                  />
+                </button>
+              ) : (
+                /* Quantity controls */
+                <div
+                  className="
+                    flex
+                    h-7
+                    shrink-0
+                    items-center
+                    gap-0.5
+                    rounded-lg
+                    bg-white
+                    p-0.5
+                    shadow-sm
+                    ring-1
+                    ring-berbere-100
+                  "
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  {/* Decrease */}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onDecreaseQuantity(product.id)
+                    }
+                    aria-label={
+                      isAm
+                        ? 'ብዛት ቀንስ'
+                        : 'Decrease quantity'
+                    }
+                    className="
+                      flex
+                      h-6
+                      w-6
+                      items-center
+                      justify-center
+                      rounded-md
+                      text-coffee-500
+                      transition-colors
+                      hover:bg-cream-100
+                      hover:text-berbere-600
+                      active:scale-90
+                    "
+                  >
+                    <Minus
+                      className="h-3 w-3"
+                      strokeWidth={3}
+                    />
+                  </button>
+
+                  {/* Exact quantity input */}
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    value={quantity}
+                    onChange={(event) => {
+                      const value = Number(
+                        event.target.value,
+                      )
+
+                      if (
+                        event.target.value === ''
+                      ) {
+                        return
+                      }
+
+                      onSetQuantity(
+                        product.id,
+                        value,
+                      )
+                    }}
+                    onClick={(event) =>
+                      event.stopPropagation()
+                    }
+                    onFocus={(event) =>
+                      event.currentTarget.select()
+                    }
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.currentTarget.blur()
+                      }
+                    }}
+                    aria-label={
+                      isAm
+                        ? `${product.name} ብዛት`
+                        : `${product.name} quantity`
+                    }
+                    className="
+                      h-6
+                      w-9
+                      appearance-none
+                      border-0
+                      bg-transparent
+                      p-0
+                      text-center
+                      font-mono
+                      text-[11px]
+                      font-black
+                      text-berbere-700
+                      outline-none
+                      focus:ring-0
+                    "
+                  />
+
+                  {/* Increase */}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onIncreaseQuantity(product.id)
+                    }
+                    aria-label={
+                      isAm
+                        ? 'ብዛት ጨምር'
+                        : 'Increase quantity'
+                    }
+                    className="
+                      flex
+                      h-6
+                      w-6
+                      items-center
+                      justify-center
+                      rounded-md
+                      text-berbere-600
+                      transition-colors
+                      hover:bg-berbere-50
+                      active:scale-90
+                    "
+                  >
+                    <Plus
+                      className="h-3 w-3"
+                      strokeWidth={3}
+                    />
+                  </button>
+                </div>
+              )}
             </div>
-          </button>
+          </div>
         )
       })}
     </div>

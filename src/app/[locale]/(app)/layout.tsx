@@ -4,6 +4,7 @@ import { ReactNode } from 'react'
 import { redirect } from 'next/navigation'
 import { createClient } from '../../../lib/supabase/server'
 import AppShell from '../../../components/layout/AppShell'
+import { ToastProvider } from '../../../components/ui/ToastProvider'
 
 interface AuthenticatedGroupLayoutProps {
   children: ReactNode
@@ -78,6 +79,7 @@ export default async function AuthenticatedGroupLayout({
   // ============================================================
 
   return (
+     <ToastProvider>
     <AppShell
       locale={locale}
       role={profile.role}
@@ -86,5 +88,6 @@ export default async function AuthenticatedGroupLayout({
     >
       {children}
     </AppShell>
+   </ToastProvider>
   )
 }

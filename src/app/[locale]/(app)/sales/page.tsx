@@ -560,28 +560,28 @@ export default function SalesPage() {
     }
 
   const setCartQuantity = (id: string, quantity: number) => {
-  const nextQuantity = Math.max(
-    0,
-    Math.floor(Number(quantity) || 0),
-  )
+    const nextQuantity = Math.max(
+      0,
+      Math.floor(Number(quantity) || 0),
+    )
 
-  setCart((currentCart) =>
-    currentCart
-      .map((item) =>
-        item.id === id
-          ? {
+    setCart((currentCart) =>
+      currentCart
+        .map((item) =>
+          item.id === id
+            ? {
               ...item,
               quantity: nextQuantity,
             }
-          : item,
-      )
-      .filter((item) => item.quantity > 0),
-  )
+            : item,
+        )
+        .filter((item) => item.quantity > 0),
+    )
 
-  if (selectedTable) {
-    setHasUnsavedChanges(true)
+    if (selectedTable) {
+      setHasUnsavedChanges(true)
+    }
   }
-}
   // ==========================================================
   // CART - CLEAR ITEM
   // ==========================================================
@@ -1346,15 +1346,15 @@ export default function SalesPage() {
                 </div>
 
                 <div className="w-full">
-                 <POSProductGrid
-  products={filteredProducts}
-  cartQuantities={cartQuantities}
-  onAddProduct={addToCart}
-  onIncreaseQuantity={(id) => increaseQuantity(id)}
-  onDecreaseQuantity={(id) => decreaseQuantity(id)}
-  onSetQuantity={setCartQuantity}
-  isAm={isAm}
-/>
+                  <POSProductGrid
+                    products={filteredProducts}
+                    cartQuantities={cartQuantities}
+                    onAddProduct={addToCart}
+                    onIncreaseQuantity={(id) => increaseQuantity(id)}
+                    onDecreaseQuantity={(id) => decreaseQuantity(id)}
+                    onSetQuantity={setCartQuantity}
+                    isAm={isAm}
+                  />
                 </div>
               </section>
             </div>

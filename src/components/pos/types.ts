@@ -1,3 +1,10 @@
+export type POSInventoryStatus =
+  | 'in_stock'
+  | 'low_stock'
+  | 'out_of_stock'
+  | 'not_tracked'
+  | 'inventory_issue'
+
 export interface POSProduct {
   id: string
   name: string
@@ -6,6 +13,13 @@ export interface POSProduct {
   image_url?: string | null
   is_active?: boolean
   sku?: string | null
+
+  is_inventory_tracked?: boolean | null
+
+  inventory_id?: string | null
+  inventory_quantity?: number | null
+  low_stock_alert?: number | null
+  inventory_status?: POSInventoryStatus
 }
 
 export interface POSCategory {

@@ -12,6 +12,7 @@ import { Coins, Loader2, Save } from 'lucide-react'
 import { getDB } from '../../../../lib/offline/db'
 import type { Shift } from '../../../../types/database/operations'
 import { finalizeSale } from '@/lib/offline/saleService'
+import { useBusinessContext } from '@/lib/auth/useBusinessContext'
 
 import POSHeader from '../../../../components/pos/POSHeader'
 import POSBillDropdown from '@/components/pos/POSBillDropdown'
@@ -48,8 +49,7 @@ import {
   tabBelongsToTable,
   loadPOSDataFromDB,
   restoreCartFromTab,
-  saveTableTab,
-  removeOpenTabsForTable,
+  saveTableTab
 } from '@/components/pos/posUtils'
 
 // ============================================================
@@ -63,6 +63,14 @@ export default function SalesPage() {
   const isAm = locale === 'am'
 
   const { toast } = useToast()
+
+  const {
+    businessId,
+    branchId,
+    userId,
+    loading: businessContextLoading,
+    error: businessContextError,
+  } = useBusinessContext()
 
   // ==========================================================
   // STATE
@@ -116,29 +124,193 @@ export default function SalesPage() {
       onConfirm: null,
     })
 
+  // =========================================================
+  // LEGACY SHIFT REPAIR
+  // =========================================================
+
+  const normalizeActiveShiftContext = useCallback(
+    async (
+      shift: Shift | null,
+    ): Promise<Shift | null> => {
+      if (!shift) {
+        return null
+      }
+
+      /*
+       * We only repair the old placeholder identities
+       * created by the previous POS implementation.
+       *
+       * We do NOT blindly overwrite legitimate shift
+       * business/branch/cashier IDs.
+       */
+      const hasLegacyBusinessId =
+        shift.business_id ===
+        'biz_active'
+
+      const hasLegacyBranchId =
+        shift.branch_id ===
+        'branch_main'
+
+      const hasLegacyCashierId =
+        shift.cashier_id ===
+        'cashier_default'
+
+      if (
+        !hasLegacyBusinessId &&
+        !hasLegacyBranchId &&
+        !hasLegacyCashierId
+      ) {
+        return shift
+      }
+
+      if (
+        !businessId ||
+        !branchId ||
+        !userId
+      ) {
+        console.warn(
+          '[POS] Cannot repair legacy active shift yet. Business context is incomplete.',
+          {
+            businessId,
+            branchId,
+            userId,
+          },
+        )
+
+        return shift
+      }
+
+      const repairedShift: Shift = {
+        ...shift,
+
+        business_id:
+          businessId,
+
+        branch_id:
+          branchId,
+
+        cashier_id:
+          userId,
+
+        opened_by:
+          shift.opened_by ===
+            'cashier_default'
+            ? userId
+            : shift.opened_by,
+
+        updated_at:
+          new Date().toISOString(),
+      }
+
+      const db = await getDB()
+
+      await db.put(
+        'active_shift',
+        repairedShift,
+      )
+
+      console.log(
+        '[POS] Repaired legacy active shift context:',
+        {
+          businessId:
+            repairedShift.business_id,
+
+          branchId:
+            repairedShift.branch_id,
+
+          cashierId:
+            repairedShift.cashier_id,
+        },
+      )
+
+      return repairedShift
+    },
+    [
+      businessId,
+      branchId,
+      userId,
+    ],
+  )
+
   // ==========================================================
   // LOAD POS DATA
   // ==========================================================
+  const loadPOSData = useCallback(
+    async () => {
+      try {
+        const db = await getDB()
 
-  const loadPOSData = useCallback(async () => {
-    try {
-      const db = await getDB()
-      const data = await loadPOSDataFromDB(db)
+        let currentShift =
+          (await db.get(
+            'active_shift',
+            'current',
+          )) || null
 
-      setActiveShift(data.activeShift)
-      setProducts(data.products)
-      setCategories(data.categories)
-      setTables(data.tables)
-    } catch (error) {
-      console.error('[POS] Failed to load POS data:', error)
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+        /*
+         * Repair the legacy shift before loading
+         * products/inventory.
+         *
+         * This is critical because loadPOSDataFromDB()
+         * uses active_shift.branch_id to match inventory.
+         */
+        if (currentShift) {
+          const repairedShift =
+            await normalizeActiveShiftContext(
+              currentShift,
+            )
+
+          currentShift =
+            repairedShift
+        }
+
+        const data =
+          await loadPOSDataFromDB(db)
+
+        /*
+         * loadPOSDataFromDB() reads active_shift itself,
+         * so after repairing it, its returned value should
+         * contain the corrected branch_id.
+         */
+        setActiveShift(
+          data.activeShift ??
+          currentShift,
+        )
+
+        setProducts(
+          data.products,
+        )
+
+        setCategories(
+          data.categories,
+        )
+
+        setTables(
+          data.tables,
+        )
+      } catch (error) {
+        console.error(
+          '[POS] Failed to load POS data:',
+          error,
+        )
+      } finally {
+        setLoading(false)
+      }
+    },
+    [
+      normalizeActiveShiftContext,
+    ],
+  )
 
   useEffect(() => {
+    if (businessContextLoading) {
+      return
+    }
+
     void loadPOSData()
-  }, [loadPOSData])
+  }, [
+    businessContextLoading,
+    loadPOSData,
+  ])
 
   // ==========================================================
   // DERIVED DATA
@@ -388,44 +560,157 @@ export default function SalesPage() {
   const handleOpenShift = async () => {
     if (openingShift) return
 
+    if (
+      businessContextLoading
+    ) {
+      toast(
+        isAm
+          ? 'የንግድ መረጃ እየተጫነ ነው። እባክዎ ይጠብቁ።'
+          : 'Business context is still loading. Please wait.',
+        'info',
+      )
+
+      return
+    }
+
+    if (
+      !businessId ||
+      !branchId ||
+      !userId
+    ) {
+      console.error(
+        '[POS] Cannot open shift. Missing business context:',
+        {
+          businessId,
+          branchId,
+          userId,
+          businessContextError,
+        },
+      )
+
+      toast(
+        isAm
+          ? 'የንግድ፣ ቅርንጫፍ ወይም ተጠቃሚ መረጃ አልተገኘም።'
+          : 'Business, branch, or cashier context is unavailable.',
+        'error',
+      )
+
+      return
+    }
+
     setOpeningShift(true)
 
     try {
       const db = await getDB()
+
       const openingCash =
-        Number.parseFloat(cashFloat) || 0
-      const now = new Date().toISOString()
+        Number.parseFloat(
+          cashFloat,
+        ) || 0
+
+      const now =
+        new Date().toISOString()
 
       const newShift: Shift = {
         id: 'current',
-        business_id: 'biz_active',
-        branch_id: 'branch_main',
-        cashier_id: 'cashier_default',
-        opened_by: 'cashier_default',
-        closed_by: null,
+
+        business_id:
+          businessId,
+
+        branch_id:
+          branchId,
+
+        cashier_id:
+          userId,
+
+        opened_by:
+          userId,
+
+        closed_by:
+          null,
+
         shift_label:
           `Shift-${new Date().toLocaleDateString()}` as Shift['shift_label'],
-        opened_at: now,
-        closed_at: null,
-        opening_cash: openingCash,
-        opening_float: openingCash,
-        expected_cash: openingCash,
-        actual_cash_reported: null,
-        cash_discrepancy: null,
-        total_sales: 0,
-        total_transactions: 0,
-        status: 'open' as Shift['status'],
-        is_first_shift: false,
-        notes: null,
-        created_at: now,
-        updated_at: now,
-        closing_float: null,
-        actual_cash: null,
-        difference: null,
+
+        opened_at:
+          now,
+
+        closed_at:
+          null,
+
+        opening_cash:
+          openingCash,
+
+        opening_float:
+          openingCash,
+
+        expected_cash:
+          openingCash,
+
+        actual_cash_reported:
+          null,
+
+        cash_discrepancy:
+          null,
+
+        total_sales:
+          0,
+
+        total_transactions:
+          0,
+
+        status:
+          'open' as Shift['status'],
+
+        is_first_shift:
+          false,
+
+        notes:
+          null,
+
+        created_at:
+          now,
+
+        updated_at:
+          now,
+
+        closing_float:
+          null,
+
+        actual_cash:
+          null,
+
+        difference:
+          null,
       }
 
-      await db.put('active_shift', newShift)
-      setActiveShift(newShift)
+      await db.put(
+        'active_shift',
+        newShift,
+      )
+
+      setActiveShift(
+        newShift,
+      )
+
+      /*
+       * Log the exact context used by the POS.
+       * Very useful while testing the branch/inventory
+       * relationship.
+       */
+      console.log(
+        '[POS] Shift opened with business context:',
+        {
+          businessId:
+            newShift.business_id,
+
+          branchId:
+            newShift.branch_id,
+
+          cashierId:
+            newShift.cashier_id,
+        },
+      )
 
       toast(
         isAm
@@ -446,7 +731,9 @@ export default function SalesPage() {
         'error',
       )
     } finally {
-      setOpeningShift(false)
+      setOpeningShift(
+        false,
+      )
     }
   }
 
@@ -574,33 +861,30 @@ export default function SalesPage() {
   // FINALIZE SALE
   // ==========================================================
 
+  // ==========================================================
+  // FINALIZE SALE
+  // ==========================================================
+
+  // ==========================================================
+  // FINALIZE SALE
+  // ==========================================================
+
   const handleFinalizeSale = async (
     splitPayments: PaymentSplit,
   ) => {
     if (!activeShift || cart.length === 0) return
 
     try {
-      const paidTable = selectedTable
-
       const sale = await finalizeSale({
         splitPayments,
         manualTip,
         activeShift,
-        selectedTable: paidTable,
+        selectedTable,
         cart,
         totalBill,
       })
 
       notifyInventoryUpdated(sale.localId)
-
-      if (paidTable) {
-        const db = await getDB()
-
-        await removeOpenTabsForTable(
-          db,
-          paidTable,
-        )
-      }
 
       await loadPOSData()
 
@@ -612,12 +896,33 @@ export default function SalesPage() {
       setManualTip('')
       setBillOpen(false)
 
+      // ======================================================
+      // SALE SUCCESS
+      // ======================================================
+
       toast(
         isAm
           ? 'ሽያጩ በተሳካ ሁኔታ ተቀምጧል'
           : 'Sale completed successfully.',
         'success',
       )
+
+      // ======================================================
+      // INVENTORY WARNING
+      // ======================================================
+
+      if (sale.inventoryWarnings.length > 0) {
+        toast(
+          isAm
+            ? 'ሽያጩ ተቀምጧል፣ ለአንዳንድ ምርቶች የኢንቬንተሪ ማስጠንቀቂያ አለ።'
+            : 'Sale saved, but inventory warnings were detected for some products.',
+          'warning',
+        )
+      }
+
+      // ======================================================
+      // OPEN SALE RECEIPT
+      // ======================================================
 
       router.push(
         `/${locale}/sales/${sale.localId}`,
@@ -630,7 +935,7 @@ export default function SalesPage() {
 
       toast(
         isAm
-          ? 'ሽያጩን ማስቀመጥ አልተቻለም'
+          ? 'ሽያጩን ማስቀመጥ አልተሳካም'
           : 'Unable to save the sale locally.',
         'error',
       )
@@ -759,8 +1064,16 @@ export default function SalesPage() {
 
             <button
               type="button"
-              onClick={handleOpenShift}
-              disabled={openingShift}
+              onClick={() => {
+                void handleOpenShift()
+              }}
+              disabled={
+                openingShift ||
+                businessContextLoading ||
+                !businessId ||
+                !branchId ||
+                !userId
+              }
               className="
                 flex h-14 w-full items-center justify-center gap-2
                 rounded-2xl bg-berbere-500 text-white shadow-card
@@ -768,11 +1081,22 @@ export default function SalesPage() {
                 disabled:opacity-50
               "
             >
-              {openingShift ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
+              {openingShift ||
+                businessContextLoading ? (
+                <>
+                  <Loader2 className="h-5 w-5 animate-spin" />
+
+                  <span className="font-black">
+                    {isAm
+                      ? 'በመጫን ላይ...'
+                      : 'Loading...'}
+                  </span>
+                </>
               ) : (
                 <span className="font-black">
-                  {isAm ? 'ፈረቃ ክፈት' : 'Open Shift'}
+                  {isAm
+                    ? 'ፈረቃ ክፈት'
+                    : 'Open Shift'}
                 </span>
               )}
             </button>

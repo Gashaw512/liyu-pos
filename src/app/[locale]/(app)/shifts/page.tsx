@@ -1,3 +1,4 @@
+// src/app/%5Blocale%5D/%28app%29/shifts/page.tsx
 'use client'
 
 import { useState, useEffect } from 'react'

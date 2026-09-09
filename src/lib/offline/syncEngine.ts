@@ -79,7 +79,7 @@ export class SyncEngine {
   // PUBLIC ENTRY POINT
   // =========================================================
 
- public async syncAll(): Promise<void> {
+public async syncAll(): Promise<void> {
   if (this.isSyncing) {
     console.log(
       '[SYNC] Synchronization already running.'
@@ -110,28 +110,37 @@ export class SyncEngine {
       '[SYNC] Starting synchronization...'
     )
 
-    // -----------------------------------------------
+    // ========================================================
     // 1. PUSH OUTBOUND TRANSACTIONS
-    // -----------------------------------------------
+    // ========================================================
 
-    await this.syncOutboundTransactions()
+    const outboundSuccess =
+      await this.syncOutboundTransactions()
 
-    // -----------------------------------------------
-    // 2. PULL SERVER SNAPSHOT
-    // -----------------------------------------------
+    // ========================================================
+    // 2. NEVER PULL AFTER A FAILED OUTBOUND SYNC
+    // ========================================================
 
-    // Pull independently.
-    //
-    // If some outbound records failed, they remain
-    // safely in IndexedDB and will retry later.
-    //
-    // Successfully synced records have already been
-    // removed from their queues.
+    if (!outboundSuccess) {
+      console.warn(
+        '[SYNC] Outbound synchronization was not fully successful.'
+      )
+
+      console.warn(
+        '[SYNC] Server snapshot will NOT replace local inventory.'
+      )
+
+      return
+    }
+
+    // ========================================================
+    // 3. PULL SERVER SNAPSHOT
+    // ========================================================
 
     await this.pullLatestProducts()
 
     console.log(
-      '[SYNC] Synchronization finished.'
+      '[SYNC] Synchronization finished successfully.'
     )
   } catch (error) {
     console.error(

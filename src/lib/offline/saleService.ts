@@ -1,3 +1,5 @@
+// src/lib/offline/saleService.ts
+
 import { getDB } from './db'
 
 export interface FinalizeSaleInput {
@@ -32,204 +34,655 @@ export interface FinalizeSaleInput {
   totalBill: number
 }
 
+/* =========================================================
+ * INVENTORY WARNING
+ * ========================================================= */
+
+export interface InventoryWarning {
+  productId: string
+  message: string
+  currentQuantity?: number | null
+  requestedQuantity?: number
+  resultingQuantity?: number | null
+  type:
+    | 'not_tracked'
+    | 'negative_stock'
+    | 'insufficient_stock'
+}
+
+/* =========================================================
+ * FINALIZE SALE
+ * ========================================================= */
+
 export async function finalizeSale(
-  input: FinalizeSaleInput
+  input: FinalizeSaleInput,
 ) {
   const db = await getDB()
 
-  const localId = crypto.randomUUID()
-  const parsedTip = parseFloat(input.manualTip) || 0
+  if (!input.cart.length) {
+    throw new Error(
+      'Cannot finalize an empty cart.',
+    )
+  }
 
-  const subtotal = Number(input.totalBill)
-  const totalAmount = subtotal + parsedTip
+  const localId =
+    crypto.randomUUID()
 
-  /*
-   * 1. Build the local sale.
+  const parsedTip =
+    Number(input.manualTip) || 0
+
+  const subtotal =
+    Number(input.totalBill) || 0
+
+  const totalAmount =
+    subtotal + parsedTip
+
+  /* =======================================================
+   * INVENTORY WARNINGS
    *
-   * This is the source of truth for the offline-first checkout.
-   */
+   * These are non-fatal warnings.
+   *
+   * A missing inventory record, zero stock, or negative
+   * stock does NOT prevent the sale from being completed.
+   * ======================================================= */
+
+  const inventoryWarnings:
+    InventoryWarning[] = []
+
+  /* =======================================================
+   * 1. BUILD LOCAL SALE
+   * ======================================================= */
+
   const pendingSale = {
     localId,
 
-    createdAt: new Date().toISOString(),
+    createdAt:
+      new Date().toISOString(),
 
     retryCount: 0,
-    syncStatus: 'pending' as const,
 
-    offline_id: localId,
+    syncStatus:
+      'pending' as const,
+
+    offline_id:
+      localId,
 
     receipt_number:
-      `REC-${Date.now().toString().substring(6)}`,
+      `REC-${Date.now()
+        .toString()
+        .substring(6)}`,
 
     shift_id:
-      input.activeShift?.real_database_id ?? null,
+      input.activeShift
+        ?.real_database_id ??
+      null,
 
     branch_id:
-      input.activeShift?.branch_id ?? 'branch_main',
+      input.activeShift
+        ?.branch_id ??
+      'branch_main',
 
     cashier_id:
-      input.activeShift?.cashier_id ?? 'cashier_default',
+      input.activeShift
+        ?.cashier_id ??
+      'cashier_default',
 
     business_id:
-      input.activeShift?.business_id ?? 'biz_active',
+      input.activeShift
+        ?.business_id ??
+      'biz_active',
 
     table_number:
-      input.selectedTable?.name ?? 'Walk-in',
+      input.selectedTable?.name ??
+      'Walk-in',
 
-    total_amount: totalAmount,
+    total_amount:
+      totalAmount,
+
     subtotal,
 
-    tip_amount: parsedTip,
+    tip_amount:
+      parsedTip,
 
-    discount_amount: 0,
-    tax_amount: 0,
+    discount_amount:
+      0,
 
-    status: 'completed' as const,
-    payment_status: 'paid' as const,
+    tax_amount:
+      0,
 
-    items: input.cart.map(item => ({
-      product_id: item.id,
-      product_name: item.name,
+    status:
+      'completed' as const,
 
-      quantity: item.quantity,
+    payment_status:
+      'paid' as const,
 
-      unit_price: item.price,
+    items:
+      input.cart.map(
+        (item) => ({
+          product_id:
+            item.id,
 
-      /*
-       * Keep this because your reporting layer
-       * already expects cost_price/gross_profit.
-       *
-       * Later this should come from the actual
-       * inventory/product cost instead of 70%.
-       */
-      cost_price: item.price * 0.7,
+          product_name:
+            item.name,
 
-      total_price:
-        item.price * item.quantity,
-    })),
+          quantity:
+            Number(item.quantity),
+
+          unit_price:
+            Number(item.price),
+
+          /*
+           * Keep the existing fallback until
+           * real product cost is available locally.
+           */
+          cost_price:
+            Number(item.price) *
+            0.7,
+
+          total_price:
+            Number(item.price) *
+            Number(item.quantity),
+        }),
+      ),
 
     payments: [
       {
-        method: 'cash',
-        amount: Number(input.splitPayments.cash) || 0,
-      },
+        method:
+          'cash',
 
-      {
-        method: 'telebirr',
         amount:
-          Number(input.splitPayments.telebirr) || 0,
+          Number(
+            input.splitPayments.cash,
+          ) || 0,
       },
 
       {
         method:
-          input.splitPayments.selected_bank ||
+          'telebirr',
+
+        amount:
+          Number(
+            input.splitPayments
+              .telebirr,
+          ) || 0,
+      },
+
+      {
+        method:
+          input.splitPayments
+            .selected_bank ||
           'bank_transfer',
 
         amount:
-          Number(input.splitPayments.bank_transfer) || 0,
+          Number(
+            input.splitPayments
+              .bank_transfer,
+          ) || 0,
       },
-    ].filter(payment => payment.amount > 0),
+    ].filter(
+      (payment) =>
+        payment.amount > 0,
+    ),
   }
 
-  /*
-   * 2. IMPORTANT:
+  /* =======================================================
+   * 2. COMBINE QUANTITIES BY PRODUCT
    *
-   * Save the sale FIRST.
+   * Example:
    *
-   * The receipt can therefore be displayed even
-   * when there is no internet connection.
-   */
-  await db.put(
-    'pending_sales',
-    pendingSale as any
-  )
+   * Coffee x2
+   * Coffee x3
+   *
+   * becomes:
+   *
+   * Coffee x5
+   * ======================================================= */
 
-  /*
-   * 3. Deduct local inventory.
-   *
-   * This makes the next sale see the correct
-   * remaining quantity while offline.
-   */
-  await deductLocalStock(
-    db,
-    input.cart
-  )
+  const quantityByProduct =
+    new Map<string, number>()
 
-  /*
-   * 4. Close the table/tab locally.
-   */
-  if (
-    input.selectedTable &&
-    db.objectStoreNames.contains('open_tabs')
+  for (
+    const item of input.cart
   ) {
-    await db.delete(
-      'open_tabs',
-      input.selectedTable.id
+    const productId =
+      String(item.id).trim()
+
+    const quantity =
+      Number(item.quantity)
+
+    if (!productId) {
+      throw new Error(
+        'Sale contains a product without an ID.',
+      )
+    }
+
+    if (
+      !Number.isFinite(
+        quantity,
+      ) ||
+      quantity <= 0
+    ) {
+      throw new Error(
+        `Invalid quantity for product ${productId}.`,
+      )
+    }
+
+    quantityByProduct.set(
+      productId,
+      (
+        quantityByProduct.get(
+          productId,
+        ) ?? 0
+      ) + quantity,
     )
   }
 
-  /*
-   * 5. Return the locally-created sale.
-   */
-  return pendingSale
-}
+  /* =======================================================
+   * 3. INDEXEDDB TRANSACTION
+   *
+   * Sale + inventory + open tab are committed together.
+   * ======================================================= */
 
+  const hasOpenTabs =
+    input.selectedTable &&
+    db.objectStoreNames.contains(
+      'open_tabs',
+    )
 
-/**
- * Deduct stock from the local IndexedDB inventory.
- *
- * Example:
- *
- * Current stock = 10
- * Sold = 2
- * New local stock = 8
- */
-async function deductLocalStock(
-  db: Awaited<ReturnType<typeof getDB>>,
-  cart: FinalizeSaleInput['cart']
-) {
-  const tx = db.transaction(
-    'inventory',
-    'readwrite'
-  )
+  const stores:
+    | [
+        'pending_sales',
+        'inventory',
+      ]
+    | [
+        'pending_sales',
+        'inventory',
+        'open_tabs',
+      ] =
+    hasOpenTabs
+      ? [
+          'pending_sales',
+          'inventory',
+          'open_tabs',
+        ]
+      : [
+          'pending_sales',
+          'inventory',
+        ]
 
-  const store = tx.objectStore('inventory')
+  const tx =
+    db.transaction(
+      stores,
+      'readwrite',
+    )
 
-  for (const item of cart) {
+  /* =======================================================
+   * 4. SAVE SALE
+   * ======================================================= */
+
+  await tx
+    .objectStore(
+      'pending_sales',
+    )
+    .put(
+      pendingSale as never,
+    )
+
+  /* =======================================================
+   * 5. INVENTORY
+   * ======================================================= */
+
+  const inventoryStore =
+    tx.objectStore(
+      'inventory',
+    )
+
+  const inventoryIndex =
+    inventoryStore.index(
+      'by-product',
+    )
+
+  for (
+    const [
+      productId,
+      quantityToDeduct,
+    ] of quantityByProduct
+  ) {
     const inventoryRecords =
-      await store
-        .index('by-product')
-        .getAll(item.id)
-
-    if (!inventoryRecords.length) {
-      console.warn(
-        `[Sale] No local inventory found for product ${item.id}`
+      await inventoryIndex.getAll(
+        productId,
       )
+
+    /* =====================================================
+     * NO INVENTORY RECORD
+     *
+     * Product still sells.
+     * Nothing can be deducted locally.
+     * ===================================================== */
+
+    if (
+      !inventoryRecords.length
+    ) {
+      inventoryWarnings.push({
+        productId,
+
+        message:
+          `No local inventory found for product ${productId}. Local stock was not deducted.`,
+
+        currentQuantity:
+          null,
+
+        requestedQuantity:
+          quantityToDeduct,
+
+        resultingQuantity:
+          null,
+
+        type:
+          'not_tracked',
+      })
 
       continue
     }
 
-    /*
-     * Usually there should be one inventory
-     * record for the current branch.
+    /* =====================================================
+     * ACTIVE CONTEXT
+     * ===================================================== */
+
+    const activeBusinessId =
+      normalizeId(
+        input.activeShift
+          ?.business_id,
+      )
+
+    const activeBranchId =
+      normalizeId(
+        input.activeShift
+          ?.branch_id,
+      )
+
+    let inventory:
+      | (typeof inventoryRecords)[number]
+      | undefined
+
+    /* =====================================================
+     * BUSINESS + BRANCH
+     * ===================================================== */
+
+    if (
+      activeBusinessId &&
+      activeBranchId
+    ) {
+      inventory =
+        inventoryRecords.find(
+          (record) =>
+            normalizeId(
+              record.business_id,
+            ) ===
+              activeBusinessId &&
+            normalizeId(
+              record.branch_id,
+            ) ===
+              activeBranchId,
+        )
+    }
+
+    /* =====================================================
+     * BRANCH ONLY
+     * ===================================================== */
+
+    if (
+      !inventory &&
+      activeBranchId
+    ) {
+      const branchMatches =
+        inventoryRecords.filter(
+          (record) =>
+            normalizeId(
+              record.branch_id,
+            ) ===
+            activeBranchId,
+        )
+
+      if (
+        branchMatches.length ===
+        1
+      ) {
+        inventory =
+          branchMatches[0]
+      }
+
+      if (
+        branchMatches.length >
+        1
+      ) {
+        throw new Error(
+          `Multiple inventory records found for product ${productId} in branch ${activeBranchId}.`,
+        )
+      }
+    }
+
+    /* =====================================================
+     * BUSINESS ONLY
+     * ===================================================== */
+
+    if (
+      !inventory &&
+      activeBusinessId
+    ) {
+      const businessMatches =
+        inventoryRecords.filter(
+          (record) =>
+            normalizeId(
+              record.business_id,
+            ) ===
+            activeBusinessId,
+        )
+
+      if (
+        businessMatches.length ===
+        1
+      ) {
+        inventory =
+          businessMatches[0]
+      }
+
+      if (
+        businessMatches.length >
+        1
+      ) {
+        throw new Error(
+          `Multiple inventory records found for product ${productId} in business ${activeBusinessId}.`,
+        )
+      }
+    }
+
+    /* =====================================================
+     * SINGLE SAFE FALLBACK
+     * ===================================================== */
+
+    if (
+      !inventory &&
+      inventoryRecords.length ===
+        1
+    ) {
+      inventory =
+        inventoryRecords[0]
+    }
+
+    /* =====================================================
+     * AMBIGUOUS INVENTORY
      *
-     * For now use the first local record.
-     */
-    const inventory = inventoryRecords[0]
+     * We refuse to modify an unknown record.
+     * ===================================================== */
+
+    if (!inventory) {
+      throw new Error(
+        `Unable to determine the correct inventory record for product ${productId}.`,
+      )
+    }
+
+    /* =====================================================
+     * CURRENT QUANTITY
+     * ===================================================== */
 
     const currentQuantity =
       Number(
-        (inventory as any).quantity ?? 0
+        inventory.quantity,
       )
 
-    const newQuantity =
-      currentQuantity - Number(item.quantity)
+    if (
+      !Number.isFinite(
+        currentQuantity,
+      )
+    ) {
+      throw new Error(
+        `Invalid local inventory quantity for product ${productId}.`,
+      )
+    }
 
-    ;(inventory as any).quantity =
+    /* =====================================================
+     * CALCULATE NEW QUANTITY
+     *
+     * IMPORTANT:
+     *
+     * Negative inventory is allowed.
+     *
+     * We do NOT block the sale when:
+     *
+     *   currentQuantity - quantityToDeduct < 0
+     *
+     * Example:
+     *
+     *   Current = 1
+     *   Sale    = 2
+     *   Result  = -1
+     *
+     * The sale succeeds and inventory becomes -1.
+     * ===================================================== */
+
+    const newQuantity =
+      currentQuantity -
+      quantityToDeduct
+
+    /* =====================================================
+     * NEGATIVE STOCK WARNING
+     * ===================================================== */
+
+    if (
+      currentQuantity < 0
+    ) {
+      inventoryWarnings.push({
+        productId,
+
+        message:
+          `Local inventory for product ${productId} is already negative (${currentQuantity}). Stock will become ${newQuantity}.`,
+
+        currentQuantity,
+
+        requestedQuantity:
+          quantityToDeduct,
+
+        resultingQuantity:
+          newQuantity,
+
+        type:
+          'negative_stock',
+      })
+    } else if (
+      newQuantity < 0
+    ) {
+      inventoryWarnings.push({
+        productId,
+
+        message:
+          `Sale exceeds local stock for product ${productId}. Available: ${currentQuantity}, requested: ${quantityToDeduct}. Stock will become ${newQuantity}.`,
+
+        currentQuantity,
+
+        requestedQuantity:
+          quantityToDeduct,
+
+        resultingQuantity:
+          newQuantity,
+
+        type:
+          'insufficient_stock',
+      })
+    }
+
+    /* =====================================================
+     * UPDATE INVENTORY
+     *
+     * Negative values are intentionally allowed.
+     * ===================================================== */
+
+    inventory.quantity =
       newQuantity
 
-    await store.put(inventory)
+    inventory.updated_at =
+      new Date().toISOString()
+
+    await inventoryStore.put(
+      inventory,
+    )
   }
 
+  /* =======================================================
+   * 6. CLOSE TABLE TAB
+   * ======================================================= */
+
+  if (
+    input.selectedTable &&
+    db.objectStoreNames.contains(
+      'open_tabs',
+    )
+  ) {
+    await tx
+      .objectStore(
+        'open_tabs',
+      )
+      .delete(
+        input.selectedTable.id,
+      )
+  }
+
+  /* =======================================================
+   * 7. COMMIT
+   * ======================================================= */
+
   await tx.done
+
+  /* =======================================================
+   * 8. RETURN SALE
+   * ======================================================= */
+
+  return {
+    ...pendingSale,
+
+    inventoryWarnings,
+  }
+}
+
+/* =========================================================
+ * NORMALIZE IDS
+ * ========================================================= */
+
+function normalizeId(
+  value:
+    | string
+    | null
+    | undefined,
+): string | null {
+  if (
+    value === null ||
+    value === undefined
+  ) {
+    return null
+  }
+
+  const normalized =
+    String(value).trim()
+
+  return normalized || null
 }

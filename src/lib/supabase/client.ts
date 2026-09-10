@@ -1,48 +1,69 @@
+
+// src/lib/supabase/client.ts
+
 'use client'
 
 import { createBrowserClient } from '@supabase/ssr'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-// Fail-safe protection boundary to alert engineering if variables are missing
+// ------------------------------------------------------------
+// Environment validation
+// ------------------------------------------------------------
+
 if (!supabaseUrl || !supabaseAnonKey) {
   console.warn(
-    "⚠️ Liyu POS Warning: Missing Supabase Environment Variables. Check your .env.local file configuration."
+    'Liyu POS Warning: Missing Supabase environment variables. ' +
+    'Check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.'
   )
 }
 
-// Internal thread tracker ensuring singular context initialization per active window execution instance
+// ------------------------------------------------------------
+// Singleton browser client
+// ------------------------------------------------------------
+
 let clientInstance: ReturnType<typeof createBrowserClient> | null = null
 
 /**
- * Enterprise Singleton Browser Client Factory
- * Safely constructs client instances dynamically to prevent cross-user token contamination,
- * while efficiently reusing active WebSockets for sub-millisecond local mutations.
+ * Returns the shared Supabase browser client.
+ *
+ * The client is created once per browser execution context and
+ * reused for all client-side queries.
  */
 export function getSupabaseBrowserClient() {
-  // Ensure instantiation strictly happens inside browser/client operational environments
-  if (typeof window === 'undefined') {
-    return createBrowserClient(supabaseUrl, supabaseAnonKey)
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error(
+      'Supabase environment variables are missing. ' +
+      'Check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.'
+    )
   }
 
-  // If a client already exists for this unique browser session window, reuse it
   if (!clientInstance) {
-    clientInstance = createBrowserClient(supabaseUrl, supabaseAnonKey)
+    clientInstance = createBrowserClient(
+      supabaseUrl,
+      supabaseAnonKey
+    )
   }
 
   return clientInstance
 }
 
 /**
- * Clean Reset Gateway
- * CRITICAL FOR POS ENVIRONMENTS: Invoke this function during your logout function routine 
- * to completely wipe out stale cache tokens when cashiers swap shifts.
+ * Clears the local client reference.
+ *
+ * Use this after logout if your authentication flow explicitly
+ * requires rebuilding the client.
  */
 export function resetSupabaseBrowserClient() {
   clientInstance = null
 }
 
-// Maintain full backward compatibility matching your existing function structural imports
+// ------------------------------------------------------------
+// Backward-compatible default export
+// ------------------------------------------------------------
+
 const createClient = () => getSupabaseBrowserClient()
+
 export default createClient
+

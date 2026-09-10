@@ -1,40 +1,59 @@
-
 -- ============================================================
 -- 015_fix_categories_rls.sql
 -- ============================================================
 -- CATEGORY RLS HARDENING
 -- ============================================================
 --
--- Purpose:
---   Replace the old broad FOR ALL policy with explicit
---   operation-specific policies.
+-- PURPOSE
+--   Replace the old broad category FOR ALL policy with
+--   explicit operation-specific policies.
 --
--- Security model:
---   - All access is restricted to the authenticated user's
---     business.
---   - Owner and manager can create categories.
---   - Owner and manager can update categories.
---   - Owner can hard-delete categories.
---   - Cashiers can view categories but cannot create, update,
---     or delete them.
+-- SECURITY MODEL
+--   SELECT:
+--     All authenticated users can see active categories
+--     belonging to their own business.
 --
--- Important:
---   Categories use SOFT DELETE.
+--   INSERT:
+--     Owner and manager only.
+--
+--   UPDATE:
+--     Owner and manager only.
+--
+--   DELETE:
+--     Owner only for a physical DELETE.
+--
+-- SOFT DELETE
+--   The application does NOT physically delete categories.
 --
 --   deleteCategory() performs:
 --
 --       UPDATE categories
---       SET deleted_at = timestamp,
---           is_active = false
+--       SET
+--         deleted_at = timestamp,
+--         is_active = false
 --
---   Therefore the UPDATE policy's WITH CHECK must NOT require
---   deleted_at IS NULL.
+--   Therefore:
+--
+--     USING must require deleted_at IS NULL
+--     WITH CHECK must NOT require deleted_at IS NULL
+--
+--   Otherwise PostgreSQL would reject the resulting row because
+--   the UPDATE intentionally changes deleted_at from NULL to a
+--   timestamp.
+--
+-- TENANT ISOLATION
+--   Every write operation validates:
+--
+--       business_id = public.auth_business_id()
+--
+--   Therefore a client cannot move/create a category in
+--   another business.
 --
 -- ============================================================
 
 
 -- ============================================================
--- 1. ENABLE ROW LEVEL SECURITY
+-- 1. ENABLE RLS
 -- ============================================================
 
 ALTER TABLE public.categories
@@ -42,20 +61,22 @@ ENABLE ROW LEVEL SECURITY;
 
 
 -- ============================================================
--- 2. REMOVE OLD / PREVIOUS CATEGORY POLICIES
+-- 2. REMOVE OLD CATEGORY POLICIES
 -- ============================================================
 --
--- Remove the original broad FOR ALL policy.
+-- The original schema used:
 --
+--   "Category access isolation"
+--   FOR ALL
+--
+-- Remove it completely.
+--
+-- Also remove previous versions of the explicit policies so
+-- this migration can safely recreate them.
+-- ============================================================
 
 DROP POLICY IF EXISTS "Category access isolation"
 ON public.categories;
-
-
---
--- Remove previous hardened policies so this migration is
--- safely re-runnable.
---
 
 DROP POLICY IF EXISTS "categories_tenant_select"
 ON public.categories;
@@ -69,23 +90,34 @@ ON public.categories;
 DROP POLICY IF EXISTS "categories_tenant_delete"
 ON public.categories;
 
+DROP POLICY IF EXISTS "categories_owner_soft_delete"
+ON public.categories;
+
 
 -- ============================================================
 -- 3. SELECT POLICY
 -- ============================================================
 --
--- Owner, manager and cashier can view categories.
+-- Who can read categories?
 --
--- Requirements:
---   1. Category belongs to authenticated business.
---   2. Category is not soft-deleted.
+-- Any authenticated user belonging to the same business.
 --
--- This keeps deleted categories invisible to the normal
--- application.
+-- Deleted categories remain in the database but are hidden
+-- from the normal application.
+--
+-- Roles:
+--   owner
+--   manager
+--   cashier
+--   inventory_clerk
+--
+-- All authenticated users can SELECT active categories as
+-- long as they belong to the same business.
 -- ============================================================
 
 CREATE POLICY "categories_tenant_select"
 ON public.categories
+AS PERMISSIVE
 FOR SELECT
 TO authenticated
 USING (
@@ -100,21 +132,27 @@ USING (
 --
 -- Only owner and manager can create categories.
 --
--- The business_id supplied by the client must match the
--- authenticated user's business.
+-- The submitted business_id MUST equal the authenticated
+-- user's business.
 --
--- This prevents a user from creating a category inside
--- another business by supplying another business_id.
+-- This prevents:
+--
+--   INSERT business_id = another_business
+--
 -- ============================================================
 
 CREATE POLICY "categories_tenant_insert"
 ON public.categories
+AS PERMISSIVE
 FOR INSERT
 TO authenticated
 WITH CHECK (
   business_id = public.auth_business_id()
   AND public.auth_has_any_role(
-    ARRAY['owner', 'manager']::VARCHAR(30)[]
+    ARRAY[
+      'owner',
+      'manager'
+    ]::varchar(30)[]
   )
 );
 
@@ -123,98 +161,135 @@ WITH CHECK (
 -- 5. UPDATE POLICY
 -- ============================================================
 --
--- Owner and manager can update categories belonging to their
--- own business.
+-- Owner and manager can update active categories belonging
+-- to their own business.
 --
--- USING:
---   Controls which EXISTING rows can be updated.
+-- ------------------------------------------------------------
+-- USING
+-- ------------------------------------------------------------
 --
---   The existing category must:
---     - belong to the authenticated business
---     - currently not be soft-deleted
+-- USING determines which EXISTING rows may be updated.
 --
--- WITH CHECK:
---   Controls the RESULTING row after the update.
+-- Therefore the OLD row must:
 --
---   IMPORTANT:
---   We intentionally DO NOT check:
+--   1. Belong to the authenticated business
+--   2. Not already be soft-deleted
+--   3. Be operated on by owner/manager
 --
---       deleted_at IS NULL
+-- ------------------------------------------------------------
+-- WITH CHECK
+-- ------------------------------------------------------------
 --
---   here.
+-- WITH CHECK determines whether the RESULTING row is allowed.
 --
---   This allows a legitimate soft delete:
+-- IMPORTANT:
 --
---       deleted_at = NULL
---            ->
---       deleted_at = timestamp
+-- DO NOT add:
 --
---   while still preventing the category from being moved
---   into another business.
+--   deleted_at IS NULL
+--
+-- to WITH CHECK.
+--
+-- A soft delete intentionally changes:
+--
+--   OLD:
+--     deleted_at = NULL
+--
+--   NEW:
+--     deleted_at = timestamp
+--
+-- Therefore requiring deleted_at IS NULL in WITH CHECK would
+-- make the soft delete impossible.
+--
+-- We DO continue checking business_id so a user cannot move
+-- a category into another business.
 -- ============================================================
 
 CREATE POLICY "categories_tenant_update"
 ON public.categories
+AS PERMISSIVE
 FOR UPDATE
 TO authenticated
 USING (
   business_id = public.auth_business_id()
   AND deleted_at IS NULL
   AND public.auth_has_any_role(
-    ARRAY['owner', 'manager']::VARCHAR(30)[]
+    ARRAY[
+      'owner',
+      'manager'
+    ]::varchar(30)[]
   )
 )
 WITH CHECK (
   business_id = public.auth_business_id()
   AND public.auth_has_any_role(
-    ARRAY['owner', 'manager']::VARCHAR(30)[]
+    ARRAY[
+      'owner',
+      'manager'
+    ]::varchar(30)[]
   )
 );
 
 
 -- ============================================================
--- 6. DELETE POLICY
+-- 6. PHYSICAL DELETE POLICY
 -- ============================================================
 --
--- Hard DELETE is owner-only.
+-- The application currently uses SOFT DELETE through UPDATE.
 --
--- The current application does NOT perform a hard DELETE.
--- deleteCategory() performs a soft DELETE through UPDATE.
+-- This policy exists only to protect the table if somebody
+-- eventually attempts:
 --
--- This policy protects the table if a future operation
--- attempts a real DELETE.
+--   DELETE FROM categories ...
 --
--- Only an owner can hard-delete an active category belonging
--- to their own business.
+-- Only an owner may physically delete an active category
+-- belonging to their own business.
+--
 -- ============================================================
 
 CREATE POLICY "categories_tenant_delete"
 ON public.categories
+AS PERMISSIVE
 FOR DELETE
 TO authenticated
 USING (
   business_id = public.auth_business_id()
   AND deleted_at IS NULL
   AND public.auth_has_any_role(
-    ARRAY['owner']::VARCHAR(30)[]
+    ARRAY[
+      'owner'
+    ]::varchar(30)[]
   )
 );
 
 
 -- ============================================================
--- 7. DOCUMENT THE SECURITY MODEL
+-- 7. DOCUMENT SECURITY MODEL
 -- ============================================================
 
 COMMENT ON TABLE public.categories IS
-'Business-scoped POS categories. Active categories are tenant-isolated. Owner and manager may create and update categories. Soft deletion is performed through UPDATE by setting deleted_at and is_active=false. Hard DELETE is owner-only.';
+'Business-scoped POS categories. Active categories are tenant-isolated. Authenticated users can read active categories in their own business. Owners and managers can create and update categories. Application deletion is implemented as a soft delete through UPDATE. Physical DELETE is owner-only.';
 
 
 -- ============================================================
--- 8. VERIFICATION
+-- 8. VERIFY RLS ENABLEMENT
+-- ============================================================
+
+SELECT
+  schemaname,
+  tablename,
+  rowsecurity,
+  forcerowsecurity
+FROM pg_tables
+WHERE schemaname = 'public'
+  AND tablename = 'categories';
+
+
+-- ============================================================
+-- 9. VERIFY CATEGORY POLICIES
 -- ============================================================
 --
--- After running this migration, this query should show
--- exactly four category policies:
+-- Expected policies:
 --
 --   categories_tenant_delete
 --   categories_tenant_insert
@@ -224,16 +299,33 @@ COMMENT ON TABLE public.categories IS
 -- ============================================================
 
 SELECT
-    schemaname,
-    tablename,
-    policyname,
-    permissive,
-    roles,
-    cmd,
-    qual,
-    with_check
+  schemaname,
+  tablename,
+  policyname,
+  permissive,
+  roles,
+  cmd,
+  qual,
+  with_check
 FROM pg_policies
 WHERE schemaname = 'public'
   AND tablename = 'categories'
-ORDER BY policyname;
+ORDER BY
+  policyname;
 
+
+-- ============================================================
+-- 10. VERIFY POLICY COUNT
+-- ============================================================
+--
+-- Expected result:
+--
+--   policy_count = 4
+--
+-- ============================================================
+
+SELECT
+  COUNT(*) AS policy_count
+FROM pg_policies
+WHERE schemaname = 'public'
+  AND tablename = 'categories';

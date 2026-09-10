@@ -16,9 +16,8 @@
 --   - RLS remains enabled.
 --
 -- NOTE:
---   DROP POLICY IF EXISTS is intentional because this migration may be
---   replayed against a database where these policies were already created
---   manually during development.
+--   DROP POLICY IF EXISTS is intentional because these policies may have
+--   already been created manually during development.
 -- ============================================================================
 
 
@@ -39,8 +38,12 @@ ON public.price_groups;
 
 
 -- ============================================================================
--- 3. REMOVE PREVIOUS VERSIONS OF EXPLICIT POLICIES
+-- 3. REMOVE EXISTING EXPLICIT POLICIES
 -- ============================================================================
+--
+-- This makes the migration safe if these policies were already created
+-- manually in Supabase SQL Editor.
+--
 
 DROP POLICY IF EXISTS "price_groups_tenant_select"
 ON public.price_groups;
@@ -62,8 +65,8 @@ ON public.price_groups;
 -- Any authenticated user belonging to the same business can read
 -- price groups.
 --
--- Cashiers/staff may need to read these groups because product pricing
--- can depend on Bono/price-group configuration.
+-- This allows cashiers/staff to read pricing information generated
+-- from Bono/price groups.
 --
 
 CREATE POLICY "price_groups_tenant_select"
@@ -101,14 +104,13 @@ WITH CHECK (
 -- ============================================================================
 --
 -- USING:
---   Confirms the existing row belongs to the authenticated user's
---   business and that the user is owner/manager.
+--   Protects the existing row.
 --
 -- WITH CHECK:
---   Confirms the resulting row still belongs to the same business
---   and the user remains authorized.
+--   Protects the resulting row.
 --
--- This prevents cross-tenant business_id changes.
+-- This prevents a user from moving a price group to another business
+-- by changing business_id.
 --
 
 CREATE POLICY "price_groups_management_update"
@@ -135,8 +137,8 @@ WITH CHECK (
 --
 -- Hard DELETE is restricted to owner/manager.
 --
--- If the application uses deleted_at for soft deletion, the UPDATE
--- policy above controls that operation.
+-- If the application uses deleted_at for soft deletion, that operation
+-- is controlled through UPDATE.
 --
 
 CREATE POLICY "price_groups_management_delete"
@@ -152,7 +154,7 @@ USING (
 
 
 -- ============================================================================
--- 8. DOCUMENT SECURITY MODEL
+-- 8. DOCUMENT THE SECURITY MODEL
 -- ============================================================================
 
 COMMENT ON TABLE public.price_groups IS
@@ -160,8 +162,27 @@ COMMENT ON TABLE public.price_groups IS
 
 
 -- ============================================================================
--- 9. VERIFICATION
+-- 9. VERIFY RLS ENABLEMENT
 -- ============================================================================
+--
+-- rowsecurity = true means RLS is enabled.
+--
+
+SELECT
+  schemaname,
+  tablename,
+  rowsecurity
+FROM pg_tables
+WHERE schemaname = 'public'
+  AND tablename = 'price_groups';
+
+
+-- ============================================================================
+-- 10. VERIFY POLICIES
+-- ============================================================================
+--
+-- Expected: 4 explicit policies.
+--
 
 SELECT
   policyname,

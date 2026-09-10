@@ -1,9 +1,14 @@
+// src/queries/useCategoryQueries.ts
+
 'use client'
 
 import { getSupabaseBrowserClient } from '@/lib/supabase/client'
 import type { Category } from '@/types/database/catalog'
 
-// Dedicated type definitions for sub-queries and payloads
+// ============================================================
+// TYPES
+// ============================================================
+
 export interface CategoryProductRelation {
   id: string
   name: string
@@ -27,16 +32,19 @@ export type UpdateCategoryPayload = Partial<
   Omit<Category, 'id' | 'business_id' | 'created_at'>
 >
 
-/**
- * Fetches active categories for a business along with child products.
- * Maintains nested lookup logic and dual-column sorting.
- */
+// ============================================================
+// GET ALL CATEGORIES
+// ============================================================
+
 export async function getCategories(
   businessId: string
 ): Promise<CategoryWithProducts[]> {
-  if (!businessId) throw new Error('Business ID is required')
+  if (!businessId) {
+    throw new Error('Business ID is required')
+  }
 
   const supabase = getSupabaseBrowserClient()
+
   const { data, error } = await supabase
     .from('categories')
     .select(`
@@ -52,22 +60,29 @@ export async function getCategories(
     .order('name', { ascending: true })
 
   if (error) {
-    console.error('[getCategories] Error:', error.message)
-    throw new Error(`Failed to fetch categories: ${error.message}`)
+    console.error('[getCategories] Error:', error)
+
+    throw new Error(
+      `Failed to fetch categories: ${error.message}`
+    )
   }
 
   return (data as CategoryWithProducts[]) ?? []
 }
 
-/**
- * Fetches a single category record by its unique ID.
- */
+// ============================================================
+// GET CATEGORY BY ID
+// ============================================================
+
 export async function getCategoryById(
   categoryId: string
 ): Promise<Category> {
-  if (!categoryId) throw new Error('Category ID is required')
+  if (!categoryId) {
+    throw new Error('Category ID is required')
+  }
 
   const supabase = getSupabaseBrowserClient()
+
   const { data, error } = await supabase
     .from('categories')
     .select('*')
@@ -76,90 +91,204 @@ export async function getCategoryById(
     .single()
 
   if (error) {
-    console.error(`[getCategoryById] Error for ID ${categoryId}:`, error.message)
-    throw new Error(`Failed to fetch category: ${error.message}`)
+    console.error(
+      `[getCategoryById] Error for ID ${categoryId}:`,
+      error
+    )
+
+    throw new Error(
+      `Failed to fetch category: ${error.message}`
+    )
   }
 
   return data as Category
 }
 
-/**
- * Inserts a new category with POS default fallbacks and input sanitization.
- */
+// ============================================================
+// CREATE CATEGORY
+// ============================================================
+
 export async function createCategory(
   payload: CreateCategoryPayload
 ): Promise<Category> {
-  if (!payload.business_id) throw new Error('Business ID is required')
-  if (!payload.name?.trim()) throw new Error('Category name cannot be empty')
+  // ----------------------------------------------------------
+  // Validate input
+  // ----------------------------------------------------------
+
+  if (!payload.business_id) {
+    throw new Error('Business ID is required')
+  }
+
+  const name = payload.name?.trim()
+
+  if (!name) {
+    throw new Error('Category name cannot be empty')
+  }
 
   const supabase = getSupabaseBrowserClient()
+
+  // ----------------------------------------------------------
+  // Insert
+  // ----------------------------------------------------------
+
   const { data, error } = await supabase
     .from('categories')
     .insert({
       business_id: payload.business_id,
-      name: payload.name.trim(),
-      name_am: payload.name_am ? payload.name_am.trim() : null,
+      name,
+      name_am: payload.name_am?.trim() || null,
       icon: payload.icon || '📦',
       color: payload.color || '#8B2635',
       group_type: payload.group_type || null,
       sort_order: payload.sort_order ?? 0,
-      is_active: true
+      is_active: true,
     })
     .select()
     .single()
 
   if (error) {
-    console.error('[createCategory] Error:', error.message)
-    throw new Error(`Failed to create category: ${error.message}`)
+    console.error('[createCategory] Error:', error)
+
+    throw new Error(
+      `Failed to create category: ${error.message}`
+    )
   }
 
   return data as Category
 }
 
-/**
- * Updates selective category fields.
- */
+// ============================================================
+// UPDATE CATEGORY
+// ============================================================
+
 export async function updateCategory(
   categoryId: string,
   payload: UpdateCategoryPayload
 ): Promise<Category> {
-  if (!categoryId) throw new Error('Category ID is required')
+  if (!categoryId) {
+    throw new Error('Category ID is required')
+  }
 
   const supabase = getSupabaseBrowserClient()
+
   const { data, error } = await supabase
     .from('categories')
     .update(payload)
     .eq('id', categoryId)
+    .is('deleted_at', null)
     .select()
     .single()
 
   if (error) {
-    console.error(`[updateCategory] Error for ID ${categoryId}:`, error.message)
-    throw new Error(`Failed to update category: ${error.message}`)
+    console.error(
+      `[updateCategory] Error for ID ${categoryId}:`,
+      error
+    )
+
+    throw new Error(
+      `Failed to update category: ${error.message}`
+    )
   }
 
   return data as Category
 }
 
-/**
- * Performs a soft delete by timestamping deleted_at and deactivating the record.
- */
-export async function deleteCategory(categoryId: string): Promise<boolean> {
-  if (!categoryId) throw new Error('Category ID is required')
+// ============================================================
+// DELETE CATEGORY
+// ============================================================
+//
+// SOFT DELETE ONLY.
+//
+// The row remains in the database.
+//
+// Before:
+//   deleted_at = NULL
+//   is_active  = TRUE
+//
+// After:
+//   deleted_at = current timestamp
+//   is_active  = FALSE
+//
+// Authorization is enforced by Supabase RLS.
+//
+// ============================================================
+
+export async function deleteCategory(
+  categoryId: string
+): Promise<boolean> {
+  if (!categoryId) {
+    throw new Error('Category ID is required')
+  }
 
   const supabase = getSupabaseBrowserClient()
-  const { error } = await supabase
+
+  // ----------------------------------------------------------
+  // Perform soft delete
+  // ----------------------------------------------------------
+  //
+  // IMPORTANT:
+  // Do not perform a separate frontend permission check here.
+  //
+  // The database RLS policy must verify:
+  //
+  //   1. User belongs to the same business
+  //   2. User has the required role
+  //   3. Category is currently active
+  //
+  // The frontend only requests the update.
+  // ----------------------------------------------------------
+
+  const deletedAt = new Date().toISOString()
+
+  const { data, error } = await supabase
     .from('categories')
     .update({
-      deleted_at: new Date().toISOString(),
-      is_active: false
+      deleted_at: deletedAt,
+      is_active: false,
     })
     .eq('id', categoryId)
+    .is('deleted_at', null)
+    .select(
+      'id, business_id, name, deleted_at, is_active'
+    )
+    .single()
+
+  // ----------------------------------------------------------
+  // Database / RLS error
+  // ----------------------------------------------------------
 
   if (error) {
-    console.error(`[deleteCategory] Error for ID ${categoryId}:`, error.message)
-    throw new Error(`Failed to delete category: ${error.message}`)
+    console.error('[deleteCategory] Soft delete failed:', {
+      categoryId,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      code: error.code,
+    })
+
+    throw new Error(
+      `Failed to delete category: ${error.message}`
+    )
   }
+
+  // ----------------------------------------------------------
+  // Safety check
+  // ----------------------------------------------------------
+
+  if (!data) {
+    throw new Error(
+      'Category was not deleted. It may already be deleted or is not accessible to the current user.'
+    )
+  }
+
+  // ----------------------------------------------------------
+  // Success
+  // ----------------------------------------------------------
+
+  console.log('[deleteCategory] Soft delete successful:', {
+    categoryId,
+    deletedAt: data.deleted_at,
+  })
 
   return true
 }

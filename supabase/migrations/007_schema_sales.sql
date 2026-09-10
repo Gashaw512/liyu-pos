@@ -1,3 +1,4 @@
+-- src/supabase/migrations/007_schema_sales.sql
 -- ============================================================================
 -- 007_schema_sales.sql
 -- Domain: Transaction Processing & POS Checkout Models

@@ -1,3 +1,5 @@
+-- src/supabase/migrations/008_schema_operations.sql
+
 -- ============================================================
 -- 008_schema_operations.sql
 -- Domain: Daily Operations, Shifts, Expenses, and Reconciliation

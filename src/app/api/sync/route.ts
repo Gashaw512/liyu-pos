@@ -45,7 +45,7 @@ interface InventoryChange {
 
 const processingSales = new Map<
   string,
-  Promise<string>
+  Promise<void>
 >()
 
 async function withSaleLock<T>(
@@ -56,7 +56,16 @@ async function withSaleLock<T>(
     processingSales.get(saleId)
 
   if (existingLock) {
-    await existingLock
+    console.log(
+      `[SYNC] Sale ${saleId} is already being processed. Waiting for existing request.`
+    )
+
+    try {
+      await existingLock
+    } catch {
+      // The previous request failed.
+      // This request is allowed to retry.
+    }
 
     return operation()
   }
@@ -65,18 +74,32 @@ async function withSaleLock<T>(
     | (() => void)
     | undefined
 
+  let rejectLock:
+    | ((reason?: unknown) => void)
+    | undefined
+
   const lockPromise =
-    new Promise<string>(resolve => {
-      resolveLock = () => resolve(saleId)
-    })
+    new Promise<void>(
+      (resolve, reject) => {
+        resolveLock = resolve
+        rejectLock = reject
+      }
+    )
 
   processingSales.set(
     saleId,
     lockPromise
   )
 
+  console.log(
+    `[SYNC] Acquired sale lock: ${saleId}`
+  )
+
   try {
     return await operation()
+  } catch (error) {
+    rejectLock?.(error)
+    throw error
   } finally {
     resolveLock?.()
 
@@ -86,6 +109,10 @@ async function withSaleLock<T>(
     ) {
       processingSales.delete(saleId)
     }
+
+    console.log(
+      `[SYNC] Released sale lock: ${saleId}`
+    )
   }
 }
 
@@ -592,6 +619,36 @@ async function deductInventoryForSale(
     []
 
   try {
+    // ==========================================================
+    // FINAL IDEMPOTENCY CHECK
+    // ==========================================================
+    //
+    // Never start an inventory deduction if this sale already
+    // has a sale movement.
+    //
+
+    const alreadyProcessed =
+      await hasSaleInventoryMovement(
+        supabase,
+        sale.id
+      )
+
+    console.log(
+      `[SYNC] Inventory deduction check for sale ${sale.id}: alreadyProcessed=${alreadyProcessed}`
+    )
+
+    if (alreadyProcessed) {
+      console.log(
+        `[SYNC] Sale ${sale.id} already has an inventory movement. Skipping deduction.`
+      )
+
+      return []
+    }
+
+    // ==========================================================
+    // PROCESS SALE ITEMS
+    // ==========================================================
+
     for (
       const item of items
     ) {
@@ -607,9 +664,32 @@ async function deductInventoryForSale(
         continue
       }
 
-      // ------------------------------------------------------
+      // --------------------------------------------------------
+      // CHECK AGAIN BEFORE EACH ITEM
+      // --------------------------------------------------------
+      //
+      // This is intentionally repeated.
+      // If another request completed this sale while this
+      // request was preparing the item, stop immediately.
+      //
+
+      const movementExists =
+        await hasSaleInventoryMovement(
+          supabase,
+          sale.id
+        )
+
+      if (movementExists) {
+        console.log(
+          `[SYNC] Sale ${sale.id} became processed before product ${item.product_id} deduction. Stopping.`
+        )
+
+        return changes
+      }
+
+      // --------------------------------------------------------
       // FIND INVENTORY
-      // ------------------------------------------------------
+      // --------------------------------------------------------
 
       const {
         data: inventory,
@@ -646,9 +726,9 @@ async function deductInventoryForSale(
         )
       }
 
-      // ------------------------------------------------------
+      // --------------------------------------------------------
       // CALCULATE
-      // ------------------------------------------------------
+      // --------------------------------------------------------
 
       const currentQuantity =
         toNumber(
@@ -659,9 +739,13 @@ async function deductInventoryForSale(
         currentQuantity -
         quantitySold
 
-      // ------------------------------------------------------
+      console.log(
+        `[SYNC] Sale ${sale.id} inventory change: product=${item.product_id}, current=${currentQuantity}, sold=${quantitySold}, new=${newQuantity}`
+      )
+
+      // --------------------------------------------------------
       // UPDATE INVENTORY
-      // ------------------------------------------------------
+      // --------------------------------------------------------
 
       const {
         error:
@@ -685,8 +769,10 @@ async function deductInventoryForSale(
         throw updateError
       }
 
-      // Track this change immediately so it can be
-      // compensated if a later item fails.
+      // --------------------------------------------------------
+      // TRACK CHANGE FOR COMPENSATING ROLLBACK
+      // --------------------------------------------------------
+
       const change: InventoryChange =
         {
           inventoryId:
@@ -704,9 +790,9 @@ async function deductInventoryForSale(
 
       changes.push(change)
 
-      // ------------------------------------------------------
-      // INVENTORY MOVEMENT
-      // ------------------------------------------------------
+      // --------------------------------------------------------
+      // INSERT INVENTORY MOVEMENT
+      // --------------------------------------------------------
 
       const {
         data:
@@ -764,8 +850,16 @@ async function deductInventoryForSale(
       if (movement?.id) {
         change.movementId =
           movement.id
+
+        console.log(
+          `[SYNC] Sale ${sale.id} movement created: movementId=${movement.id}, product=${item.product_id}, quantity=${-quantitySold}`
+        )
       }
     }
+
+    console.log(
+      `[SYNC] Sale ${sale.id} inventory deduction completed for ${changes.length} item(s).`
+    )
 
     return changes
   } catch (error) {
@@ -821,6 +915,10 @@ async function syncSale(
           supabase,
           sale.id
         )
+
+      console.log(
+        `[SYNC] Sale ${sale.id} initial inventory movement check: ${alreadyProcessed}`
+      )
 
       if (
         alreadyProcessed
@@ -1011,6 +1109,10 @@ async function syncSale(
           sale.id
         )
 
+      console.log(
+        `[SYNC] Sale ${sale.id} pre-deduction movement check: ${processedBeforeDeduction}`
+      )
+
       if (
         processedBeforeDeduction
       ) {
@@ -1048,6 +1150,10 @@ async function syncSale(
           supabase,
           sale.id
         )
+
+      console.log(
+        `[SYNC] Sale ${sale.id} final inventory movement check: ${processedAfterDeduction}`
+      )
 
       if (
         !processedAfterDeduction

@@ -1285,7 +1285,14 @@ export default function SalesPage() {
           // CHECKOUT
 
           <main className="h-full min-h-0 overflow-y-auto overflow-x-hidden subtle-scrollbar">
-            <div className="mx-auto w-full max-w-2xl p-3 sm:p-4 lg:p-6">
+            <div
+  className="
+    mx-auto w-full max-w-2xl
+    p-3 pb-[calc(6rem+env(safe-area-inset-bottom))]
+    sm:p-4
+    lg:p-6 lg:pb-6
+  "
+>
               <POSCheckout
                 cart={cart}
                 totalBill={totalBill}

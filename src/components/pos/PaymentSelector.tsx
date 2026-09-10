@@ -4,10 +4,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Banknote,
+  Building2,
   Check,
   Smartphone,
-  Building2,
   Split,
+  X,
 } from 'lucide-react'
 
 interface PaymentSplit {
@@ -27,20 +28,20 @@ interface PaymentMethod {
 
 /*
  * ============================================================
- * TEMPORARY PAYMENT CONFIGURATION
+ * PAYMENT METHODS
  * ============================================================
  *
- * Later this should come from:
+ * Temporary configuration.
  *
- *   owner settings
- *        ↓
- *   database
- *        ↓
- *   IndexedDB cache
- *        ↓
- *   POS
+ * Later:
  *
- * For now we keep dummy configuration here.
+ * Owner settings
+ *      ↓
+ * Database
+ *      ↓
+ * IndexedDB
+ *      ↓
+ * POS
  */
 
 const PAYMENT_METHODS: PaymentMethod[] = [
@@ -76,12 +77,49 @@ const PAYMENT_METHODS: PaymentMethod[] = [
 
 interface PaymentSelectorProps {
   totalBill: number
-
   onConfirmPayment: (
     split: PaymentSplit,
   ) => void | Promise<void>
-
   isAm: boolean
+}
+
+type PaymentKey = keyof PaymentSplit
+
+type PaymentAmounts = Record<
+  PaymentKey,
+  number
+>
+
+/*
+ * ============================================================
+ * HELPERS
+ * ============================================================
+ */
+
+const EMPTY_AMOUNTS: PaymentAmounts = {
+  cash: 0,
+  telebirr: 0,
+  cbeBirr: 0,
+  awash: 0,
+}
+
+const roundMoney = (
+  value: number,
+) => {
+  return Math.round(
+    (value + Number.EPSILON) * 100,
+  ) / 100
+}
+
+const clamp = (
+  value: number,
+  min: number,
+  max: number,
+) => {
+  return Math.min(
+    Math.max(value, min),
+    max,
+  )
 }
 
 export default function PaymentSelector({
@@ -89,6 +127,11 @@ export default function PaymentSelector({
   onConfirmPayment,
   isAm,
 }: PaymentSelectorProps) {
+  /*
+   * ============================================================
+   * ENABLED PAYMENT METHODS
+   * ============================================================
+   */
 
   const enabledMethods = useMemo(
     () =>
@@ -98,69 +141,225 @@ export default function PaymentSelector({
     [],
   )
 
-  const [amounts, setAmounts] = useState<
-    Record<string, number>
-  >({})
+  /*
+   * ============================================================
+   * STATE
+   * ============================================================
+   */
 
-  const [selectedMethod, setSelectedMethod] =
-    useState<keyof PaymentSplit>('cash')
+  const [amounts, setAmounts] =
+    useState<PaymentAmounts>(
+      EMPTY_AMOUNTS,
+    )
 
   /*
-   * Default = all cash
+   * IMPORTANT:
+   *
+   * Array<keyof PaymentSplit>
+   *
+   * is intentional.
+   *
+   * Do NOT use:
+   *
+   * keyof PaymentSplit[]
    */
-  useEffect(() => {
-    const initial: Record<string, number> = {}
 
-    enabledMethods.forEach((method) => {
-      initial[method.id] =
-        method.id === 'cash'
-          ? totalBill
-          : 0
+  const [activeMethods, setActiveMethods] =
+    useState<PaymentKey[]>(['cash'])
+
+  /*
+   * ============================================================
+   * INITIAL PAYMENT
+   * ============================================================
+   *
+   * Every new bill starts as 100% Cash.
+   */
+
+  useEffect(() => {
+    const firstMethod =
+      enabledMethods[0]?.id
+
+    if (!firstMethod) {
+      setAmounts(EMPTY_AMOUNTS)
+      setActiveMethods([])
+      return
+    }
+
+    setAmounts({
+      cash:
+        firstMethod === 'cash'
+          ? roundMoney(totalBill)
+          : 0,
+
+      telebirr:
+        firstMethod === 'telebirr'
+          ? roundMoney(totalBill)
+          : 0,
+
+      cbeBirr:
+        firstMethod === 'cbeBirr'
+          ? roundMoney(totalBill)
+          : 0,
+
+      awash:
+        firstMethod === 'awash'
+          ? roundMoney(totalBill)
+          : 0,
     })
 
-    setAmounts(initial)
-
-    setSelectedMethod(
-      enabledMethods[0]?.id ?? 'cash',
-    )
+    setActiveMethods([firstMethod])
   }, [totalBill, enabledMethods])
 
-  const paidAmount = useMemo(
-    () =>
+  /*
+   * ============================================================
+   * ACTIVE PAYMENT METHODS
+   * ============================================================
+   */
+
+  const activePaymentMethods =
+    enabledMethods.filter((method) =>
+      activeMethods.includes(method.id),
+    )
+
+  /*
+   * ============================================================
+   * PAID / REMAINING
+   * ============================================================
+   */
+
+  const paidAmount = useMemo(() => {
+    return roundMoney(
       Object.values(amounts).reduce(
         (sum, amount) =>
           sum + Number(amount || 0),
         0,
       ),
-    [amounts],
+    )
+  }, [amounts])
+
+  /*
+   * Never expose a negative remaining
+   * amount to the cashier.
+   */
+
+  const remainingAmount = Math.max(
+    0,
+    roundMoney(
+      totalBill - paidAmount,
+    ),
   )
 
-  const remainingAmount =
-    totalBill - paidAmount
-
   const isBalanced =
-    Math.abs(remainingAmount) < 0.01
+    remainingAmount <= 0.009
 
   /*
    * ============================================================
-   * SET SINGLE PAYMENT
+   * GET ICON
    * ============================================================
    */
 
-  const selectSingleMethod = (
-    methodId: keyof PaymentSplit,
+  const getIcon = (
+    icon: PaymentMethod['icon'],
   ) => {
-    const next: Record<string, number> = {}
+    switch (icon) {
+      case 'cash':
+        return Banknote
 
-    enabledMethods.forEach((method) => {
-      next[method.id] =
-        method.id === methodId
-          ? totalBill
-          : 0
+      case 'mobile':
+        return Smartphone
+
+      default:
+        return Building2
+    }
+  }
+
+  /*
+   * ============================================================
+   * ADD PAYMENT METHOD
+   * ============================================================
+   *
+   * When a cashier activates another method:
+   *
+   * Existing:
+   *
+   * Cash = 1000
+   *
+   * Tap Telebirr.
+   *
+   * Telebirr automatically receives the
+   * remaining amount.
+   *
+   * Existing Cash stays unchanged.
+   *
+   * If Cash was 600:
+   *
+   * Cash     = 600
+   * Telebirr = 400
+   */
+
+  const addPaymentMethod = (
+    methodId: PaymentKey,
+  ) => {
+    if (activeMethods.includes(methodId)) {
+      return
+    }
+
+    setActiveMethods((current) => [
+      ...current,
+      methodId,
+    ])
+
+    setAmounts((current) => {
+      const currentPaid = roundMoney(
+        Object.values(current).reduce(
+          (sum, amount) =>
+            sum + Number(amount || 0),
+          0,
+        ),
+      )
+
+      const remaining = Math.max(
+        0,
+        roundMoney(
+          totalBill - currentPaid,
+        ),
+      )
+
+      return {
+        ...current,
+        [methodId]: remaining,
+      }
     })
+  }
 
-    setAmounts(next)
-    setSelectedMethod(methodId)
+  /*
+   * ============================================================
+   * REMOVE PAYMENT METHOD
+   * ============================================================
+   *
+   * Its amount is cleared.
+   *
+   * The cleared amount becomes part of
+   * the remaining bill automatically.
+   */
+
+  const removePaymentMethod = (
+    methodId: PaymentKey,
+  ) => {
+    if (activeMethods.length <= 1) {
+      return
+    }
+
+    setActiveMethods((current) =>
+      current.filter(
+        (id) => id !== methodId,
+      ),
+    )
+
+    setAmounts((current) => ({
+      ...current,
+      [methodId]: 0,
+    }))
   }
 
   /*
@@ -168,98 +367,319 @@ export default function PaymentSelector({
    * CHANGE PAYMENT AMOUNT
    * ============================================================
    *
-   * Automatically puts the remaining amount
-   * into the other enabled method.
+   * This is the important smart-payment
+   * behavior.
+   *
+   * Example:
+   *
+   * Bill = 1000
+   *
+   * Cash     = 1000
+   * Telebirr = 0
+   *
+   * Cash is changed to 700.
+   *
+   * Telebirr automatically becomes 300.
+   *
+   * Another example:
+   *
+   * Cash     = 600
+   * Telebirr = 300
+   * CBE      = 100
+   *
+   * Change CBE to 200.
+   *
+   * The component automatically takes
+   * the extra 100 from another active
+   * payment method.
    */
 
   const handleAmountChange = (
-    methodId: keyof PaymentSplit,
+    methodId: PaymentKey,
     value: string,
   ) => {
-    const amount = Math.max(
-      0,
-      Math.min(
-        Number(value) || 0,
+    /*
+     * Empty field temporarily becomes zero.
+     */
+
+    if (value === '') {
+      setAmounts((current) => {
+        const next = {
+          ...current,
+          [methodId]: 0,
+        }
+
+        rebalanceAmounts(
+          next,
+          methodId,
+        )
+
+        return next
+      })
+
+      return
+    }
+
+    const parsed = Number(value)
+
+    if (!Number.isFinite(parsed)) {
+      return
+    }
+
+    const requestedAmount =
+      clamp(
+        roundMoney(parsed),
+        0,
         totalBill,
+      )
+
+    setAmounts((current) => {
+      const previousAmount =
+        current[methodId]
+
+      const difference =
+        roundMoney(
+          requestedAmount -
+            previousAmount,
+        )
+
+      const next = {
+        ...current,
+        [methodId]:
+          requestedAmount,
+      }
+
+      /*
+       * If the user increased this
+       * payment, take the difference
+       * from other active methods.
+       */
+
+      if (difference > 0) {
+        let amountToTake = difference
+
+        const otherMethods =
+          activeMethods.filter(
+            (id) => id !== methodId,
+          )
+
+        for (const otherId of otherMethods) {
+          if (amountToTake <= 0) {
+            break
+          }
+
+          const available =
+            next[otherId]
+
+          const deduction =
+            Math.min(
+              available,
+              amountToTake,
+            )
+
+          next[otherId] =
+            roundMoney(
+              available - deduction,
+            )
+
+          amountToTake =
+            roundMoney(
+              amountToTake -
+                deduction,
+            )
+        }
+      }
+
+      /*
+       * If the user decreased this
+       * payment, put the freed amount
+       * into the next active payment.
+       */
+
+      if (difference < 0) {
+        const amountToDistribute =
+          Math.abs(difference)
+
+        const otherMethods =
+          activeMethods.filter(
+            (id) => id !== methodId,
+          )
+
+        const targetId =
+          otherMethods[0]
+
+        if (targetId) {
+          next[targetId] =
+            roundMoney(
+              next[targetId] +
+                amountToDistribute,
+            )
+        }
+      }
+
+      /*
+       * Final safety normalization.
+       */
+
+      rebalanceAmounts(
+        next,
+        methodId,
+      )
+
+      return next
+    })
+  }
+
+  /*
+   * ============================================================
+   * REBALANCE
+   * ============================================================
+   *
+   * Makes sure payment allocation never
+   * exceeds the bill.
+   *
+   * It does NOT create an "Overpaid"
+   * state.
+   */
+
+  const rebalanceAmounts = (
+    next: PaymentAmounts,
+    changedMethod: PaymentKey,
+  ) => {
+    const total = roundMoney(
+      Object.values(next).reduce(
+        (sum, amount) =>
+          sum + Number(amount || 0),
+        0,
       ),
     )
 
-    const remaining =
-      totalBill - amount
-
-    const next: Record<string, number> = {
-      ...amounts,
-      [methodId]: amount,
+    if (total <= totalBill) {
+      return
     }
 
-    /*
-     * Put remaining amount into the
-     * first other enabled payment method.
-     */
-    const otherMethod =
-      enabledMethods.find(
-        (method) =>
-          method.id !== methodId,
+    let excess =
+      roundMoney(
+        total - totalBill,
       )
 
-    if (otherMethod) {
-      next[otherMethod.id] =
-        Math.max(0, remaining)
+    /*
+     * Take excess from payment methods
+     * other than the one the cashier is
+     * currently editing.
+     */
+
+    const otherMethods =
+      activeMethods.filter(
+        (id) => id !== changedMethod,
+      )
+
+    for (const methodId of otherMethods) {
+      if (excess <= 0) {
+        break
+      }
+
+      const available =
+        next[methodId]
+
+      const deduction =
+        Math.min(
+          available,
+          excess,
+        )
+
+      next[methodId] =
+        roundMoney(
+          available - deduction,
+        )
+
+      excess =
+        roundMoney(
+          excess - deduction,
+        )
     }
 
     /*
-     * Clear any other methods when
-     * two-method split is being used.
+     * Final fallback:
+     *
+     * If there is still excess, reduce
+     * the edited method itself.
      */
-    enabledMethods.forEach((method) => {
-      if (
-        method.id !== methodId &&
-        method.id !== otherMethod?.id
-      ) {
-        next[method.id] = 0
-      }
-    })
 
-    setSelectedMethod(methodId)
-    setAmounts(next)
+    if (excess > 0) {
+      next[changedMethod] =
+        roundMoney(
+          Math.max(
+            0,
+            next[changedMethod] -
+              excess,
+          ),
+        )
+    }
   }
 
   /*
    * ============================================================
    * 50 / 50 SPLIT
    * ============================================================
+   *
+   * Uses the first two enabled methods.
    */
 
   const handleSplit = () => {
-    const activeMethods =
+    const methods =
       enabledMethods.slice(0, 2)
 
-    if (activeMethods.length < 2) {
+    if (methods.length < 2) {
       return
     }
 
-    const first = Math.floor(
-      (totalBill / 2) * 100,
-    ) / 100
+    const first =
+      roundMoney(
+        Math.floor(
+          (totalBill / 2) * 100,
+        ) / 100,
+      )
 
     const second =
-      totalBill - first
+      roundMoney(
+        totalBill - first,
+      )
 
-    const next: Record<string, number> = {}
+    setActiveMethods([
+      methods[0].id,
+      methods[1].id,
+    ])
 
-    enabledMethods.forEach(
-      (method, index) => {
-        if (index === 0) {
-          next[method.id] = first
-        } else if (index === 1) {
-          next[method.id] = second
-        } else {
-          next[method.id] = 0
-        }
-      },
-    )
+    setAmounts({
+      cash:
+        methods[0].id === 'cash'
+          ? first
+          : methods[1].id === 'cash'
+            ? second
+            : 0,
 
-    setAmounts(next)
+      telebirr:
+        methods[0].id === 'telebirr'
+          ? first
+          : methods[1].id === 'telebirr'
+            ? second
+            : 0,
+
+      cbeBirr:
+        methods[0].id === 'cbeBirr'
+          ? first
+          : methods[1].id === 'cbeBirr'
+            ? second
+            : 0,
+
+      awash:
+        methods[0].id === 'awash'
+          ? first
+          : methods[1].id === 'awash'
+            ? second
+            : 0,
+    })
   }
 
   /*
@@ -269,54 +689,49 @@ export default function PaymentSelector({
    */
 
   const submitPayment = async () => {
-    if (!isBalanced) {
-      window.alert(
-        isAm
-          ? 'የክፍያ ድምር ከጠቅላላ ሂሳቡ ጋር እኩል መሆን አለበት።'
-          : 'Payment amount must match the bill total.',
-      )
+    /*
+     * The button is already disabled when
+     * the bill is not fully covered.
+     *
+     * This is an extra safety check.
+     */
 
+    if (!isBalanced) {
       return
     }
 
     await onConfirmPayment({
-      cash: Number(amounts.cash || 0),
-      telebirr: Number(
-        amounts.telebirr || 0,
+      cash: roundMoney(
+        Number(amounts.cash || 0),
       ),
-      cbeBirr: Number(
-        amounts.cbeBirr || 0,
+
+      telebirr: roundMoney(
+        Number(amounts.telebirr || 0),
       ),
-      awash: Number(
-        amounts.awash || 0,
+
+      cbeBirr: roundMoney(
+        Number(amounts.cbeBirr || 0),
+      ),
+
+      awash: roundMoney(
+        Number(amounts.awash || 0),
       ),
     })
   }
 
   /*
    * ============================================================
-   * ICON
+   * UI
    * ============================================================
    */
 
-  const getIcon = (
-    icon: PaymentMethod['icon'],
-  ) => {
-    if (icon === 'cash') {
-      return Banknote
-    }
-
-    if (icon === 'mobile') {
-      return Smartphone
-    }
-
-    return Building2
-  }
-
   return (
-    <div className="space-y-3">
+    <div className="space-y-2.5">
 
-      {/* Amount due */}
+      {/* ====================================================== */}
+      {/* AMOUNT DUE */}
+      {/* ====================================================== */}
+
       <div
         className="
           flex items-center justify-between
@@ -325,38 +740,74 @@ export default function PaymentSelector({
           px-3 py-2
         "
       >
-        <span
-          className="
-            text-[10px]
-            font-black
-            uppercase
-            tracking-wide
-            text-coffee-400
-          "
-        >
-          {isAm
-            ? 'የሚከፈል'
-            : 'Amount Due'}
-        </span>
+        <div>
+          <p
+            className="
+              text-[9px]
+              font-black
+              uppercase
+              tracking-wider
+              text-coffee-400
+            "
+          >
+            {isAm
+              ? 'የሚከፈል'
+              : 'Amount Due'}
+          </p>
 
-        <span
-          className="
-            font-mono
-            text-lg
-            font-black
-            text-berbere-600
-          "
-        >
-          {totalBill.toLocaleString()}
-          <span className="ml-1 text-[9px]">
+          <p
+            className="
+              text-[9px]
+              text-coffee-400
+            "
+          >
+            {activePaymentMethods.length}{' '}
+            {isAm
+              ? 'የክፍያ ዘዴ'
+              : activePaymentMethods.length === 1
+                ? 'payment method'
+                : 'payment methods'}
+          </p>
+        </div>
+
+        <div className="text-right">
+          <span
+            className="
+              font-mono
+              text-lg
+              font-black
+              text-berbere-600
+            "
+          >
+            {totalBill.toLocaleString()}
+          </span>
+
+          <span
+            className="
+              ml-1
+              text-[9px]
+              font-black
+              text-coffee-400
+            "
+          >
             ETB
           </span>
-        </span>
+        </div>
       </div>
 
-      {/* Payment methods */}
+      {/* ====================================================== */}
+      {/* PAYMENT METHODS */}
+      {/* ====================================================== */}
+
       <div>
-        <div className="mb-2 flex items-center justify-between">
+        <div
+          className="
+            mb-1.5
+            flex
+            items-center
+            justify-between
+          "
+        >
           <span
             className="
               text-[10px]
@@ -371,16 +822,38 @@ export default function PaymentSelector({
               : 'Payment Method'}
           </span>
 
-          <span className="text-[9px] font-bold text-coffee-400">
-            {enabledMethods.length} options
-          </span>
+          {enabledMethods.length >= 2 && (
+            <button
+              type="button"
+              onClick={handleSplit}
+              className="
+                inline-flex
+                items-center
+                gap-1
+                rounded-md
+                px-1.5 py-1
+                text-[9px]
+                font-black
+                text-gold-600
+                transition
+                hover:bg-gold-50
+                active:scale-[0.97]
+              "
+            >
+              <Split className="h-3 w-3" />
+
+              {isAm
+                ? '50/50'
+                : '50 / 50'}
+            </button>
+          )}
         </div>
 
         <div
           className="
             grid
             grid-cols-2
-            gap-2
+            gap-1.5
             sm:grid-cols-4
           "
         >
@@ -389,66 +862,84 @@ export default function PaymentSelector({
               const Icon =
                 getIcon(method.icon)
 
-              const isSelected =
-                selectedMethod ===
-                  method.id &&
-                Number(
-                  amounts[method.id] || 0,
-                ) > 0
+              const isActive =
+                activeMethods.includes(
+                  method.id,
+                )
 
               return (
                 <button
                   key={method.id}
                   type="button"
-                  onClick={() =>
-                    selectSingleMethod(
-                      method.id,
-                    )
-                  }
+                  aria-pressed={isActive}
+                  onClick={() => {
+                    if (isActive) {
+                      removePaymentMethod(
+                        method.id,
+                      )
+                    } else {
+                      addPaymentMethod(
+                        method.id,
+                      )
+                    }
+                  }}
                   className={[
-                    'relative flex min-h-[58px]',
+                    'relative flex h-11',
                     'items-center gap-2',
-                    'rounded-lg border px-2.5',
+                    'rounded-lg border px-2',
                     'transition-all',
                     'active:scale-[0.98]',
-                    isSelected
+                    isActive
                       ? 'border-berbere-400 bg-berbere-50 text-berbere-700'
                       : 'border-cream-300 bg-cream-50 text-coffee-600 hover:border-berbere-200',
                   ].join(' ')}
                 >
-                  {isSelected && (
+                  <span
+                    className={[
+                      'flex h-7 w-7 shrink-0',
+                      'items-center justify-center',
+                      'rounded-md',
+                      isActive
+                        ? 'bg-berbere-500 text-white'
+                        : 'bg-cream-100 text-coffee-500',
+                    ].join(' ')}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                  </span>
+
+                  <span
+                    className="
+                      min-w-0
+                      truncate
+                      text-left
+                      text-[10px]
+                      font-black
+                    "
+                  >
+                    {isAm
+                      ? method.nameAm
+                      : method.name}
+                  </span>
+
+                  {isActive && (
                     <span
                       className="
-                        absolute right-1.5 top-1.5
-                        flex h-4 w-4
-                        items-center justify-center
+                        absolute
+                        right-1.5
+                        top-1.5
+                        flex
+                        h-3.5
+                        w-3.5
+                        items-center
+                        justify-center
                         rounded-full
                         bg-berbere-500
                         text-white
                       "
                     >
-                      <Check className="h-2.5 w-2.5" />
+                      <Check className="h-2 w-2" />
                     </span>
                   )}
-
-                  <div
-                    className={[
-                      'flex h-8 w-8 shrink-0',
-                      'items-center justify-center',
-                      'rounded-md',
-                      isSelected
-                        ? 'bg-berbere-500 text-white'
-                        : 'bg-cream-100 text-coffee-500',
-                    ].join(' ')}
-                  >
-                    <Icon className="h-4 w-4" />
-                  </div>
-
-                  <span className="truncate text-left text-[10px] font-black">
-                    {isAm
-                      ? method.nameAm
-                      : method.name}
-                  </span>
                 </button>
               )
             },
@@ -456,47 +947,20 @@ export default function PaymentSelector({
         </div>
       </div>
 
-      {/* Quick split */}
-      {enabledMethods.length >= 2 && (
-        <button
-          type="button"
-          onClick={handleSplit}
-          className="
-            flex h-9 w-full
-            items-center justify-center gap-2
-            rounded-lg
-            border border-cream-300
-            bg-cream-100
-            text-[10px]
-            font-black
-            text-coffee-600
-            transition
-            hover:border-gold-400
-            hover:bg-gold-50
-            active:scale-[0.98]
-          "
-        >
-          <Split className="h-3.5 w-3.5 text-gold-600" />
+      {/* ====================================================== */}
+      {/* PAYMENT AMOUNTS */}
+      {/* ====================================================== */}
 
-          {isAm
-            ? '50/50 ክፍል'
-            : 'Split 50 / 50'}
-        </button>
-      )}
-
-      {/* Amount inputs */}
-      <div className="space-y-2">
-        {enabledMethods
-          .filter(
-            (method) =>
-              Number(
-                amounts[method.id] || 0,
-              ) > 0 ||
-              method.id === selectedMethod,
-          )
-          .map((method) => {
+      <div className="space-y-1.5">
+        {activePaymentMethods.map(
+          (method) => {
             const Icon =
               getIcon(method.icon)
+
+            const amount =
+              Number(
+                amounts[method.id] || 0,
+              )
 
             return (
               <div
@@ -508,25 +972,48 @@ export default function PaymentSelector({
                   px-2.5 py-2
                 "
               >
-                <label
-                  htmlFor={`payment-${method.id}`}
+                <div
                   className="
-                    mb-1 flex items-center gap-1.5
+                    flex
+                    items-center
+                    gap-1.5
                   "
                 >
-                  <Icon className="h-3.5 w-3.5 text-coffee-500" />
-
                   <span
                     className="
+                      flex
+                      h-6
+                      w-6
+                      shrink-0
+                      items-center
+                      justify-center
+                      rounded-md
+                      bg-cream-100
+                    "
+                  >
+                    <Icon
+                      className="
+                        h-3.5
+                        w-3.5
+                        text-coffee-500
+                      "
+                    />
+                  </span>
+
+                  <label
+                    htmlFor={`payment-${method.id}`}
+                    className="
+                      min-w-0
+                      truncate
                       text-[10px]
                       font-black
-                      text-coffee-600
+                      text-coffee-700
                     "
                   >
                     {isAm
                       ? method.nameAm
                       : method.name}
-                  </span>
+                  </label>
 
                   <span
                     className="
@@ -538,60 +1025,120 @@ export default function PaymentSelector({
                   >
                     ETB
                   </span>
-                </label>
 
-                <input
-                  id={`payment-${method.id}`}
-                  type="number"
-                  min="0"
-                  max={totalBill}
-                  step="0.01"
-                  inputMode="decimal"
-                  value={
-                    amounts[method.id] || ''
-                  }
-                  onChange={(event) =>
-                    handleAmountChange(
-                      method.id,
-                      event.target.value,
-                    )
-                  }
-                  className="
-                    h-10 w-full
-                    rounded-md
-                    border border-cream-300
-                    bg-cream-100
-                    px-3
-                    font-mono
-                    text-sm
-                    font-black
-                    text-coffee-700
-                    outline-none
-                    transition
-                    focus:border-berbere-300
-                    focus:bg-cream-50
-                    focus:ring-2
-                    focus:ring-berbere-100
-                  "
-                />
+                  {activePaymentMethods.length >
+                    1 && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        removePaymentMethod(
+                          method.id,
+                        )
+                      }
+                      aria-label={
+                        isAm
+                          ? `ከ${method.nameAm} ክፍያ ያስወግዱ`
+                          : `Remove ${method.name}`
+                      }
+                      className="
+                        ml-1
+                        flex
+                        h-6
+                        w-6
+                        items-center
+                        justify-center
+                        rounded-md
+                        text-coffee-400
+                        transition
+                        hover:bg-cream-100
+                        hover:text-berbere-500
+                        active:scale-[0.95]
+                      "
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="relative mt-1.5">
+                  <input
+                    id={`payment-${method.id}`}
+                    type="number"
+                    min="0"
+                    max={totalBill}
+                    step="0.01"
+                    inputMode="decimal"
+                    value={
+                      amount === 0
+                        ? ''
+                        : amount
+                    }
+                    onChange={(event) =>
+                      handleAmountChange(
+                        method.id,
+                        event.target.value,
+                      )
+                    }
+                    placeholder="0.00"
+                    className="
+                      h-9
+                      w-full
+                      rounded-md
+                      border border-cream-300
+                      bg-cream-100
+                      px-2.5
+                      pr-12
+                      font-mono
+                      text-sm
+                      font-black
+                      text-coffee-700
+                      outline-none
+                      transition
+                      placeholder:text-coffee-300
+                      focus:border-berbere-300
+                      focus:bg-cream-50
+                      focus:ring-2
+                      focus:ring-berbere-100
+                    "
+                  />
+
+                  <span
+                    className="
+                      pointer-events-none
+                      absolute
+                      right-2
+                      top-1/2
+                      -translate-y-1/2
+                      text-[9px]
+                      font-black
+                      text-coffee-400
+                    "
+                  >
+                    ETB
+                  </span>
+                </div>
               </div>
             )
-          })}
+          },
+        )}
       </div>
 
-      {/* Payment status */}
+      {/* ====================================================== */}
+      {/* REMAINING BALANCE */}
+      {/* ====================================================== */}
+
       <div
         className={[
           'flex items-center justify-between',
           'rounded-lg px-3 py-2',
           isBalanced
-            ? 'border border-success/20 bg-success-bg'
-            : 'border border-cream-300 bg-cream-100',
+            ? 'bg-success-bg'
+            : 'bg-cream-100',
         ].join(' ')}
       >
         <span
           className="
-            text-[10px]
+            text-[9px]
             font-black
             uppercase
             tracking-wide
@@ -600,24 +1147,24 @@ export default function PaymentSelector({
         >
           {isBalanced
             ? isAm
-              ? 'ዝግጁ'
-              : 'Ready'
+              ? 'ክፍያ ሙሉ'
+              : 'Payment complete'
             : isAm
-              ? 'ቀሪ'
+              ? 'ቀሪ ክፍያ'
               : 'Remaining'}
         </span>
 
         <span
           className={[
-            'font-mono text-sm font-black',
+            'font-mono',
+            'text-sm',
+            'font-black',
             isBalanced
               ? 'text-success'
               : 'text-coffee-600',
           ].join(' ')}
         >
-          {Math.abs(
-            remainingAmount,
-          ).toLocaleString()}
+          {remainingAmount.toLocaleString()}
 
           <span className="ml-1 text-[9px]">
             ETB
@@ -625,18 +1172,26 @@ export default function PaymentSelector({
         </span>
       </div>
 
-      {/* Complete */}
+      {/* ====================================================== */}
+      {/* COMPLETE PAYMENT */}
+      {/* ====================================================== */}
+
       <button
         type="button"
         onClick={submitPayment}
         disabled={!isBalanced}
         className="
-          flex h-12 w-full
-          items-center justify-center gap-2
+          flex
+          h-11
+          w-full
+          items-center
+          justify-center
+          gap-2
           rounded-lg
           bg-berbere-500
-          px-4
-          text-sm font-black
+          px-3
+          text-sm
+          font-black
           text-cream-50
           shadow-card
           transition-all
@@ -648,7 +1203,13 @@ export default function PaymentSelector({
           disabled:shadow-none
         "
       >
-        <Check className="h-4 w-4 text-gold-300" />
+        <Check
+          className="
+            h-4
+            w-4
+            text-gold-300
+          "
+        />
 
         <span>
           {isAm
@@ -656,12 +1217,16 @@ export default function PaymentSelector({
             : 'Complete Payment'}
         </span>
 
-        <span className="font-mono text-[10px] text-gold-200">
+        <span
+          className="
+            font-mono
+            text-[10px]
+            text-gold-200
+          "
+        >
           {totalBill.toLocaleString()} ETB
         </span>
       </button>
-
     </div>
   )
 }
-

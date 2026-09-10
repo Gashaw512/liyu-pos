@@ -1,3 +1,5 @@
+// src/app/api/products/templates/route.ts
+// This route is responsible for building a master reference catalog of products, categories, and inventory configurations from your Supabase database. It is designed to be called by your sync engine to retrieve the latest configurations for offline use.
 import { NextResponse } from 'next/server';
 import { createClient } from '../../../../lib/supabase/server';
 

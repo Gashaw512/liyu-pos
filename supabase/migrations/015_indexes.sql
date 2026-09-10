@@ -35,3 +35,4 @@ CREATE INDEX IF NOT EXISTS idx_payments_sale ON public.payments(sale_id);
 CREATE INDEX IF NOT EXISTS idx_shifts_active ON public.shifts(business_id, branch_id) WHERE status = 'open';
 CREATE INDEX IF NOT EXISTS idx_expenses_date ON public.expenses(business_id, expense_date) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_audit_logs_record ON public.audit_logs(table_name, record_id);
+

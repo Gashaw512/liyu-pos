@@ -4,10 +4,15 @@ import {
   CheckCircle2,
   AlertCircle,
   Info,
+  TriangleAlert,
   X,
 } from 'lucide-react'
 
-export type ToastType = 'success' | 'error' | 'info'
+export type ToastType =
+  | 'success'
+  | 'error'
+  | 'info'
+  | 'warning'
 
 export interface ToastItem {
   id: string
@@ -33,15 +38,23 @@ const styles: Record<
     iconClass: 'text-berbere-600',
     accentClass: 'bg-berbere-500',
   },
+
   error: {
     icon: AlertCircle,
     iconClass: 'text-danger',
     accentClass: 'bg-danger',
   },
+
   info: {
     icon: Info,
     iconClass: 'text-gold-600',
     accentClass: 'bg-gold-500',
+  },
+
+  warning: {
+    icon: TriangleAlert,
+    iconClass: 'text-amber-600',
+    accentClass: 'bg-amber-500',
   },
 }
 

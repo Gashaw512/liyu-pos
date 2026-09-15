@@ -136,7 +136,7 @@ async function getTodayExpenses(
       'expense_date',
       options.from.slice(0, 10),
     )
-    .lt(
+    .lte(
       'expense_date',
       options.to.slice(0, 10),
     )

@@ -209,7 +209,7 @@ export default function DashboardClientContent({
 
   const goToReports = () => goTo('/reports')
 
-  const goToExpenses = () => goTo('/expenses')
+  const goToExpenses = () => goTo('/dashboard/expenses')
 
   /* ============================================================
      VOICE BRIEFING

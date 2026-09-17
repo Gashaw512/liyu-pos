@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
+    "@internationalized/date": "^3.12.4",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.107.0",
     "@tanstack/react-query": "^5.101.4",

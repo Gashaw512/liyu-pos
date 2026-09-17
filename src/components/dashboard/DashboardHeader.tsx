@@ -1,16 +1,19 @@
+// src/components/dashboard/DashboardHeader.tsx
+
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, {
+  useEffect,
+  useState,
+} from 'react'
+
 import {
-  Volume2,
-  VolumeX,
-  ChevronDown,
   CalendarDays,
+  ChevronDown,
   Moon,
   Sun,
-  PackagePlus,
-  ShoppingCart,
-  ReceiptText,
+  Volume2,
+  VolumeX,
 } from 'lucide-react'
 
 interface DashboardHeaderProps {
@@ -26,43 +29,72 @@ interface DashboardHeaderProps {
   onCloseDay?: () => void
   onOpenDay?: () => void
 
+  // Kept for compatibility with DashboardClientContent.
   onSalesClick?: () => void
   onReceiveStockClick?: () => void
   onExpenseClick?: () => void
 
   lowStockCount?: number
+
+  // DashboardPeriodFilter or another control.
+  rightSlot?: React.ReactNode
 }
 
+/**
+ * Format the current date using the Ethiopian calendar.
+ *
+ * Display only.
+ * Database filtering continues to use Gregorian
+ * YYYY-MM-DD values.
+ */
 function getBusinessDate(
   date: Date,
   isAm: boolean,
-) {
+): string {
   try {
-    const locale = isAm
-      ? 'am-ET-u-ca-ethiopic'
-      : 'en-ET-u-ca-ethiopic'
-
-    return new Intl.DateTimeFormat(locale, {
-      weekday: 'long',
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-    }).format(date)
-  } catch {
     return new Intl.DateTimeFormat(
-      isAm ? 'am-ET' : 'en-US',
+      isAm
+        ? 'am-ET-u-ca-ethiopic'
+        : 'en-ET-u-ca-ethiopic',
       {
+        calendar: 'ethiopic',
         weekday: 'long',
         day: 'numeric',
         month: 'long',
         year: 'numeric',
       },
     ).format(date)
+  } catch {
+    try {
+      return new Intl.DateTimeFormat(
+        isAm
+          ? 'am-ET-u-ca-ethiopic'
+          : 'en-ET-u-ca-ethiopic',
+        {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+        },
+      ).format(date)
+    } catch {
+      return new Intl.DateTimeFormat(
+        isAm ? 'am-ET' : 'en-US',
+        {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+        },
+      ).format(date)
+    }
   }
 }
 
 export function DashboardHeader({
-  businessName,
+  // Kept because the parent component still provides it.
+  businessName: _businessName,
+
   isAm,
 
   isVoicePlaying,
@@ -74,36 +106,73 @@ export function DashboardHeader({
   onCloseDay,
   onOpenDay,
 
-  onSalesClick,
-  onReceiveStockClick,
-  onExpenseClick,
+  // Compatibility props.
+  onSalesClick: _onSalesClick,
+  onReceiveStockClick: _onReceiveStockClick,
+  onExpenseClick: _onExpenseClick,
+  lowStockCount: _lowStockCount,
 
-  lowStockCount = 0,
+  rightSlot,
 }: DashboardHeaderProps) {
-  const t = (en: string, am: string) =>
-    isAm ? am : en
+  const t = (
+    en: string,
+    am: string,
+  ) => (isAm ? am : en)
 
   const [dateText, setDateText] = useState('')
 
+  /*
+   * Keep the Ethiopian date current.
+   */
   useEffect(() => {
-    setDateText(
-      getBusinessDate(new Date(), isAm),
+    const updateDate = () => {
+      setDateText(
+        getBusinessDate(
+          new Date(),
+          isAm,
+        ),
+      )
+    }
+
+    updateDate()
+
+    const interval = window.setInterval(
+      updateDate,
+      60_000,
     )
+
+    return () => {
+      window.clearInterval(interval)
+    }
   }, [isAm])
 
   const statusLabel = activeShift
     ? t('OPEN', 'ክፍት')
     : t('CLOSED', 'ዝግ')
 
+  const dayActionLabel = activeShift
+    ? t(
+        'Close business day',
+        'የንግድ ቀን ዝጋ',
+      )
+    : t(
+        'Open business day',
+        'የንግድ ቀን ክፈት',
+      )
+
   const voiceLabel = isVoicePlaying
     ? t(
-      'Stop briefing',
-      'አጭር መረጃውን አቁም',
-    )
+        'Stop briefing',
+        'አጭር መረጃውን አቁም',
+      )
     : t(
-      "Today's briefing",
-      'የዛሬ አጭር መረጃ',
-    )
+        "Today's briefing",
+        'የዛሬ አጭር መረጃ',
+      )
+
+  const handleDayAction = activeShift
+    ? onCloseDay
+    : onOpenDay
 
   return (
     <section
@@ -112,7 +181,7 @@ export function DashboardHeader({
         'የንግድ ዳሽቦርድ',
       )}
       className="
-        overflow-hidden
+        relative
         rounded-2xl
         border
         border-cream-200
@@ -120,113 +189,148 @@ export function DashboardHeader({
         shadow-sm
       "
     >
-      {/* =====================================================
-          BUSINESS IDENTITY
-         ===================================================== */}
-
       <div
         className="
           relative
           flex
-          min-h-[62px]
+          min-h-[58px]
           items-center
           gap-3
-          px-3.5
-          py-3
+          px-3
+          py-2
           sm:px-4
         "
       >
-        {/* Subtle decorative accent */}
+        {/* =====================================================
+            ETHIOPIAN DATE + BUSINESS STATUS
+           ===================================================== */}
 
         <div
           className="
-            absolute
-            left-0
-            top-3
-            h-8
-            w-0.5
-            rounded-r-full
-            bg-berbere-500
+            min-w-0
+            flex-1
           "
-          aria-hidden="true"
-        />
-
-        {/* BUSINESS INFO */}
-
-        <div className="min-w-0 flex-1 pl-1">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <h1
+        >
+          <div
+            className="
+              flex
+              min-w-0
+              items-center
+              gap-1.5
+            "
+          >
+            {/* Small accent */}
+            <span
+              aria-hidden="true"
               className="
-                min-w-0
-                truncate
-                text-[13px]
-                font-black
-                tracking-tight
-                text-coffee-900
-                sm:text-sm
-              "
-            >
-              {businessName}
-            </h1>
-
-            {/* DAY STATUS */}
-
-            <button
-              type="button"
-              onClick={onDayStatusClick}
-              disabled={!onDayStatusClick}
-              aria-label={t(
-                'Business day status',
-                'የንግድ ቀን ሁኔታ',
-              )}
-              className="
-                group
-                inline-flex
+                h-5
+                w-0.5
                 shrink-0
-                items-center
-                gap-1
                 rounded-full
-                px-1.5
-                py-0.5
-                transition-all
-                duration-200
-                active:scale-95
-                disabled:cursor-default
+                bg-berbere-500
+              "
+            />
+
+            {/* Ethiopian date */}
+            <div
+              className="
+                flex
+                min-w-0
+                flex-1
+                items-center
+                gap-1.5
               "
             >
-              <span
-                className={`
-                  h-1.5
-                  w-1.5
-                  rounded-full
-                  transition-all
-                  duration-300
-                  ${activeShift
-                    ? `
-                        bg-success
-                        shadow-[0_0_0_3px_rgba(34,197,94,0.10)]
-                      `
-                    : 'bg-coffee-300'
-                  }
-                `}
+              <CalendarDays
+                aria-hidden="true"
+                className="
+                  h-3.5
+                  w-3.5
+                  shrink-0
+                  text-coffee-400
+                "
               />
 
               <span
-                className={`
+                className="
+                  min-w-0
+                  truncate
                   text-[10px]
-                  font-black
-                  tracking-[0.08em]
-                  ${activeShift
-                    ? 'text-success'
-                    : 'text-coffee-400'
-                  }
-                `}
+                  font-semibold
+                  leading-5
+                  text-coffee-600
+                  sm:text-[11px]
+                "
+                title={dateText}
               >
-                {statusLabel}
+                {dateText || '\u00A0'}
               </span>
+            </div>
 
-              {onDayStatusClick && (
+            {/* =================================================
+                BUSINESS DAY STATUS
+               ================================================= */}
+
+            {onDayStatusClick ? (
+              <button
+                type="button"
+                onClick={onDayStatusClick}
+                aria-label={t(
+                  'Business day status',
+                  'የንግድ ቀን ሁኔታ',
+                )}
+                className="
+                  group
+                  inline-flex
+                  shrink-0
+                  items-center
+                  gap-1
+                  rounded-full
+                  border
+                  border-transparent
+                  px-1.5
+                  py-1
+                  transition
+                  hover:border-cream-200
+                  hover:bg-cream-50
+                  active:scale-95
+                "
+              >
+                <span
+                  aria-hidden="true"
+                  className={`
+                    h-1.5
+                    w-1.5
+                    shrink-0
+                    rounded-full
+                    ${
+                      activeShift
+                        ? `
+                            bg-success
+                            shadow-[0_0_0_3px_rgba(34,197,94,0.10)]
+                          `
+                        : 'bg-coffee-300'
+                    }
+                  `}
+                />
+
+                <span
+                  className={`
+                    text-[9px]
+                    font-black
+                    tracking-[0.07em]
+                    ${
+                      activeShift
+                        ? 'text-success'
+                        : 'text-coffee-400'
+                    }
+                  `}
+                >
+                  {statusLabel}
+                </span>
+
                 <ChevronDown
+                  aria-hidden="true"
                   className="
                     h-2.5
                     w-2.5
@@ -236,641 +340,204 @@ export function DashboardHeader({
                     group-hover:translate-y-0.5
                   "
                 />
-              )}
-            </button>
-          </div>
-
-          {/* DATE */}
-
-          <div
-            className="
-              mt-0.5
-              flex
-              min-h-[14px]
-              min-w-0
-              items-center
-              gap-1
-              text-[9px]
-              font-medium
-              text-coffee-400
-            "
-          >
-            <CalendarDays
-              className="
-                h-2.5
-                w-2.5
-                shrink-0
-              "
-            />
-
-            <span className="truncate">
-              {dateText || '\u00A0'}
-            </span>
-          </div>
-        </div>
-
-        {/* VOICE BRIEFING */}
-
-        <button
-          type="button"
-          onClick={onToggleVoice}
-          aria-label={voiceLabel}
-          title={voiceLabel}
-          className={`
-            group
-            relative
-            flex
-            h-8
-            w-8
-            shrink-0
-            items-center
-            justify-center
-            rounded-lg
-            border
-            transition-all
-            duration-200
-            active:scale-90
-
-            ${isVoicePlaying
-              ? `
-                  border-berbere-500
-                  bg-berbere-500
-                  text-white
-                  shadow-sm
-                `
-              : `
-                  border-cream-200
-                  bg-cream-50
-                  text-coffee-500
-                  hover:border-berbere-300
-                  hover:bg-berbere-50
-                  hover:text-berbere-600
-                `
-            }
-          `}
-        >
-          {isVoicePlaying && (
-            <span
-              className="
-                absolute
-                inset-0
-                animate-ping
-                rounded-lg
-                bg-berbere-400/20
-              "
-              aria-hidden="true"
-            />
-          )}
-
-          {isVoicePlaying ? (
-            <VolumeX className="relative h-3.5 w-3.5" />
-          ) : (
-            <Volume2
-              className="
-                relative
-                h-3.5
-                w-3.5
-                transition-transform
-                duration-200
-                group-hover:scale-110
-              "
-            />
-          )}
-        </button>
-      </div>
-
-      {/* =====================================================
-          QUICK ACTIONS
-         ===================================================== */}
-
-      {/* =====================================================
-    QUICK ACTIONS
-   ===================================================== */}
-
-      <div
-        className="
-    border-t
-    border-cream-200/70
-    bg-cream-50/30
-  "
-      >
-        {/* SECTION LABEL */}
-
-        <div
-          className="
-      flex
-      h-7
-      items-center
-      justify-center
-    "
-        >
-          <div className="flex items-center gap-2">
-            <span className="h-px w-4 bg-cream-300" />
-
-            <span
-              className="
-          text-[7px]
-          font-black
-          uppercase
-          tracking-[0.3em]
-          text-coffee-400
-        "
-            >
-              {t(
-                'Quick Actions',
-                'ፈጣን እርምጃዎች',
-              )}
-            </span>
-
-            <span className="h-px w-4 bg-cream-300" />
-          </div>
-        </div>
-
-        {/* ===================================================
-      ACTION GRID
-     =================================================== */}
-
-        <div
-          className="
-      grid
-      grid-cols-4
-      border-t
-      border-cream-200/60
-    "
-        >
-          {/* =================================================
-        NEW SALE
-       ================================================= */}
-
-          {onSalesClick && (
-            <button
-              type="button"
-              onClick={onSalesClick}
-              aria-label={t(
-                'Start a new sale',
-                'አዲስ ሽያጭ ጀምር',
-              )}
-              className="
-          group
-          flex
-          min-w-0
-          min-h-[58px]
-          flex-col
-          items-center
-          justify-center
-          gap-1
-          border-r
-          border-cream-200
-          bg-white
-          px-1
-          py-2
-          text-coffee-800
-          transition-all
-          duration-200
-          hover:bg-berbere-50
-          hover:text-berbere-700
-          active:scale-[0.97]
-        "
-            >
-              <span
-                className="
-            flex
-            h-6
-            w-6
-            shrink-0
-            items-center
-            justify-center
-            rounded-lg
-            bg-berbere-50
-            transition-all
-            duration-200
-            group-hover:bg-berbere-100
-            group-hover:scale-105
-          "
-              >
-                <ShoppingCart
-                  className="
-              h-3.5
-              w-3.5
-              text-berbere-600
-              transition-transform
-              duration-200
-              group-hover:scale-110
-            "
-                />
-              </span>
-
-              <span
-                className="
-            text-center
-            text-[10px]
-            font-black
-            leading-[1.15]
-            sm:text-[9px]
-          "
-              >
-                {isAm ? (
-                  <>
-                    <span >
-                      አዲስ
-                      ሽያጭ
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <span >
-                      New Sale
-                    </span>
-                  </>
-                )}
-              </span>
-            </button>
-          )}
-
-          {/* =================================================
-        RECEIVE STOCK
-       ================================================= */}
-
-          {onReceiveStockClick && (
-            <button
-              type="button"
-              onClick={onReceiveStockClick}
-              aria-label={t(
-                'Receive stock',
-                'እቃ ተቀበል',
-              )}
-              className="
-          group
-          relative
-          flex
-          min-w-0
-          min-h-[58px]
-          flex-col
-          items-center
-          justify-center
-          gap-1
-          border-r
-          border-cream-200
-          bg-white
-          px-1
-          py-2
-          text-coffee-700
-          transition-all
-          duration-200
-          hover:bg-cream-50
-          active:scale-[0.97]
-        "
-            >
-              <span
-                className="
-            flex
-            h-6
-            w-6
-            shrink-0
-            items-center
-            justify-center
-            rounded-lg
-            bg-cream-50
-            transition-all
-            duration-200
-            group-hover:bg-white
-            group-hover:scale-105
-          "
-              >
-                <PackagePlus
-                  className="
-              h-3.5
-              w-3.5
-              text-coffee-500
-              transition-transform
-              duration-200
-              group-hover:-translate-y-0.5
-            "
-                />
-              </span>
-
-              <span
-                className="
-            text-center
-            text-[10px]
-            font-black
-            leading-[1.15]
-            sm:text-[9px]
-          "
-              >
-                {isAm ? (
-                  <>
-                    <span >
-                      እቃ
-                      ተቀበል
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <span >
-                      Receive
-                      Stock
-                    </span>
-                  </>
-                )}
-              </span>
-
-              {/* LOW STOCK */}
-
-              {lowStockCount > 0 && (
-                <span
-                  aria-label={t(
-                    `${lowStockCount} low stock items`,
-                    `${lowStockCount} ዝቅተኛ ክምችት ያላቸው እቃዎች`,
-                  )}
-                  className="
-              absolute
-              right-1
-              top-1
-              flex
-              h-4
-              min-w-4
-              items-center
-              justify-center
-              rounded-full
-              bg-berbere-500
-              px-1
-              text-[10px]
-              font-black
-              leading-none
-              text-white
-              shadow-sm
-            "
-                >
-                  {lowStockCount > 99
-                    ? '99+'
-                    : lowStockCount}
-                </span>
-              )}
-            </button>
-          )}
-
-          {/* =================================================
-        RECORD EXPENSE
-       ================================================= */}
-
-          {onExpenseClick && (
-            <button
-              type="button"
-              onClick={onExpenseClick}
-              aria-label={t(
-                'Record expense',
-                'ወጪ መዝግብ',
-              )}
-              className="
-          group
-          flex
-          min-w-0
-          min-h-[58px]
-          flex-col
-          items-center
-          justify-center
-          gap-1
-          border-r
-          border-cream-200
-          bg-white
-          px-1
-          py-2
-          text-coffee-700
-          transition-all
-          duration-200
-          hover:bg-cream-50
-          active:scale-[0.97]
-        "
-            >
-              <span
-                className="
-            flex
-            h-6
-            w-6
-            shrink-0
-            items-center
-            justify-center
-            rounded-lg
-            bg-cream-50
-            transition-all
-            duration-200
-            group-hover:bg-white
-            group-hover:scale-105
-          "
-              >
-                <ReceiptText
-                  className="
-              h-3.5
-              w-3.5
-              text-coffee-500
-              transition-transform
-              duration-200
-              group-hover:scale-110
-            "
-                />
-              </span>
-
-              <span
-                className="
-            text-center
-            text-[10px]
-            font-black
-            leading-[1.15]
-            sm:text-[9px]
-          "
-              >
-                {isAm ? (
-                  <>
-                    <span >
-                      ወጪ
-
-                      መዝግብ
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <span >
-                      Record
-
-                      Expense
-                    </span>
-                  </>
-                )}
-              </span>
-            </button>
-          )}
-
-          {/* =================================================
-        OPEN / CLOSE DAY
-       ================================================= */}
-
-          {activeShift
-            ? onCloseDay && (
-              <button
-                type="button"
-                onClick={onCloseDay}
-                aria-label={t(
-                  'Close business day',
-                  'የንግድ ቀን ዝጋ',
-                )}
-                className="
-              group
-              flex
-              min-w-0
-              min-h-[58px]
-              flex-col
-              items-center
-              justify-center
-              gap-1
-              bg-white
-              px-1
-              py-2
-              text-coffee-700
-              transition-all
-              duration-200
-              hover:bg-coffee-50
-              active:scale-[0.97]
-            "
-              >
-                <span
-                  className="
-                flex
-                h-6
-                w-6
-                shrink-0
-                items-center
-                justify-center
-                rounded-lg
-                bg-coffee-50
-                transition-all
-                duration-200
-                group-hover:bg-coffee-100
-                group-hover:scale-105
-              "
-                >
-                  <Moon
-                    className="
-                  h-3.5
-                  w-3.5
-                  text-coffee-500
-                  transition-transform
-                  duration-200
-                  group-hover:-rotate-12
-                "
-                  />
-                </span>
-
-                <span
-                  className="
-                text-center
-                text-[10px]
-                font-black
-                leading-[1.15]
-                sm:text-[9px]
-              "
-                >
-                  {isAm ? (
-                    <>
-                      <span >
-                        ቀኑን
-
-                        ዝጋ
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <span >
-                        Close
-
-                        Day
-                      </span>
-                    </>
-                  )}
-                </span>
               </button>
-            )
-            : onOpenDay && (
-              <button
-                type="button"
-                onClick={onOpenDay}
-                aria-label={t(
-                  'Open business day',
-                  'የንግድ ቀን ክፈት',
-                )}
+            ) : (
+              <span
                 className="
-              group
-              flex
-              min-w-0
-              min-h-[58px]
-              flex-col
-              items-center
-              justify-center
-              gap-1
-              bg-white
-              px-1
-              py-2
-              text-success
-              transition-all
-              duration-200
-              hover:bg-success/5
-              active:scale-[0.97]
-            "
+                  inline-flex
+                  shrink-0
+                  items-center
+                  gap-1
+                  rounded-full
+                  px-1.5
+                  py-1
+                "
               >
                 <span
-                  className="
-                flex
-                h-6
-                w-6
-                shrink-0
-                items-center
-                justify-center
-                rounded-lg
-                bg-success/10
-                transition-all
-                duration-200
-                group-hover:bg-success/15
-                group-hover:scale-105
-              "
-                >
-                  <Sun
-                    className="
-                  h-3.5
-                  w-3.5
-                  text-success
-                  transition-transform
-                  duration-200
-                  group-hover:rotate-45
-                "
-                  />
-                </span>
+                  aria-hidden="true"
+                  className={`
+                    h-1.5
+                    w-1.5
+                    rounded-full
+                    ${
+                      activeShift
+                        ? 'bg-success'
+                        : 'bg-coffee-300'
+                    }
+                  `}
+                />
 
                 <span
-                  className="
-                text-center
-                text-[10px]
-                font-black
-                leading-[1.15]
-                sm:text-[9px]
-              "
+                  className={`
+                    text-[9px]
+                    font-black
+                    tracking-[0.07em]
+                    ${
+                      activeShift
+                        ? 'text-success'
+                        : 'text-coffee-400'
+                    }
+                  `}
                 >
-                  {isAm ? (
-                    <>
-                      <span >
-                        ቀኑን ክፈት
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <span >
-                        Open
-                        Day
-                      </span>
-                    </>
-                  )}
+                  {statusLabel}
                 </span>
-              </button>
+              </span>
             )}
+          </div>
+        </div>
+
+        {/* =====================================================
+            ACTION CONTROLS
+           ===================================================== */}
+
+        <div
+          className="
+            relative
+            z-30
+            flex
+            shrink-0
+            items-center
+            gap-1.5
+          "
+        >
+          {/* Period filter */}
+          {rightSlot && (
+            <div className="relative shrink-0">
+              {rightSlot}
+            </div>
+          )}
+
+          {/* Open / Close Day */}
+          {handleDayAction && (
+            <button
+              type="button"
+              onClick={handleDayAction}
+              aria-label={dayActionLabel}
+              title={dayActionLabel}
+              className="
+                group
+                flex
+                h-8
+                w-8
+                shrink-0
+                items-center
+                justify-center
+                rounded-lg
+                border
+                border-cream-200
+                bg-cream-50
+                text-coffee-500
+                transition-all
+                duration-200
+                hover:border-coffee-300
+                hover:bg-coffee-50
+                hover:text-coffee-700
+                active:scale-90
+              "
+            >
+              {activeShift ? (
+                <Moon
+                  aria-hidden="true"
+                  className="
+                    h-3.5
+                    w-3.5
+                    transition-transform
+                    duration-200
+                    group-hover:-rotate-12
+                  "
+                />
+              ) : (
+                <Sun
+                  aria-hidden="true"
+                  className="
+                    h-3.5
+                    w-3.5
+                    transition-transform
+                    duration-200
+                    group-hover:rotate-45
+                  "
+                />
+              )}
+            </button>
+          )}
+
+          {/* Voice briefing */}
+          <button
+            type="button"
+            onClick={onToggleVoice}
+            aria-label={voiceLabel}
+            title={voiceLabel}
+            aria-pressed={isVoicePlaying}
+            className={`
+              group
+              relative
+              flex
+              h-8
+              w-8
+              shrink-0
+              items-center
+              justify-center
+              rounded-lg
+              border
+              transition-all
+              duration-200
+              active:scale-90
+
+              ${
+                isVoicePlaying
+                  ? `
+                      border-berbere-500
+                      bg-berbere-500
+                      text-white
+                      shadow-sm
+                    `
+                  : `
+                      border-cream-200
+                      bg-cream-50
+                      text-coffee-500
+                      hover:border-berbere-300
+                      hover:bg-berbere-50
+                      hover:text-berbere-600
+                    `
+              }
+            `}
+          >
+            {isVoicePlaying && (
+              <span
+                aria-hidden="true"
+                className="
+                  absolute
+                  inset-0
+                  animate-ping
+                  rounded-lg
+                  bg-berbere-400/20
+                "
+              />
+            )}
+
+            {isVoicePlaying ? (
+              <VolumeX
+                aria-hidden="true"
+                className="
+                  relative
+                  h-3.5
+                  w-3.5
+                "
+              />
+            ) : (
+              <Volume2
+                aria-hidden="true"
+                className="
+                  relative
+                  h-3.5
+                  w-3.5
+                  transition-transform
+                  duration-200
+                  group-hover:scale-110
+                "
+              />
+            )}
+          </button>
         </div>
       </div>
     </section>

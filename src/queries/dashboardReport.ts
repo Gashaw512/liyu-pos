@@ -16,6 +16,11 @@ export interface DashboardReportOptions {
   businessId: string
   userId: string
   branchId?: string | null
+   // Date-only range — used for expenses
+  fromDate: string
+  toDate: string
+
+  // ISO timestamp range — used for sales
   from: string
   to: string
 }
@@ -40,9 +45,9 @@ interface InventoryProductRow {
   deleted_at: string | null
 
   category:
-    | InventoryCategoryRow
-    | InventoryCategoryRow[]
-    | null
+  | InventoryCategoryRow
+  | InventoryCategoryRow[]
+  | null
 }
 
 interface RawInventoryRow {
@@ -51,9 +56,9 @@ interface RawInventoryRow {
   quantity: number | string | null
 
   product:
-    | InventoryProductRow
-    | InventoryProductRow[]
-    | null
+  | InventoryProductRow
+  | InventoryProductRow[]
+  | null
 }
 
 interface CategorySaleRow {
@@ -62,35 +67,35 @@ interface CategorySaleRow {
   gross_profit: number | string | null
 
   product:
+  | {
+    category:
     | {
-        category:
-          | {
-              id: string
-              name: string
-              name_am: string | null
-            }
-          | {
-              id: string
-              name: string
-              name_am: string | null
-            }[]
-          | null
-      }
+      id: string
+      name: string
+      name_am: string | null
+    }
     | {
-        category:
-          | {
-              id: string
-              name: string
-              name_am: string | null
-            }
-          | {
-              id: string
-              name: string
-              name_am: string | null
-            }[]
-          | null
-      }[]
+      id: string
+      name: string
+      name_am: string | null
+    }[]
     | null
+  }
+  | {
+    category:
+    | {
+      id: string
+      name: string
+      name_am: string | null
+    }
+    | {
+      id: string
+      name: string
+      name_am: string | null
+    }[]
+    | null
+  }[]
+  | null
 }
 
 interface SalesRow {
@@ -114,7 +119,7 @@ const toNumber = (value: unknown): number => {
    EXPENSES
    ============================================================ */
 
-async function getTodayExpenses(
+async function getPeriodExpenses(
   supabase: Awaited<ReturnType<typeof createClient>>,
   options: DashboardReportOptions,
 ): Promise<ExpenseSummary> {
@@ -134,11 +139,11 @@ async function getTodayExpenses(
     )
     .gte(
       'expense_date',
-      options.from.slice(0, 10),
+      options.fromDate,
     )
-    .lte(
+    .lt(
       'expense_date',
-      options.to.slice(0, 10),
+      options.toDate,
     )
 
   if (options.branchId) {
@@ -154,6 +159,11 @@ async function getTodayExpenses(
   } = await query
 
   if (error) {
+    console.error(
+      '[DASHBOARD EXPENSE ERROR]',
+      error,
+    )
+
     throw new Error(
       `Failed to fetch expenses: ${error.message}`,
     )
@@ -564,7 +574,7 @@ export async function getDashboardReport(
       options,
     ),
 
-    getTodayExpenses(
+    getPeriodExpenses(
       supabase,
       options,
     ),
@@ -879,17 +889,17 @@ export async function getDashboardReport(
   const grossMargin =
     revenue > 0
       ? (
-          grossProfit /
-          revenue
-        ) * 100
+        grossProfit /
+        revenue
+      ) * 100
       : 0
 
   const netMargin =
     revenue > 0
       ? (
-          netProfit /
-          revenue
-        ) * 100
+        netProfit /
+        revenue
+      ) * 100
       : 0
 
   const profit: ProfitSummary = {

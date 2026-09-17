@@ -1,11 +1,24 @@
 'use client'
 
 import {
+  useState,
+} from 'react'
+
+import {
   Plus,
 } from 'lucide-react'
 
+interface ExpenseActionResult {
+  success: boolean
+  error?: string
+}
+
+type ExpenseAction = (
+  formData: FormData,
+) => Promise<ExpenseActionResult>
+
 interface ExpenseFormProps {
-  action: (formData: FormData) => void | Promise<void>
+  action: ExpenseAction
   today: string
   isAm: boolean
 }
@@ -44,7 +57,7 @@ const CATEGORIES = [
   {
     value: 'Marketing',
     en: 'Marketing',
-    am: 'ማስታወቂያ',
+    am: 'ማስተዋወቂያ',
   },
   {
     value: 'Other',
@@ -86,8 +99,95 @@ export default function ExpenseForm({
   today,
   isAm,
 }: ExpenseFormProps) {
-  const t = (en: string, am: string) =>
-    isAm ? am : en
+  const [isSaving, setIsSaving] =
+    useState(false)
+
+  const [error, setError] =
+    useState('')
+
+  const [success, setSuccess] =
+    useState(false)
+
+  const t = (
+    en: string,
+    am: string,
+  ) => isAm ? am : en
+
+  // ============================================================
+  // SUBMIT
+  // ============================================================
+
+  const handleSubmit = async (
+    event: React.FormEvent<HTMLFormElement>,
+  ) => {
+    event.preventDefault()
+
+    if (isSaving) {
+      return
+    }
+
+    setError('')
+    setSuccess(false)
+    setIsSaving(true)
+
+    try {
+      const form = event.currentTarget
+
+      const formData = new FormData(form)
+
+      const result = await action(formData)
+
+      if (!result.success) {
+        setError(
+          result.error ??
+            t(
+              'Failed to record expense.',
+              'ወጪውን መመዝገብ አልተቻለም።',
+            ),
+        )
+
+        return
+      }
+
+      // ========================================================
+      // SUCCESS
+      // ========================================================
+
+      setSuccess(true)
+
+      // Reset the form after successful save.
+      form.reset()
+
+      // Restore the default date.
+      const dateInput =
+        form.elements.namedItem(
+          'expense_date',
+        ) as HTMLInputElement | null
+
+      if (dateInput) {
+        dateInput.value = today
+      }
+
+      // Hide success message after a short time.
+      window.setTimeout(() => {
+        setSuccess(false)
+      }, 2500)
+    } catch (error) {
+      console.error(
+        '[EXPENSE FORM] Failed to create expense:',
+        error,
+      )
+
+      setError(
+        t(
+          'Something went wrong. Please try again.',
+          'አንድ ችግር ተፈጥሯል። እባክዎ እንደገና ይሞክሩ።',
+        ),
+      )
+    } finally {
+      setIsSaving(false)
+    }
+  }
 
   return (
     <section
@@ -100,6 +200,10 @@ export default function ExpenseForm({
         shadow-sm
       "
     >
+      {/* ========================================================
+          HEADER
+      ======================================================== */}
+
       <div className="flex items-center gap-3">
         <div
           className="
@@ -117,7 +221,10 @@ export default function ExpenseForm({
 
         <div>
           <h2 className="text-sm font-black text-coffee-900">
-            {t('Record Expense', 'ወጪ መዝግብ')}
+            {t(
+              'Record Expense',
+              'ወጪ መዝግብ',
+            )}
           </h2>
 
           <p className="mt-0.5 text-[10px] text-coffee-400">
@@ -129,16 +236,86 @@ export default function ExpenseForm({
         </div>
       </div>
 
+      {/* ========================================================
+          FORM
+      ======================================================== */}
+
       <form
-        action={action}
-        className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-4"
+        onSubmit={handleSubmit}
+        className="
+          mt-5
+          grid
+          gap-4
+          md:grid-cols-2
+          lg:grid-cols-4
+        "
       >
+        {/* ======================================================
+            ERROR / SUCCESS
+        ====================================================== */}
+
+        {(error || success) && (
+          <div className="md:col-span-2 lg:col-span-4">
+            {error && (
+              <div
+                className="
+                  rounded-xl
+                  border
+                  border-red-200
+                  bg-red-50
+                  px-3
+                  py-2.5
+                  text-xs
+                  font-semibold
+                  text-red-700
+                "
+              >
+                {error}
+              </div>
+            )}
+
+            {success && (
+              <div
+                className="
+                  rounded-xl
+                  border
+                  border-green-200
+                  bg-green-50
+                  px-3
+                  py-2.5
+                  text-xs
+                  font-semibold
+                  text-green-700
+                "
+              >
+                {t(
+                  'Expense recorded successfully.',
+                  'ወጪው በተሳካ ሁኔታ ተመዝግቧል።',
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ======================================================
+            CATEGORY
+        ====================================================== */}
+
         <div>
           <label
             htmlFor="category"
-            className="text-[10px] font-black uppercase tracking-[0.08em] text-coffee-500"
+            className="
+              text-[10px]
+              font-black
+              uppercase
+              tracking-[0.08em]
+              text-coffee-500
+            "
           >
-            {t('Category', 'የወጪ አይነት')}
+            {t(
+              'Category',
+              'የወጪ አይነት',
+            )}
           </label>
 
           <select
@@ -146,6 +323,7 @@ export default function ExpenseForm({
             name="category"
             required
             defaultValue=""
+            disabled={isSaving}
             className="
               mt-1.5
               w-full
@@ -160,10 +338,15 @@ export default function ExpenseForm({
               text-coffee-900
               outline-none
               focus:border-berbere-400
+              disabled:cursor-not-allowed
+              disabled:bg-coffee-50
             "
           >
             <option value="" disabled>
-              {t('Select category', 'የወጪ አይነት ይምረጡ')}
+              {t(
+                'Select category',
+                'የወጪ አይነት ይምረጡ',
+              )}
             </option>
 
             {CATEGORIES.map(category => (
@@ -171,18 +354,33 @@ export default function ExpenseForm({
                 key={category.value}
                 value={category.value}
               >
-                {isAm ? category.am : category.en}
+                {isAm
+                  ? category.am
+                  : category.en}
               </option>
             ))}
           </select>
         </div>
 
+        {/* ======================================================
+            AMOUNT
+        ====================================================== */}
+
         <div>
           <label
             htmlFor="amount"
-            className="text-[10px] font-black uppercase tracking-[0.08em] text-coffee-500"
+            className="
+              text-[10px]
+              font-black
+              uppercase
+              tracking-[0.08em]
+              text-coffee-500
+            "
           >
-            {t('Amount', 'መጠን')}
+            {t(
+              'Amount',
+              'መጠን',
+            )}
           </label>
 
           <div
@@ -206,6 +404,7 @@ export default function ExpenseForm({
               required
               inputMode="decimal"
               placeholder="0.00"
+              disabled={isSaving}
               className="
                 w-full
                 bg-transparent
@@ -215,6 +414,7 @@ export default function ExpenseForm({
                 font-bold
                 text-coffee-900
                 outline-none
+                disabled:bg-coffee-50
               "
             />
 
@@ -235,18 +435,32 @@ export default function ExpenseForm({
           </div>
         </div>
 
+        {/* ======================================================
+            PAYMENT METHOD
+        ====================================================== */}
+
         <div>
           <label
             htmlFor="payment_method"
-            className="text-[10px] font-black uppercase tracking-[0.08em] text-coffee-500"
+            className="
+              text-[10px]
+              font-black
+              uppercase
+              tracking-[0.08em]
+              text-coffee-500
+            "
           >
-            {t('Payment', 'ክፍያ')}
+            {t(
+              'Payment',
+              'ክፍያ',
+            )}
           </label>
 
           <select
             id="payment_method"
             name="payment_method"
             defaultValue="cash"
+            disabled={isSaving}
             className="
               mt-1.5
               w-full
@@ -261,6 +475,8 @@ export default function ExpenseForm({
               text-coffee-900
               outline-none
               focus:border-berbere-400
+              disabled:cursor-not-allowed
+              disabled:bg-coffee-50
             "
           >
             {PAYMENT_METHODS.map(method => (
@@ -268,18 +484,33 @@ export default function ExpenseForm({
                 key={method.value}
                 value={method.value}
               >
-                {isAm ? method.am : method.en}
+                {isAm
+                  ? method.am
+                  : method.en}
               </option>
             ))}
           </select>
         </div>
 
+        {/* ======================================================
+            DATE
+        ====================================================== */}
+
         <div>
           <label
             htmlFor="expense_date"
-            className="text-[10px] font-black uppercase tracking-[0.08em] text-coffee-500"
+            className="
+              text-[10px]
+              font-black
+              uppercase
+              tracking-[0.08em]
+              text-coffee-500
+            "
           >
-            {t('Date', 'ቀን')}
+            {t(
+              'Date',
+              'ቀን',
+            )}
           </label>
 
           <input
@@ -288,6 +519,7 @@ export default function ExpenseForm({
             type="date"
             required
             defaultValue={today}
+            disabled={isSaving}
             className="
               mt-1.5
               w-full
@@ -302,16 +534,31 @@ export default function ExpenseForm({
               text-coffee-900
               outline-none
               focus:border-berbere-400
+              disabled:cursor-not-allowed
+              disabled:bg-coffee-50
             "
           />
         </div>
 
+        {/* ======================================================
+            DESCRIPTION
+        ====================================================== */}
+
         <div className="md:col-span-2 lg:col-span-3">
           <label
             htmlFor="description"
-            className="text-[10px] font-black uppercase tracking-[0.08em] text-coffee-500"
+            className="
+              text-[10px]
+              font-black
+              uppercase
+              tracking-[0.08em]
+              text-coffee-500
+            "
           >
-            {t('Description', 'ማብራሪያ')}
+            {t(
+              'Description',
+              'ማብራሪያ',
+            )}
           </label>
 
           <input
@@ -323,6 +570,7 @@ export default function ExpenseForm({
               'Example: Cleaning materials',
               'ምሳሌ፦ የጽዳት እቃዎች',
             )}
+            disabled={isSaving}
             className="
               mt-1.5
               w-full
@@ -338,13 +586,20 @@ export default function ExpenseForm({
               outline-none
               placeholder:text-coffee-300
               focus:border-berbere-400
+              disabled:cursor-not-allowed
+              disabled:bg-coffee-50
             "
           />
         </div>
 
+        {/* ======================================================
+            SUBMIT BUTTON
+        ====================================================== */}
+
         <div className="flex items-end">
           <button
             type="submit"
+            disabled={isSaving}
             className="
               flex
               w-full
@@ -361,11 +616,21 @@ export default function ExpenseForm({
               transition
               hover:bg-berbere-700
               active:scale-[0.98]
+              disabled:cursor-not-allowed
+              disabled:opacity-60
             "
           >
             <Plus className="h-4 w-4" />
 
-            {t('Record Expense', 'ወጪ መዝግብ')}
+            {isSaving
+              ? t(
+                  'Saving...',
+                  'በመመዝገብ ላይ...',
+                )
+              : t(
+                  'Record Expense',
+                  'ወጪ መዝግብ',
+                )}
           </button>
         </div>
       </form>

@@ -5,18 +5,28 @@ import { useMemo, useState } from 'react'
 import ExpenseFilters from './ExpenseFilters'
 import ExpenseTable from './ExpenseTable'
 import ExpenseEditModal from './ExpenseEditModal'
+
 import type { Expense } from './expenseTypes'
+
+interface ExpenseActionResult {
+  success: boolean
+  error?: string
+}
+
+type ExpenseAction = (
+  formData: FormData,
+) => Promise<ExpenseActionResult>
 
 interface ExpenseHistoryProps {
   expenses: Expense[]
-  deleteAction: (
-    formData: FormData,
-  ) => void | Promise<void>
+  updateAction: ExpenseAction
+  deleteAction: ExpenseAction
   isAm: boolean
 }
 
 export default function ExpenseHistory({
   expenses,
+  updateAction,
   deleteAction,
   isAm,
 }: ExpenseHistoryProps) {
@@ -231,6 +241,7 @@ export default function ExpenseHistory({
         onClose={() =>
           setEditingExpense(null)
         }
+        action={updateAction}
         isAm={isAm}
       />
     </>

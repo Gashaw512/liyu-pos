@@ -4,9 +4,18 @@ import {
   Trash2,
 } from 'lucide-react'
 
+interface ExpenseActionResult {
+  success: boolean
+  error?: string
+}
+
+type ExpenseAction = (
+  formData: FormData,
+) => Promise<ExpenseActionResult>
+
 interface ExpenseDeleteButtonProps {
   expenseId: string
-  action: (formData: FormData) => void | Promise<void>
+  action: ExpenseAction
   isAm: boolean
 }
 
@@ -15,9 +24,11 @@ export default function ExpenseDeleteButton({
   action,
   isAm,
 }: ExpenseDeleteButtonProps) {
-  const handleDelete = (
+  const handleDelete = async (
     event: React.FormEvent<HTMLFormElement>,
   ) => {
+    event.preventDefault()
+
     const confirmed = window.confirm(
       isAm
         ? 'ይህን ወጪ መሰረዝ ይፈልጋሉ?'
@@ -25,15 +36,27 @@ export default function ExpenseDeleteButton({
     )
 
     if (!confirmed) {
-      event.preventDefault()
+      return
+    }
+
+    const formData = new FormData(
+      event.currentTarget,
+    )
+
+    const result = await action(formData)
+
+    if (!result.success) {
+      window.alert(
+        result.error ??
+          (isAm
+            ? 'ወጪውን መሰረዝ አልተቻለም።'
+            : 'Failed to delete expense.'),
+      )
     }
   }
 
   return (
-    <form
-      action={action}
-      onSubmit={handleDelete}
-    >
+    <form onSubmit={handleDelete}>
       <input
         type="hidden"
         name="expense_id"

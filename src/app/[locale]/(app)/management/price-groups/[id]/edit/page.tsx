@@ -3,29 +3,40 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useRouter, useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
+
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Check,
+  CheckSquare,
+  Coins,
+  Layers,
+  Loader2,
+  Save,
+  Search,
+  Square,
+} from 'lucide-react'
 
 import createClient from '@/lib/supabase/client'
 import { getBusinessId } from '@/lib/auth/getBusinessId'
 
-import {
-  ArrowLeft,
-  Loader2,
-  Save,
-  CheckSquare,
-  Square,
-  Layers,
-  AlertTriangle,
-  Coins
-} from 'lucide-react'
+const supabase = createClient()
 
-// Strongly-typed DTO for products queried in price group editing
+// ============================================================
+// TYPES
+// ============================================================
+
 interface ProductRow {
   id: string
   name: string
   name_am: string | null
   price_group_id: string | null
 }
+
+// ============================================================
+// PAGE
+// ============================================================
 
 export default function EditPriceGroupPage() {
   const router = useRouter()
@@ -35,310 +46,1041 @@ export default function EditPriceGroupPage() {
   const locale = String(params?.locale ?? 'am')
   const isAm = locale === 'am'
 
-  const supabase = createClient()
+  // ==========================================================
+  // STATE
+  // ==========================================================
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
   const [products, setProducts] = useState<ProductRow[]>([])
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([])
+  const [searchQuery, setSearchQuery] = useState('')
 
   const [formData, setFormData] = useState({
     name: '',
     nameAm: '',
-    amount: ''
+    amount: '',
   })
 
-  /* ───────────────────── LOAD DATA ───────────────────── */
-  const loadData = useCallback(async () => {
-    if (!id) return
+  // ==========================================================
+  // LOAD DATA
+  // ==========================================================
 
-    setLoading(true)
+  const loadData = useCallback(async () => {
+    if (!id) {
+      setLoading(false)
+      return
+    }
 
     try {
-      const businessId = await getBusinessId()
-      if (!businessId) throw new Error('Missing business')
+      setLoading(true)
 
-      // 1. Load group
+      const businessId = await getBusinessId()
+
+      if (!businessId) {
+        throw new Error(
+          isAm
+            ? 'የንግድ መለያ አልተገኘም'
+            : 'Business ID is required'
+        )
+      }
+
+      // --------------------------------------------------------
+      // LOAD PRICE GROUP
+      // --------------------------------------------------------
+
       const { data: group, error: groupError } = await supabase
         .from('price_groups')
-        .select('*')
+        .select('id, name, name_am, amount')
         .eq('id', id)
         .eq('business_id', businessId)
         .single()
 
-      if (groupError) throw groupError
+      if (groupError) {
+        throw groupError
+      }
 
       setFormData({
         name: group.name ?? '',
         nameAm: group.name_am ?? '',
-        amount: String(group.amount ?? 0)
+        amount: String(group.amount ?? ''),
       })
 
-      // 2. Load products (with conflict visibility)
-      const { data: prods, error: prodError } = await supabase
-        .from('products')
-        .select('id, name, name_am, price_group_id')
-        .eq('business_id', businessId)
+      // --------------------------------------------------------
+      // LOAD PRODUCTS
+      // --------------------------------------------------------
 
-      if (prodError) throw prodError
+      const { data: productRows, error: productError } =
+        await supabase
+          .from('products')
+          .select('id, name, name_am, price_group_id')
+          .eq('business_id', businessId)
+          .is('deleted_at', null)
+          .eq('is_active', true)
+          .order('name', { ascending: true })
 
-      // Type-cast the raw query result
-      const productsData = (prods as unknown as ProductRow[]) || []
+      if (productError) {
+        throw productError
+      }
+
+      const productsData =
+        (productRows as ProductRow[] | null) ?? []
+
       setProducts(productsData)
 
-      // 3. Preselect linked products
-      const linked = productsData
-        .filter((p: ProductRow) => p.price_group_id === id)
-        .map((p: ProductRow) => p.id)
+      // --------------------------------------------------------
+      // PRESELECT PRODUCTS ALREADY IN THIS GROUP
+      // --------------------------------------------------------
 
-      setSelectedProductIds(linked)
+      const linkedProductIds = productsData
+        .filter((product) => product.price_group_id === id)
+        .map((product) => product.id)
 
-    } catch (err) {
-      console.error('Load error:', err)
+      setSelectedProductIds(linkedProductIds)
+    } catch (error) {
+      console.error(
+        '[EditPriceGroupPage] Failed to load data:',
+        error
+      )
+
+      setProducts([])
+
+      window.alert(
+        isAm
+          ? 'የዋጋ ቡድኑን መረጃ መጫን አልተቻለም።'
+          : 'Failed to load the price group.'
+      )
     } finally {
       setLoading(false)
     }
-  }, [id, supabase])
+  }, [id, isAm])
 
   useEffect(() => {
-    loadData()
+    void loadData()
   }, [loadData])
 
-  /* ───────────────────── TOGGLE ───────────────────── */
-  const toggleProduct = (productId: string) => {
-    setSelectedProductIds(prev =>
-      prev.includes(productId)
-        ? prev.filter(id => id !== productId)
-        : [...prev, productId]
-    )
-  }
+  // ==========================================================
+  // FILTERED PRODUCTS
+  // ==========================================================
 
-  /* ───────────────────── MVP INTELLIGENCE ───────────────────── */
+  const filteredProducts = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase()
+
+    if (!query) {
+      return products
+    }
+
+    return products.filter((product) => {
+      const englishName =
+        product.name?.toLowerCase() ?? ''
+
+      const amharicName =
+        product.name_am?.toLowerCase() ?? ''
+
+      return (
+        englishName.includes(query) ||
+        amharicName.includes(query)
+      )
+    })
+  }, [products, searchQuery])
+
+  // ==========================================================
+  // SELECTED PRODUCTS
+  // ==========================================================
 
   const selectedProducts = useMemo(
-    () => products.filter((p: ProductRow) => selectedProductIds.includes(p.id)),
+    () =>
+      products.filter((product) =>
+        selectedProductIds.includes(product.id)
+      ),
     [products, selectedProductIds]
   )
 
   const totalProducts = selectedProducts.length
 
-  const estimatedImpact = useMemo(() => {
-    const amount = Number(formData.amount || 0)
-    return totalProducts * amount
-  }, [formData.amount, totalProducts])
+  // ==========================================================
+  // PRODUCTS MOVING FROM ANOTHER GROUP
+  // ==========================================================
 
-  const conflicts = useMemo(() => {
-    return products.filter(
-      (p: ProductRow) =>
-        selectedProductIds.includes(p.id) &&
-        p.price_group_id &&
-        p.price_group_id !== id
+  const conflicts = useMemo(
+    () =>
+      products.filter(
+        (product) =>
+          selectedProductIds.includes(product.id) &&
+          product.price_group_id &&
+          product.price_group_id !== id
+      ),
+    [products, selectedProductIds, id]
+  )
+
+  // ==========================================================
+  // SELECT ALL
+  // ==========================================================
+
+  const allFilteredSelected =
+    filteredProducts.length > 0 &&
+    filteredProducts.every((product) =>
+      selectedProductIds.includes(product.id)
     )
-  }, [products, selectedProductIds, id])
 
-  /* ───────────────────── UPDATE ───────────────────── */
-  const handleUpdate = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setSaving(true)
+  const toggleProduct = (productId: string) => {
+    setSelectedProductIds((current) =>
+      current.includes(productId)
+        ? current.filter((id) => id !== productId)
+        : [...current, productId]
+    )
+  }
+
+  const handleSelectAllFiltered = () => {
+    const filteredIds = filteredProducts.map(
+      (product) => product.id
+    )
+
+    if (filteredIds.length === 0) {
+      return
+    }
+
+    if (allFilteredSelected) {
+      setSelectedProductIds((current) =>
+        current.filter((id) => !filteredIds.includes(id))
+      )
+
+      return
+    }
+
+    setSelectedProductIds((current) => [
+      ...new Set([...current, ...filteredIds]),
+    ])
+  }
+
+  // ==========================================================
+  // FORM VALUES
+  // ==========================================================
+
+  const amount = Number(formData.amount)
+
+  const isValidAmount =
+    Number.isFinite(amount) && amount > 0
+
+  const displayName =
+    isAm
+      ? formData.nameAm.trim() ||
+        formData.name.trim() ||
+        'የዋጋ ቡድን'
+      : formData.name.trim() ||
+        formData.nameAm.trim() ||
+        'Price Group'
+
+  const estimatedValue = totalProducts * (
+    isValidAmount ? amount : 0
+  )
+
+  // ==========================================================
+  // UPDATE
+  // ==========================================================
+
+  const handleUpdate = async (
+    event: React.FormEvent
+  ) => {
+    event.preventDefault()
+
+    if (!isValidAmount) {
+      window.alert(
+        isAm
+          ? 'እባክዎ ትክክለኛ ዋጋ ያስገቡ።'
+          : 'Please enter a valid price.'
+      )
+
+      return
+    }
+
+    if (!id) {
+      return
+    }
 
     try {
+      setSaving(true)
+
       const businessId = await getBusinessId()
-      if (!businessId) throw new Error('Missing business')
 
-      const newAmount = Number(formData.amount)
+      if (!businessId) {
+        throw new Error(
+          isAm
+            ? 'የንግድ መለያ አልተገኘም'
+            : 'Business ID is required'
+        )
+      }
 
-      // 1. Update group
+      // --------------------------------------------------------
+      // 1. UPDATE PRICE GROUP
+      // --------------------------------------------------------
+
       const { error: groupError } = await supabase
         .from('price_groups')
         .update({
-          name: formData.name,
-          name_am: formData.nameAm,
-          amount: newAmount
+          name: formData.name.trim(),
+          name_am: formData.nameAm.trim(),
+          amount,
         })
         .eq('id', id)
         .eq('business_id', businessId)
 
-      if (groupError) throw groupError
+      if (groupError) {
+        throw groupError
+      }
 
-      // 2. Unlink removed products
-      await supabase
+      // --------------------------------------------------------
+      // 2. REMOVE PRODUCTS NO LONGER SELECTED
+      //
+      // IMPORTANT:
+      // Only products belonging to this business AND this group
+      // are changed.
+      // --------------------------------------------------------
+
+      const { error: unlinkError } = await supabase
         .from('products')
         .update({
           price_group_id: null,
-          price_type: 'fixed'
+          price_type: 'fixed',
         })
+        .eq('business_id', businessId)
         .eq('price_group_id', id)
 
-      // 3. Link selected products
+      if (unlinkError) {
+        throw unlinkError
+      }
+
+      // --------------------------------------------------------
+      // 3. LINK SELECTED PRODUCTS
+      //
+      // A product belonging to another group will intentionally
+      // move to this group.
+      // --------------------------------------------------------
+
       if (selectedProductIds.length > 0) {
         const { error: linkError } = await supabase
           .from('products')
           .update({
             price_group_id: id,
             price_type: 'group',
-            retail_price: newAmount
+            retail_price: amount,
           })
+          .eq('business_id', businessId)
           .in('id', selectedProductIds)
 
-        if (linkError) throw linkError
+        if (linkError) {
+          throw linkError
+        }
       }
 
-      router.push(`/${locale}/management/price-groups`)
-    } catch (err) {
-      console.error(err)
-      alert(isAm ? 'ስህተት ተፈጥሯል' : 'Update failed')
+      router.push(
+        `/${locale}/management/price-groups`
+      )
+
+      router.refresh()
+    } catch (error) {
+      console.error(
+        '[EditPriceGroupPage] Failed to update:',
+        error
+      )
+
+      window.alert(
+        error instanceof Error
+          ? error.message
+          : isAm
+            ? 'የዋጋ ቡድኑን ማዘመን አልተቻለም።'
+            : 'Failed to update the price group.'
+      )
     } finally {
       setSaving(false)
     }
   }
 
-  /* ───────────────────── UI STATES ───────────────────── */
+  // ==========================================================
+  // LOADING STATE
+  // ==========================================================
+
   if (loading) {
     return (
-      <div className="flex justify-center py-40">
-        <Loader2 className="w-8 h-8 animate-spin text-berbere-500" />
+      <div className="min-h-[60vh] flex items-center justify-center bg-cream-100">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-7 w-7 animate-spin text-berbere-500" />
+
+          <p className="text-xs font-semibold text-coffee-400">
+            {isAm
+              ? 'የዋጋ ቡድኑን በመጫን ላይ...'
+              : 'Loading price group...'}
+          </p>
+        </div>
       </div>
     )
   }
 
-  /* ───────────────────── UI ───────────────────── */
+  // ==========================================================
+  // UI
+  // ==========================================================
+
   return (
-    <div className="max-w-md mx-auto pb-24 space-y-5 px-4 bg-cream-100 min-h-screen pt-4">
+    <div className="min-h-screen bg-cream-100 pb-28">
+      <div className="mx-auto w-full max-w-4xl px-4 pb-10 pt-4 sm:px-6">
 
-      {/* HEADER */}
-      <button
-        onClick={() => router.back()}
-        className="flex items-center gap-2 text-coffee-400 font-bold text-[11px] uppercase"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        {isAm ? 'ተመለስ' : 'Back'}
-      </button>
+        {/* ====================================================
+            TOP BAR
+        ===================================================== */}
 
-      {/* BONO HEADER CARD */}
-      <div className="bg-gradient-to-r from-berbere-500 to-red-500 rounded-3xl p-5 text-white">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
-            <Coins className="w-5 h-5" />
+        <div className="mb-6 flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="
+              inline-flex items-center gap-2
+              rounded-xl
+              px-2.5 py-2
+              text-xs font-black
+              text-coffee-600
+              transition
+              hover:bg-cream-200
+            "
+          >
+            <ArrowLeft className="h-4 w-4" />
+
+            {isAm ? 'ተመለስ' : 'Back'}
+          </button>
+
+          <div className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.14em] text-coffee-400">
+            <Coins className="h-3.5 w-3.5 text-gold-400" />
+
+            {isAm ? 'የዋጋ አስተዳደር' : 'Pricing'}
+          </div>
+        </div>
+
+        {/* ====================================================
+            HEADER
+        ===================================================== */}
+
+        <div className="mb-6 flex items-start gap-3">
+          <div
+            className="
+              flex h-12 w-12 shrink-0
+              items-center justify-center
+              rounded-2xl
+              bg-berbere-500
+            "
+          >
+            <Layers className="h-6 w-6 text-white" />
           </div>
 
-          <div>
-            <h2 className="font-black text-lg">
-              {isAm ? 'ቦኖ ማስተካከያ' : 'Edit BONO Group'}
-            </h2>
-            <p className="text-xs opacity-90">
-              {totalProducts} products • {Number(formData.amount || 0)} ETB
+          <div className="min-w-0">
+            <h1 className="text-xl font-black tracking-tight text-coffee-700 sm:text-2xl">
+              {isAm
+                ? 'የዋጋ ቡድን አርም'
+                : 'Edit Price Group'}
+            </h1>
+
+            <p className="mt-1 text-xs font-medium leading-5 text-coffee-400 sm:text-sm">
+              {isAm
+                ? 'የቡድኑን ስም፣ ዋጋ እና የተመደቡ ምርቶችን ያስተካክሉ።'
+                : 'Update the group name, price, and assigned products.'}
             </p>
           </div>
         </div>
-      </div>
 
-      {/* INTELLIGENCE PANEL */}
-      <div className="bg-white rounded-2xl p-4 border border-cream-200 space-y-2">
+        {/* ====================================================
+            LIVE SUMMARY
+        ===================================================== */}
 
-        <div className="flex items-center gap-2 text-xs font-black text-coffee-500 uppercase">
-          <Layers className="w-4 h-4" />
-          BONO Impact Preview
-        </div>
+        <section
+          className="
+            mb-5
+            overflow-hidden
+            rounded-3xl
+            bg-coffee-700
+            shadow-sm
+          "
+        >
+          <div className="flex items-center justify-between gap-4 p-5 sm:p-6">
+            <div className="min-w-0">
+              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-cream-300">
+                {isAm ? 'የዋጋ ቡድን' : 'Price group'}
+              </p>
 
-        <div className="text-xs font-bold text-coffee-600">
-          Estimated value:{" "}
-          <span className="text-berbere-600 font-black">
-            {estimatedImpact.toFixed(2)} ETB
-          </span>
-        </div>
+              <h2 className="mt-1 truncate text-base font-black text-white">
+                {displayName}
+              </h2>
 
-        {conflicts.length > 0 && (
-          <div className="bg-red-50 text-red-700 p-2 rounded-xl text-xs font-bold flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4" />
-            {conflicts.length} conflict(s) detected in other BONO groups
+              <p className="mt-1 text-xs font-medium text-cream-300">
+                {totalProducts}{' '}
+                {isAm
+                  ? 'ምርቶች ተመድበዋል'
+                  : 'products assigned'}
+              </p>
+            </div>
+
+            <div className="shrink-0 text-right">
+              <p className="text-2xl font-black text-gold-400">
+                {isValidAmount
+                  ? amount.toFixed(2)
+                  : '0.00'}
+              </p>
+
+              <p className="text-[10px] font-black uppercase tracking-wider text-cream-300">
+                ETB
+              </p>
+            </div>
           </div>
-        )}
+        </section>
 
-      </div>
+        {/* ====================================================
+            FORM
+        ==================================================== */}
 
-      {/* FORM */}
-      <form onSubmit={handleUpdate} className="space-y-4">
+        <form
+          onSubmit={handleUpdate}
+          className="space-y-5"
+        >
 
-        <input
-          value={formData.nameAm}
-          className="w-full h-[52px] px-4 rounded-xl border"
-          placeholder={isAm ? 'አማርኛ ስም' : 'Amharic name'}
-          onChange={e =>
-            setFormData({ ...formData, nameAm: e.target.value })
-          }
-        />
+          {/* ==================================================
+              GROUP DETAILS
+          ================================================== */}
 
-        <input
-          value={formData.name}
-          className="w-full h-[52px] px-4 rounded-xl border"
-          placeholder="English name"
-          onChange={e =>
-            setFormData({ ...formData, name: e.target.value })
-          }
-        />
+          <section
+            className="
+              overflow-hidden
+              rounded-3xl
+              border border-cream-300
+              bg-white
+              shadow-sm
+            "
+          >
+            <div className="border-b border-cream-200 px-5 py-4 sm:px-6">
+              <div className="flex items-center gap-2">
+                <Coins className="h-4 w-4 text-berbere-500" />
 
-        <input
-          type="number"
-          value={formData.amount}
-          className="w-full h-[52px] px-4 rounded-xl border font-bold"
-          placeholder="Amount"
-          onChange={e =>
-            setFormData({ ...formData, amount: e.target.value })
-          }
-        />
+                <h2 className="text-sm font-black text-coffee-700">
+                  {isAm ? 'የቡድኑ መረጃ' : 'Group details'}
+                </h2>
+              </div>
 
-        {/* PRODUCTS */}
-        <div className="border rounded-xl bg-white max-h-[260px] overflow-auto divide-y">
+              <p className="mt-1 text-xs text-coffee-400">
+                {isAm
+                  ? 'የዋጋ ቡድኑን መረጃ ያስተካክሉ።'
+                  : 'Update the price group information.'}
+              </p>
+            </div>
 
-          {products.map((p: ProductRow) => {
-            const checked = selectedProductIds.includes(p.id)
-            const conflict = p.price_group_id && p.price_group_id !== id
+            <div className="grid gap-4 p-5 sm:grid-cols-2 sm:p-6">
 
-            return (
-              <div
-                key={p.id}
-                onClick={() => toggleProduct(p.id)}
-                className={`flex items-center gap-3 p-3 cursor-pointer ${conflict ? 'bg-yellow-50' : ''
-                  }`}
-              >
-                {checked ? (
-                  <CheckSquare className="w-5 h-5 text-berbere-500" />
-                ) : (
-                  <Square className="w-5 h-5 text-gray-300" />
-                )}
+              {/* ENGLISH */}
 
-                <div className="flex flex-col">
-                  <span className="text-sm font-bold">
-                    {p.name}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-black uppercase tracking-wider text-coffee-500">
+                  {isAm ? 'የእንግሊዝኛ ስም' : 'English name'}
+                </label>
+
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(event) =>
+                    setFormData((current) => ({
+                      ...current,
+                      name: event.target.value,
+                    }))
+                  }
+                  className="
+                    h-12 w-full
+                    rounded-xl
+                    border border-cream-300
+                    bg-cream-50
+                    px-4
+                    text-sm font-bold
+                    text-coffee-700
+                    outline-none
+                    transition
+                    placeholder:text-coffee-300
+                    focus:border-gold-400
+                    focus:ring-2
+                    focus:ring-gold-400/20
+                  "
+                  placeholder="Example: Small Beer"
+                />
+              </div>
+
+              {/* AMHARIC */}
+
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-black uppercase tracking-wider text-coffee-500">
+                  {isAm ? 'የአማርኛ ስም' : 'Amharic name'}
+                </label>
+
+                <input
+                  type="text"
+                  value={formData.nameAm}
+                  onChange={(event) =>
+                    setFormData((current) => ({
+                      ...current,
+                      nameAm: event.target.value,
+                    }))
+                  }
+                  className="
+                    h-12 w-full
+                    rounded-xl
+                    border border-cream-300
+                    bg-cream-50
+                    px-4
+                    text-sm font-bold
+                    text-coffee-700
+                    outline-none
+                    transition
+                    placeholder:text-coffee-300
+                    focus:border-gold-400
+                    focus:ring-2
+                    focus:ring-gold-400/20
+                  "
+                  placeholder="ለምሳሌ፦ ትንሽ ቢራ"
+                />
+              </div>
+
+              {/* PRICE */}
+
+              <div className="space-y-1.5 sm:col-span-2">
+                <label className="text-[11px] font-black uppercase tracking-wider text-coffee-500">
+                  {isAm ? 'የመሸጫ ዋጋ' : 'Selling price'}
+                </label>
+
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    inputMode="decimal"
+                    value={formData.amount}
+                    onChange={(event) =>
+                      setFormData((current) => ({
+                        ...current,
+                        amount: event.target.value,
+                      }))
+                    }
+                    className="
+                      h-14 w-full
+                      rounded-xl
+                      border border-cream-300
+                      bg-cream-50
+                      px-4 pr-16
+                      text-lg font-black
+                      text-berbere-500
+                      outline-none
+                      transition
+                      placeholder:text-coffee-300
+                      focus:border-gold-400
+                      focus:ring-2
+                      focus:ring-gold-400/20
+                    "
+                    placeholder="0.00"
+                  />
+
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-black text-coffee-400">
+                    ETB
                   </span>
+                </div>
 
-                  {conflict && (
-                    <span className="text-[10px] text-yellow-600 font-bold">
-                      Already in another BONO group
-                    </span>
-                  )}
+                <p className="text-[11px] text-coffee-400">
+                  {isAm
+                    ? 'ይህ ዋጋ ለተመረጡት ምርቶች ይተገበራል።'
+                    : 'This price will be applied to the selected products.'}
+                </p>
+              </div>
+            </div>
+          </section>
+
+          {/* ==================================================
+              PRODUCT ASSIGNMENT
+          ================================================== */}
+
+          <section
+            className="
+              overflow-hidden
+              rounded-3xl
+              border border-cream-300
+              bg-white
+              shadow-sm
+            "
+          >
+            <div className="border-b border-cream-200 px-5 py-4 sm:px-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Layers className="h-4 w-4 text-berbere-500" />
+
+                    <h2 className="text-sm font-black text-coffee-700">
+                      {isAm
+                        ? 'የተመደቡ ምርቶች'
+                        : 'Assigned products'}
+                    </h2>
+                  </div>
+
+                  <p className="mt-1 text-xs text-coffee-400">
+                    {isAm
+                      ? 'ይህን የዋጋ ቡድን የሚጠቀሙ ምርቶችን ይምረጡ።'
+                      : 'Choose which products should use this price.'}
+                  </p>
+                </div>
+
+                <div
+                  className="
+                    flex h-9 min-w-9 shrink-0
+                    items-center justify-center
+                    rounded-xl
+                    bg-berbere-50
+                    px-2.5
+                    text-xs font-black
+                    text-berbere-500
+                  "
+                >
+                  {selectedProductIds.length}
                 </div>
               </div>
-            )
-          })}
-        </div>
+            </div>
 
-        {/* SAVE */}
-        <button
-          disabled={saving}
-          className="w-full h-[56px] bg-berbere-500 text-white rounded-xl font-black flex items-center justify-center gap-2"
-        >
-          {saving ? (
-            <Loader2 className="w-5 h-5 animate-spin" />
-          ) : (
-            <Save className="w-5 h-5" />
-          )}
+            <div className="p-5 sm:p-6">
 
-          {isAm ? 'አዘምን' : 'Update'}
-        </button>
+              {/* SEARCH */}
 
-      </form>
+              <div className="relative">
+                <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-coffee-300" />
+
+                <input
+                  type="search"
+                  value={searchQuery}
+                  onChange={(event) =>
+                    setSearchQuery(event.target.value)
+                  }
+                  placeholder={
+                    isAm
+                      ? 'ምርት ይፈልጉ...'
+                      : 'Search products...'
+                  }
+                  className="
+                    h-11 w-full
+                    rounded-xl
+                    border border-cream-300
+                    bg-cream-50
+                    pl-10 pr-4
+                    text-sm font-semibold
+                    text-coffee-700
+                    outline-none
+                    transition
+                    placeholder:text-coffee-300
+                    focus:border-gold-400
+                    focus:ring-2
+                    focus:ring-gold-400/20
+                  "
+                />
+              </div>
+
+              {/* SELECT ALL */}
+
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <p className="text-[11px] font-semibold text-coffee-400">
+                  {filteredProducts.length}{' '}
+                  {isAm ? 'ምርቶች ታይተዋል' : 'products shown'}
+                </p>
+
+                <button
+                  type="button"
+                  onClick={handleSelectAllFiltered}
+                  disabled={filteredProducts.length === 0}
+                  className="
+                    inline-flex items-center gap-1.5
+                    rounded-lg
+                    px-2.5 py-1.5
+                    text-[11px] font-black
+                    text-gold-600
+                    transition
+                    hover:bg-gold-50
+                    disabled:cursor-not-allowed
+                    disabled:opacity-40
+                  "
+                >
+                  {allFilteredSelected && (
+                    <Check className="h-3.5 w-3.5" />
+                  )}
+
+                  {allFilteredSelected
+                    ? isAm
+                      ? 'ሁሉንም አትምረጥ'
+                      : 'Clear shown'
+                    : isAm
+                      ? 'ሁሉንም ምረጥ'
+                      : 'Select shown'}
+                </button>
+              </div>
+
+              {/* PRODUCT LIST */}
+
+              <div
+                className="
+                  mt-3
+                  max-h-[380px]
+                  overflow-y-auto
+                  rounded-2xl
+                  border border-cream-300
+                "
+              >
+                {filteredProducts.length === 0 ? (
+                  <div className="flex min-h-40 flex-col items-center justify-center px-5 text-center">
+                    <div
+                      className="
+                        flex h-10 w-10
+                        items-center justify-center
+                        rounded-xl
+                        bg-cream-200
+                      "
+                    >
+                      <Search className="h-5 w-5 text-coffee-400" />
+                    </div>
+
+                    <p className="mt-3 text-xs font-bold text-coffee-500">
+                      {isAm
+                        ? 'ምንም ምርት አልተገኘም'
+                        : 'No products found'}
+                    </p>
+                  </div>
+                ) : (
+                  filteredProducts.map((product) => {
+                    const checked =
+                      selectedProductIds.includes(product.id)
+
+                    const belongsToAnotherGroup =
+                      Boolean(
+                        product.price_group_id &&
+                        product.price_group_id !== id
+                      )
+
+                    const displayProductName =
+                      isAm
+                        ? product.name_am || product.name
+                        : product.name
+
+                    const secondaryName =
+                      isAm
+                        ? product.name
+                        : product.name_am
+
+                    return (
+                      <button
+                        key={product.id}
+                        type="button"
+                        onClick={() =>
+                          toggleProduct(product.id)
+                        }
+                        className={`
+                          flex w-full
+                          items-center justify-between
+                          gap-3
+                          border-b border-cream-200
+                          px-4 py-3
+                          text-left
+                          transition
+                          last:border-b-0
+                          ${
+                            checked
+                              ? 'bg-berbere-50'
+                              : 'bg-white hover:bg-cream-50'
+                          }
+                        `}
+                      >
+                        <div className="flex min-w-0 items-center gap-3">
+                          {checked ? (
+                            <CheckSquare className="h-5 w-5 shrink-0 text-berbere-500" />
+                          ) : (
+                            <Square className="h-5 w-5 shrink-0 text-cream-400" />
+                          )}
+
+                          <div className="min-w-0">
+                            <p
+                              className={`
+                                truncate
+                                text-sm font-bold
+                                ${
+                                  checked
+                                    ? 'text-berbere-600'
+                                    : 'text-coffee-700'
+                                }
+                              `}
+                            >
+                              {displayProductName}
+                            </p>
+
+                            {secondaryName && (
+                              <p className="mt-0.5 truncate text-[10px] font-medium text-coffee-300">
+                                {secondaryName}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {belongsToAnotherGroup && (
+                          <span
+                            className="
+                              inline-flex shrink-0
+                              items-center gap-1
+                              rounded-lg
+                              bg-gold-50
+                              px-2 py-1
+                              text-[9px] font-black
+                              uppercase tracking-wide
+                              text-gold-700
+                            "
+                          >
+                            <AlertTriangle className="h-3 w-3" />
+
+                            {isAm
+                              ? 'ሌላ ቡድን'
+                              : 'Other group'}
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })
+                )}
+              </div>
+
+              {/* GROUP MOVE NOTICE */}
+
+              {conflicts.length > 0 && (
+                <div
+                  className="
+                    mt-3
+                    flex items-start gap-2
+                    rounded-xl
+                    border border-gold-200
+                    bg-gold-50
+                    px-3 py-2.5
+                  "
+                >
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-gold-600" />
+
+                  <p className="text-[11px] font-semibold leading-4 text-gold-700">
+                    {isAm
+                      ? `${conflicts.length} ምርት ከሌላ የዋጋ ቡድን ወደዚህ ቡድን ይዛወራል።`
+                      : `${conflicts.length} product${conflicts.length === 1 ? '' : 's'} will move from another price group to this one.`}
+                  </p>
+                </div>
+              )}
+
+              {/* CURRENT SELECTION */}
+
+              <div
+                className="
+                  mt-3
+                  flex items-center gap-2
+                  rounded-xl
+                  border border-cream-300
+                  bg-cream-50
+                  px-3 py-2.5
+                "
+              >
+                <Check
+                  className="h-4 w-4 shrink-0 text-berbere-500"
+                />
+
+                <p className="text-[11px] font-semibold leading-4 text-coffee-500">
+                  {totalProducts > 0
+                    ? isAm
+                      ? `${totalProducts} ምርቶች ይህን የዋጋ ቡድን ይጠቀማሉ።`
+                      : `${totalProducts} product${totalProducts === 1 ? '' : 's'} will use this price group.`
+                    : isAm
+                      ? 'ምንም ምርት አልተመረጠም።'
+                      : 'No products are currently selected.'}
+                </p>
+              </div>
+            </div>
+          </section>
+
+          {/* ==================================================
+              IMPACT
+          ================================================== */}
+
+          <section
+            className="
+              rounded-3xl
+              border border-cream-300
+              bg-white
+              p-5
+              shadow-sm
+              sm:p-6
+            "
+          >
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.14em] text-coffee-400">
+                  {isAm
+                    ? 'የማዘመን ማጠቃለያ'
+                    : 'Update summary'}
+                </p>
+
+                <p className="mt-1 text-xs font-bold text-coffee-600">
+                  {isAm
+                    ? 'የተመረጡ ምርቶች የሚያገኙት ዋጋ'
+                    : 'Price applied to selected products'}
+                </p>
+              </div>
+
+              <div className="text-right">
+                <p className="text-lg font-black text-berbere-500">
+                  {estimatedValue.toFixed(2)}
+                </p>
+
+                <p className="text-[10px] font-bold text-coffee-400">
+                  ETB × {totalProducts}
+                </p>
+              </div>
+            </div>
+          </section>
+
+          {/* ==================================================
+              SAVE
+          ================================================== */}
+
+          <div className="sticky bottom-4 z-10">
+            <button
+              type="submit"
+              disabled={saving || !isValidAmount}
+              className="
+                flex h-14 w-full
+                items-center justify-center gap-2
+                rounded-2xl
+                bg-berbere-500
+                px-5
+                text-sm font-black
+                text-white
+                shadow-lg
+                shadow-berbere-500/20
+                transition
+                hover:bg-berbere-600
+                active:scale-[0.99]
+                disabled:cursor-not-allowed
+                disabled:opacity-50
+              "
+            >
+              {saving ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <Save className="h-5 w-5" />
+              )}
+
+              {saving
+                ? isAm
+                  ? 'በማዘመን ላይ...'
+                  : 'Updating...'
+                : isAm
+                  ? 'የዋጋ ቡድን አዘምን'
+                  : 'Update Price Group'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   )
 }

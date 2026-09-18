@@ -1,240 +1,634 @@
-// src/queries/useProductQueries.ts
-'use client'
+// src/queries/useProductsQuery.ts
 
-import { getSupabaseBrowserClient } from '@/lib/supabase/client'
+import createClient from '@/lib/supabase/client'
+
 import type { Product } from '@/types/database/catalog'
-import type { ProductListItem } from '@/types/dto/product.dt'
+import type { UnitOfMeasure } from '@/types/enum'
 
-// Raw relational payload types eliminating 'any'
-interface RawCategoryRelation {
-  name: string
-  name_am?: string | null
+/* ============================================================
+   TYPES
+============================================================ */
+
+export interface ProductListItem extends Product {
+  category_name: string | null
+  category_name_am: string | null
+  price_group_name: string | null
+  price_group_name_am: string | null
 }
 
-interface RawPriceGroupRelation {
-  name: string
-}
+/* ============================================================
+   SUPABASE RELATION TYPES
+============================================================ */
 
-interface RawProductListItemPayload {
+interface CategoryRelation {
   id: string
-  name: string
+  name: string | null
   name_am: string | null
-  image_url: string | null
-  retail_price: number | string | null
-  price_type: 'fixed' | 'group'
-  is_active: boolean
-  categories: RawCategoryRelation | RawCategoryRelation[] | null
-  price_groups: RawPriceGroupRelation | RawPriceGroupRelation[] | null
 }
+
+interface PriceGroupRelation {
+  id: string
+  name: string | null
+  name_am: string | null
+  amount: number | null
+}
+
+interface ProductQueryRow extends Product {
+  categories:
+    | CategoryRelation
+    | CategoryRelation[]
+    | null
+
+  price_groups:
+    | PriceGroupRelation
+    | PriceGroupRelation[]
+    | null
+}
+
+/* ============================================================
+   CREATE PRODUCT PAYLOAD
+============================================================ */
 
 export interface CreateProductPayload {
   business_id: string
   category_id: string
+
   name: string
-  name_am?: string | null
-  retail_price?: number
-  price_type: 'fixed' | 'group'
+  name_am: string
+
+  description?: string | null
+
+  barcode?: string | null
+  sku?: string | null
+
+  unit_type?: UnitOfMeasure
+  units_per_crate?: number | null
+
+  cost_price?: number
+  retail_price: number
+
+  price_type?: 'group' | 'fixed'
   price_group_id?: string | null
+
+  tax_inclusive?: boolean
+  is_sold_by_weight?: boolean
+  track_inventory?: boolean
+
+  low_stock_alert?: number | null
+
   image_url?: string | null
+
+  is_active?: boolean
 }
 
-export type UpdateProductPayload = Partial<
-  Omit<Product, 'id' | 'business_id' | 'created_at'>
->
+/* ============================================================
+   UPDATE PRODUCT PAYLOAD
+   ------------------------------------------------------------
+   Explicit type instead of Partial<Product>.
 
-/**
- * LIST PAGE QUERY (JOINED VIEW)
- * Fetches lightweight product items with joined category and price group details.
- */
+   Important:
+   - undefined = do not update the field
+   - null = intentionally clear the field
+   - number/string/etc = update the field
+============================================================ */
+
+export interface UpdateProductPayload {
+  category_id?: string | null
+
+  name?: string
+  name_am?: string | null
+
+  description?: string | null
+
+  barcode?: string | null
+  sku?: string | null
+
+  unit_type?: UnitOfMeasure
+
+  units_per_crate?: number | null
+
+  cost_price?: number
+  retail_price?: number
+
+  price_type?: 'group' | 'fixed'
+  price_group_id?: string | null
+
+  tax_inclusive?: boolean
+  is_sold_by_weight?: boolean
+  track_inventory?: boolean
+
+  low_stock_alert?: number | null
+
+  image_url?: string | null
+
+  is_active?: boolean
+}
+
+/* ============================================================
+   RELATIONSHIP HELPERS
+============================================================ */
+
+function getCategory(
+  relation:
+    | CategoryRelation
+    | CategoryRelation[]
+    | null
+): CategoryRelation | null {
+  if (Array.isArray(relation)) {
+    return relation[0] ?? null
+  }
+
+  return relation
+}
+
+function getPriceGroup(
+  relation:
+    | PriceGroupRelation
+    | PriceGroupRelation[]
+    | null
+): PriceGroupRelation | null {
+  if (Array.isArray(relation)) {
+    return relation[0] ?? null
+  }
+
+  return relation
+}
+
+/* ============================================================
+   GET PRODUCTS
+   ------------------------------------------------------------
+   Lightweight product list.
+
+   Inventory quantity is intentionally NOT handled here.
+============================================================ */
+
 export async function getProducts(
   businessId: string
 ): Promise<ProductListItem[]> {
-  if (!businessId) throw new Error('Business ID is required')
-
-  const supabase = getSupabaseBrowserClient()
+  const supabase = await createClient()
 
   const { data, error } = await supabase
     .from('products')
     .select(`
       id,
+      business_id,
+      branch_id,
+      category_id,
       name,
       name_am,
-      image_url,
+      barcode,
+      sku,
+      unit_type,
+      units_per_crate,
+      cost_price,
       retail_price,
-      price_type,
+      tax_inclusive,
+      image_url,
       is_active,
+      is_sold_by_weight,
+      track_inventory,
+      low_stock_alert,
+      created_at,
+      updated_at,
+      deleted_at,
+      price_group_id,
+      price_type,
+      description,
 
       categories (
+        id,
         name,
         name_am
       ),
 
       price_groups (
-        name
+        id,
+        name,
+        name_am,
+        amount
       )
     `)
     .eq('business_id', businessId)
     .is('deleted_at', null)
-    .order('name')
+    .order('created_at', { ascending: false })
 
   if (error) {
-    console.error('[getProducts] Error:', error.message)
-    throw new Error(`Failed to fetch products: ${error.message}`)
+    console.error(
+      '[getProducts] Supabase error:',
+      error
+    )
+
+    throw error
   }
 
-  const rawItems = (data as unknown as RawProductListItemPayload[]) ?? []
+  const rows =
+    (data ?? []) as unknown as ProductQueryRow[]
 
-  return rawItems.map((item) => {
-    // Defensively resolve joined relational objects vs arrays
-    const categoryInfo = Array.isArray(item.categories)
-      ? item.categories[0]
-      : item.categories
+  return rows.map(
+    (
+      product: ProductQueryRow
+    ): ProductListItem => {
+      const category =
+        getCategory(product.categories)
 
-    const priceGroupInfo = Array.isArray(item.price_groups)
-      ? item.price_groups[0]
-      : item.price_groups
+      const priceGroup =
+        getPriceGroup(product.price_groups)
 
-    return {
-      id: item.id,
-      name: item.name || '',
-      name_am: item.name_am || null,
-      image_url: item.image_url || null,
-      retail_price: Number(item.retail_price ?? 0),
-      price_type: item.price_type,
+      return {
+        ...product,
 
-      category_name: categoryInfo?.name ?? null,
-      category_name_am: categoryInfo?.name_am ?? null,
+        category_name:
+          category?.name ?? null,
 
-      price_group_name: priceGroupInfo?.name ?? null,
+        category_name_am:
+          category?.name_am ?? null,
 
-      is_active: item.is_active ?? true,
-    } as ProductListItem
-  })
+        price_group_name:
+          priceGroup?.name ?? null,
+
+        price_group_name_am:
+          priceGroup?.name_am ?? null,
+      }
+    }
+  )
 }
 
-/**
- * SINGLE PRODUCT
- * Fetches a complete product record by ID with full category and price group details.
- */
-export async function getProductById(productId: string): Promise<Product> {
-  if (!productId) throw new Error('Product ID is required')
+/* ============================================================
+   GET PRODUCT BY ID
+   ------------------------------------------------------------
+   Full product configuration for Edit Product.
+============================================================ */
 
-  const supabase = getSupabaseBrowserClient()
+export async function getProductById(
+  productId: string,
+  businessId: string
+): Promise<ProductListItem> {
+  const supabase = await createClient()
 
   const { data, error } = await supabase
     .from('products')
     .select(`
-      *,
-      categories(*),
-      price_groups(*)
+      id,
+      business_id,
+      branch_id,
+      category_id,
+      name,
+      name_am,
+      barcode,
+      sku,
+      unit_type,
+      units_per_crate,
+      cost_price,
+      retail_price,
+      tax_inclusive,
+      image_url,
+      is_active,
+      is_sold_by_weight,
+      track_inventory,
+      low_stock_alert,
+      created_at,
+      updated_at,
+      deleted_at,
+      price_group_id,
+      price_type,
+      description,
+
+      categories (
+        id,
+        name,
+        name_am
+      ),
+
+      price_groups (
+        id,
+        name,
+        name_am,
+        amount
+      )
     `)
     .eq('id', productId)
+    .eq('business_id', businessId)
     .is('deleted_at', null)
     .single()
 
   if (error) {
-    console.error(`[getProductById] Error for ID ${productId}:`, error.message)
-    throw new Error(`Failed to fetch product: ${error.message}`)
+    console.error(
+      '[getProductById] Supabase error:',
+      error
+    )
+
+    throw error
   }
 
-  return data as Product
+  if (!data) {
+    throw new Error('Product not found')
+  }
+
+  const product =
+    data as unknown as ProductQueryRow
+
+  const category =
+    getCategory(product.categories)
+
+  const priceGroup =
+    getPriceGroup(product.price_groups)
+
+  return {
+    ...product,
+
+    category_name:
+      category?.name ?? null,
+
+    category_name_am:
+      category?.name_am ?? null,
+
+    price_group_name:
+      priceGroup?.name ?? null,
+
+    price_group_name_am:
+      priceGroup?.name_am ?? null,
+  }
 }
 
-/**
- * CREATE
- * Creates a new catalog product with required POS default configurations.
- */
+/* ============================================================
+   CREATE PRODUCT
+============================================================ */
+
 export async function createProduct(
   payload: CreateProductPayload
 ): Promise<Product> {
-  if (!payload.business_id) throw new Error('Business ID is required')
-  if (!payload.category_id) throw new Error('Category ID is required')
-  if (!payload.name?.trim()) throw new Error('Product name cannot be empty')
+  const supabase = await createClient()
 
-  const supabase = getSupabaseBrowserClient()
+  const {
+    business_id,
+    category_id,
+
+    name,
+    name_am,
+
+    description,
+
+    barcode,
+    sku,
+
+    unit_type,
+    units_per_crate,
+
+    cost_price,
+    retail_price,
+
+    price_type,
+    price_group_id,
+
+    tax_inclusive,
+    is_sold_by_weight,
+    track_inventory,
+
+    low_stock_alert,
+
+    image_url,
+
+    is_active,
+  } = payload
 
   const { data, error } = await supabase
     .from('products')
     .insert({
-      business_id: payload.business_id,
-      category_id: payload.category_id,
+      business_id,
+      category_id,
 
-      name: payload.name.trim(),
-      name_am: payload.name_am ? payload.name_am.trim() : null,
+      name: name.trim(),
 
-      retail_price: payload.retail_price ?? 0,
+      name_am:
+        name_am.trim(),
 
-      price_type: payload.price_type,
-      price_group_id: payload.price_group_id || null,
+      description:
+        description?.trim() || null,
 
-      image_url: payload.image_url || null,
+      barcode:
+        barcode?.trim() || null,
 
-      // POS catalog default fallbacks
-      cost_price: 0,
-      unit_type: 'piece',
-      tax_inclusive: true,
-      track_inventory: true,
-      is_active: true
+      sku:
+        sku?.trim() || null,
+
+      unit_type:
+        unit_type ?? 'piece',
+
+      units_per_crate:
+        units_per_crate ?? null,
+
+      cost_price:
+        cost_price ?? 0,
+
+      retail_price,
+
+      price_type:
+        price_type ?? 'fixed',
+
+      price_group_id:
+        price_group_id ?? null,
+
+      tax_inclusive:
+        tax_inclusive ?? true,
+
+      is_sold_by_weight:
+        is_sold_by_weight ?? false,
+
+      track_inventory:
+        track_inventory ?? true,
+
+      low_stock_alert:
+        low_stock_alert ?? null,
+
+      image_url:
+        image_url?.trim() || null,
+
+      is_active:
+        is_active ?? true,
     })
     .select()
     .single()
 
   if (error) {
-    console.error('[createProduct] Error:', error.message)
-    throw new Error(`Failed to create product: ${error.message}`)
+    console.error(
+      '[createProduct] Supabase error:',
+      error
+    )
+
+    throw error
+  }
+
+  if (!data) {
+    throw new Error(
+      'Product was not created'
+    )
   }
 
   return data as Product
 }
 
-/**
- * UPDATE
- * Updates existing product details selectively.
- */
+/* ============================================================
+   UPDATE PRODUCT
+   ------------------------------------------------------------
+   Updates product configuration only.
+
+   Inventory quantity is NOT changed here.
+============================================================ */
+
 export async function updateProduct(
   productId: string,
-  payload: UpdateProductPayload
+  businessId: string,
+  updates: UpdateProductPayload
 ): Promise<Product> {
-  if (!productId) throw new Error('Product ID is required')
+  const supabase = await createClient()
 
-  const supabase = getSupabaseBrowserClient()
+  /*
+   * Only fields declared in UpdateProductPayload
+   * can reach this function.
+   *
+   * We still create a clean object before sending it
+   * to Supabase.
+   */
+
+  const cleanedUpdates: UpdateProductPayload = {
+    ...updates,
+  }
+
+  /* ----------------------------------------------------------
+     STRING CLEANING
+  ---------------------------------------------------------- */
+
+  if (
+    typeof cleanedUpdates.name ===
+    'string'
+  ) {
+    cleanedUpdates.name =
+      cleanedUpdates.name.trim()
+  }
+
+  if (
+    typeof cleanedUpdates.name_am ===
+    'string'
+  ) {
+    cleanedUpdates.name_am =
+      cleanedUpdates.name_am.trim()
+  }
+
+  if (
+    typeof cleanedUpdates.description ===
+    'string'
+  ) {
+    cleanedUpdates.description =
+      cleanedUpdates.description.trim() ||
+      null
+  }
+
+  if (
+    typeof cleanedUpdates.barcode ===
+    'string'
+  ) {
+    cleanedUpdates.barcode =
+      cleanedUpdates.barcode.trim() ||
+      null
+  }
+
+  if (
+    typeof cleanedUpdates.sku ===
+    'string'
+  ) {
+    cleanedUpdates.sku =
+      cleanedUpdates.sku.trim() ||
+      null
+  }
+
+  if (
+    typeof cleanedUpdates.image_url ===
+    'string'
+  ) {
+    cleanedUpdates.image_url =
+      cleanedUpdates.image_url.trim() ||
+      null
+  }
+
+  /* ----------------------------------------------------------
+     REMOVE UNDEFINED VALUES
+     ----------------------------------------------------------
+     Supabase should only receive fields the caller
+     actually wants to update.
+  ---------------------------------------------------------- */
+
+  const updateData = Object.fromEntries(
+    Object.entries(cleanedUpdates).filter(
+      ([, value]) =>
+        value !== undefined
+    )
+  )
+
+  /* ----------------------------------------------------------
+     UPDATE
+  ---------------------------------------------------------- */
 
   const { data, error } = await supabase
     .from('products')
-    .update(payload)
+    .update(updateData)
     .eq('id', productId)
+    .eq('business_id', businessId)
+    .is('deleted_at', null)
     .select()
     .single()
 
   if (error) {
-    console.error(`[updateProduct] Error for ID ${productId}:`, error.message)
-    throw new Error(`Failed to update product: ${error.message}`)
+    console.error(
+      '[updateProduct] Supabase error:',
+      error
+    )
+
+    throw error
+  }
+
+  if (!data) {
+    throw new Error(
+      'Product was not updated'
+    )
   }
 
   return data as Product
 }
 
-/**
- * SOFT DELETE
- * Soft deletes a product by setting deleted_at timestamp and deactivating it.
- */
-export async function deleteProduct(productId: string): Promise<boolean> {
-  if (!productId) throw new Error('Product ID is required')
+/* ============================================================
+   DELETE PRODUCT
+   ------------------------------------------------------------
+   Soft delete only.
 
-  const supabase = getSupabaseBrowserClient()
+   IMPORTANT:
+   No inventory quantity is changed.
+   No inventory movement is created.
+============================================================ */
+
+export async function deleteProduct(
+  productId: string,
+  businessId: string
+): Promise<void> {
+  const supabase = await createClient()
 
   const { error } = await supabase
     .from('products')
     .update({
-      deleted_at: new Date().toISOString(),
-      is_active: false
+      deleted_at:
+        new Date().toISOString(),
+
+      is_active: false,
     })
     .eq('id', productId)
+    .eq('business_id', businessId)
+    .is('deleted_at', null)
 
   if (error) {
-    console.error(`[deleteProduct] Error for ID ${productId}:`, error.message)
-    throw new Error(`Failed to delete product: ${error.message}`)
-  }
+    console.error(
+      '[deleteProduct] Supabase error:',
+      error
+    )
 
-  return true
+    throw error
+  }
 }

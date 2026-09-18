@@ -1,34 +1,40 @@
-// src/app/[locale]/management/categories/new/page.tsx
-
 'use client'
 
 import { useMemo, useState } from 'react'
-import { useRouter, useParams } from 'next/navigation'
-
+import { useParams, useRouter } from 'next/navigation'
 import {
   ArrowLeft,
   Loader2,
   Save,
   Tag,
   Palette,
-  Sparkles,
-  CheckCircle2
 } from 'lucide-react'
 
 import { createCategory } from '@/queries/useCategoryQueries'
 import { getBusinessId } from '@/lib/auth/getBusinessId'
 
-const ICONS = ['📦', '☕', '🍔', '🥤', '🍕', '🍰', '🥗', '🍩', '🍺', '🛒']
+const ICONS = [
+  '📦',
+  '☕',
+  '🍔',
+  '🥤',
+  '🍕',
+  '🍰',
+  '🥗',
+  '🍩',
+  '🍺',
+  '🛒',
+]
 
 const COLORS = [
   '#8B2635', // berbere
-  '#1F2937', // coffee
-  '#F59E0B', // amber
+  '#1B2B50', // Liyu navy
+  '#E2A03F', // gold
   '#10B981', // green
   '#3B82F6', // blue
   '#EF4444', // red
   '#A855F7', // purple
-  '#F97316'  // orange
+  '#F97316', // orange
 ]
 
 export default function NewCategoryPage() {
@@ -44,29 +50,29 @@ export default function NewCategoryPage() {
     name: '',
     name_am: '',
     icon: '📦',
-    color: '#8B2635'
+    color: '#8B2635',
   })
 
-  const isValid = useMemo(
-    () => form.name.trim().length > 0 && form.name_am.trim().length > 0,
-    [form]
-  )
+  const isValid = useMemo(() => {
+    return (
+      form.name.trim().length > 0 &&
+      form.name_am.trim().length > 0
+    )
+  }, [form.name, form.name_am])
 
-  const previewStyle = {
-    borderColor: `${form.color}40`,
-    backgroundColor: `${form.color}08`
-  }
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (loading) return
-    if (!isValid) return
+    if (loading || !isValid) return
 
     try {
       setLoading(true)
 
       const businessId = await getBusinessId()
-      if (!businessId) return
+
+      if (!businessId) {
+        throw new Error('Business ID not found')
+      }
 
       await createCategory({
         business_id: businessId,
@@ -74,214 +80,262 @@ export default function NewCategoryPage() {
         name_am: form.name_am.trim(),
         icon: form.icon,
         color: form.color,
-        sort_order: 0
+        sort_order: 0,
       })
 
-      router.push(`/${locale}/management/categories`)
-    } catch (err) {
-      console.error(err)
-      alert(isAm ? 'ስህተት ተፈጥሯል' : 'Something went wrong')
+      router.replace(`/${locale}/management/categories`)
+    } catch (error) {
+      console.error('[CATEGORIES] Create failed:', error)
+
+      alert(
+        isAm
+          ? 'ምድቡን መፍጠር አልተቻለም። እባክዎ እንደገና ይሞክሩ።'
+          : 'The category could not be created. Please try again.'
+      )
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="max-w-md mx-auto min-h-screen bg-cream-50 px-4 pb-24 pt-4 space-y-5">
+    <div className="mx-auto min-h-screen max-w-md bg-cream-50 px-4 pb-24 pt-4">
 
-      {/* TOP NAV */}
-      <div className="flex items-center justify-between">
-
+      {/* TOP BAR */}
+      <div className="mb-5 flex items-center justify-between">
         <button
+          type="button"
           onClick={() => router.back()}
-          className="flex items-center gap-2 text-xs font-black text-coffee-500"
+          className="flex items-center gap-2 text-xs font-bold text-coffee-500"
         >
-          <ArrowLeft className="w-4 h-4" />
+          <ArrowLeft className="h-4 w-4" />
+
           {isAm ? 'ተመለስ' : 'Back'}
         </button>
 
-        <div className="text-[10px] font-black uppercase text-berbere-600 bg-berbere-50 px-3 py-1 rounded-full">
+        <span className="rounded-full bg-berbere-50 px-3 py-1 text-[10px] font-black uppercase text-berbere-600">
           {isAm ? 'አዲስ ምድብ' : 'New Category'}
-        </div>
+        </span>
       </div>
 
-      {/* HERO HEADER */}
-      <div className="bg-white border rounded-3xl p-5 shadow-sm space-y-3">
-
-        <div className="flex items-start gap-3">
-
-          <div className="w-12 h-12 rounded-2xl bg-berbere-50 flex items-center justify-center">
-            <Tag className="w-6 h-6 text-berbere-500" />
+      {/* HEADER */}
+      <div className="mb-5">
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-berbere-50">
+            <Tag className="h-5 w-5 text-berbere-600" />
           </div>
 
           <div>
-            <h1 className="text-lg font-black text-coffee-900">
+            <h1 className="text-xl font-black text-coffee-900">
               {isAm ? 'አዲስ ምድብ ፍጠር' : 'Create Category'}
             </h1>
 
-            <p className="text-[11px] font-bold text-gray-400 uppercase">
+            <p className="mt-0.5 text-[11px] font-medium text-gray-400">
               {isAm
-                ? 'ምርቶችን በቀላሉ ለመደርደር'
-                : 'Organize products easily'}
+                ? 'ምርቶችዎን በምድብ ያደራጁ'
+                : 'Organize your products into categories'}
             </p>
           </div>
-
         </div>
-
-        {/* SIMPLE EXPLANATION */}
-        <div className="bg-cream-50 border border-cream-200 rounded-2xl p-3">
-          <p className="text-xs font-bold text-coffee-600 leading-relaxed">
-            {isAm
-              ? 'ምድቦች ምርቶችን ለማደራጀት ይረዳሉ (ምሳሌ: መጠጦች, ምግቦች)'
-              : 'Categories help organize your products (Drinks, Food, Coffee etc.)'}
-          </p>
-        </div>
-
-        {/* PRO TIP */}
-        <div className="flex items-center justify-between">
-          <div className="text-[10px] font-black text-gray-400 uppercase">
-            💡 {isAm ? 'ጠቃሚ ምክር' : 'Pro Tip'}
-          </div>
-
-          <div className="text-[10px] font-black text-berbere-600 bg-berbere-50 px-2 py-1 rounded-full">
-            {isAm ? 'ቀላል ይሁን' : 'Keep simple'}
-          </div>
-        </div>
-
       </div>
 
       {/* LIVE PREVIEW */}
-      <div className="space-y-2">
+      <div className="mb-5">
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-[10px] font-black uppercase text-gray-400">
+            {isAm ? 'ቅድመ እይታ' : 'Preview'}
+          </p>
 
-        <label className="text-[10px] font-black uppercase text-gray-400 flex items-center gap-1">
-          <Sparkles className="w-3 h-3 text-amber-500" />
-          {isAm ? 'ቅድመ እይታ' : 'Live Preview'}
-        </label>
+          <Palette className="h-3.5 w-3.5 text-gray-400" />
+        </div>
 
-        <div className="bg-white border rounded-3xl p-5 shadow-sm" style={previewStyle}>
-
-          <div className="flex items-center gap-4">
-
+        <div
+          className="rounded-2xl border bg-white p-4 shadow-sm"
+          style={{
+            borderColor: `${form.color}40`,
+          }}
+        >
+          <div className="flex items-center gap-3">
             <div
-              className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl text-white shadow-sm"
-              style={{ backgroundColor: form.color }}
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-2xl shadow-sm"
+              style={{
+                backgroundColor: form.color,
+              }}
             >
               {form.icon}
             </div>
 
-            <div>
-              <p className="text-lg font-black text-coffee-900">
-                {form.name || 'Category Name'}
+            <div className="min-w-0">
+              <p className="truncate text-base font-black text-coffee-900">
+                {form.name.trim() || (isAm ? 'የምድብ ስም' : 'Category Name')}
               </p>
-              <p className="text-sm text-gray-500 font-bold">
-                {form.name_am || 'የምድብ ስም'}
+
+              <p className="truncate text-xs font-medium text-gray-400">
+                {form.name_am.trim() || 'የምድብ ስም'}
               </p>
             </div>
-
           </div>
-
         </div>
       </div>
 
       {/* FORM */}
       <form onSubmit={handleSubmit} className="space-y-4">
 
-        {/* NAME EN */}
-        <div className="bg-white border rounded-2xl p-4 space-y-2">
-          <label className="text-[11px] font-black text-gray-500 uppercase">
+        {/* ENGLISH NAME */}
+        <div className="rounded-2xl border bg-white p-4">
+          <label
+            htmlFor="category-name"
+            className="mb-2 block text-[10px] font-black uppercase text-gray-500"
+          >
             {isAm ? 'ስም (English)' : 'Name (English)'}
           </label>
 
           <input
+            id="category-name"
+            type="text"
             value={form.name}
-            onChange={(e) =>
-              setForm(prev => ({ ...prev, name: e.target.value }))
+            onChange={(event) =>
+              setForm((previous) => ({
+                ...previous,
+                name: event.target.value,
+              }))
             }
-            className="w-full h-12 px-4 rounded-xl bg-gray-50 border font-bold"
             placeholder="e.g. Drinks"
+            autoComplete="off"
+            maxLength={100}
+            className="h-12 w-full rounded-xl border bg-gray-50 px-4 text-sm font-bold text-coffee-900 outline-none transition placeholder:text-gray-300 focus:border-berbere-500 focus:bg-white focus:ring-2 focus:ring-berbere-100"
           />
+
+          <p className="mt-1.5 text-[10px] font-medium text-gray-400">
+            {isAm
+              ? 'በምርቶች ላይ የሚታየው የእንግሊዝኛ ስም'
+              : 'The English name shown for this category'}
+          </p>
         </div>
 
-        {/* NAME AM */}
-        <div className="bg-white border rounded-2xl p-4 space-y-2">
-          <label className="text-[11px] font-black text-gray-500 uppercase">
+        {/* AMHARIC NAME */}
+        <div className="rounded-2xl border bg-white p-4">
+          <label
+            htmlFor="category-name-am"
+            className="mb-2 block text-[10px] font-black uppercase text-gray-500"
+          >
             {isAm ? 'ስም (አማርኛ)' : 'Name (Amharic)'}
           </label>
 
           <input
+            id="category-name-am"
+            type="text"
             value={form.name_am}
-            onChange={(e) =>
-              setForm(prev => ({ ...prev, name_am: e.target.value }))
+            onChange={(event) =>
+              setForm((previous) => ({
+                ...previous,
+                name_am: event.target.value,
+              }))
             }
-            className="w-full h-12 px-4 rounded-xl bg-gray-50 border font-bold"
-            placeholder="ምሳሌ: መጠጦች"
+            placeholder="ምሳሌ፡ መጠጦች"
+            autoComplete="off"
+            maxLength={100}
+            className="h-12 w-full rounded-xl border bg-gray-50 px-4 text-sm font-bold text-coffee-900 outline-none transition placeholder:text-gray-300 focus:border-berbere-500 focus:bg-white focus:ring-2 focus:ring-berbere-100"
           />
+
+          <p className="mt-1.5 text-[10px] font-medium text-gray-400">
+            {isAm
+              ? 'በአማርኛ ቋንቋ የሚታየው ስም'
+              : 'The Amharic name shown when Amharic is selected'}
+          </p>
         </div>
 
-        {/* ICONS */}
-        <div className="bg-white border rounded-2xl p-4 space-y-2">
-
-          <p className="text-[11px] font-black text-gray-500 uppercase">
+        {/* ICON */}
+        <div className="rounded-2xl border bg-white p-4">
+          <p className="mb-3 text-[10px] font-black uppercase text-gray-500">
             {isAm ? 'አይኮን' : 'Icon'}
           </p>
 
           <div className="grid grid-cols-5 gap-2">
-            {ICONS.map(icon => (
-              <button
-                type="button"
-                key={icon}
-                onClick={() => setForm(prev => ({ ...prev, icon }))}
-                className={`h-12 rounded-xl text-xl border flex items-center justify-center ${
-                  form.icon === icon
-                    ? 'border-berbere-500 bg-berbere-50'
-                    : 'bg-gray-50'
-                }`}
-              >
-                {icon}
-              </button>
-            ))}
-          </div>
+            {ICONS.map((icon) => {
+              const selected = form.icon === icon
 
+              return (
+                <button
+                  key={icon}
+                  type="button"
+                  onClick={() =>
+                    setForm((previous) => ({
+                      ...previous,
+                      icon,
+                    }))
+                  }
+                  aria-label={`${isAm ? 'አይኮን' : 'Icon'} ${icon}`}
+                  aria-pressed={selected}
+                  className={`flex h-12 items-center justify-center rounded-xl border text-xl transition ${
+                    selected
+                      ? 'border-berbere-500 bg-berbere-50 ring-2 ring-berbere-100'
+                      : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
+                  }`}
+                >
+                  {icon}
+                </button>
+              )
+            })}
+          </div>
         </div>
 
-        {/* COLORS */}
-        <div className="bg-white border rounded-2xl p-4 space-y-2">
-
-          <p className="text-[11px] font-black text-gray-500 uppercase">
-            {isAm ? 'ቀለም' : 'Color'}
+        {/* COLOR */}
+        <div className="rounded-2xl border bg-white p-4">
+          <p className="mb-3 text-[10px] font-black uppercase text-gray-500">
+            {isAm ? 'የምድብ ቀለም' : 'Category Color'}
           </p>
 
           <div className="flex flex-wrap gap-3">
-            {COLORS.map(color => (
-              <button
-                type="button"
-                key={color}
-                onClick={() => setForm(prev => ({ ...prev, color }))}
-                className={`w-10 h-10 rounded-xl ${
-                  form.color === color ? 'ring-2 ring-coffee-900 scale-110' : ''
-                }`}
-                style={{ backgroundColor: color }}
-              />
-            ))}
-          </div>
+            {COLORS.map((color) => {
+              const selected = form.color === color
 
+              return (
+                <button
+                  key={color}
+                  type="button"
+                  onClick={() =>
+                    setForm((previous) => ({
+                      ...previous,
+                      color,
+                    }))
+                  }
+                  aria-label={`${isAm ? 'ቀለም' : 'Color'} ${color}`}
+                  aria-pressed={selected}
+                  className={`h-10 w-10 rounded-xl transition ${
+                    selected
+                      ? 'scale-110 ring-2 ring-coffee-900 ring-offset-2'
+                      : 'hover:scale-105'
+                  }`}
+                  style={{
+                    backgroundColor: color,
+                  }}
+                />
+              )
+            })}
+          </div>
         </div>
 
-        {/* SUBMIT */}
+        {/* SAVE */}
         <button
+          type="submit"
           disabled={!isValid || loading}
-          className="w-full h-14 rounded-2xl bg-berbere-500 text-white font-black flex items-center justify-center gap-2 disabled:opacity-50"
+          className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-berbere-600 text-sm font-black text-white shadow-sm transition hover:bg-berbere-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {loading ? (
-            <Loader2 className="w-5 h-5 animate-spin" />
+            <Loader2 className="h-5 w-5 animate-spin" />
           ) : (
-            <Save className="w-5 h-5" />
+            <Save className="h-5 w-5" />
           )}
-          {isAm ? 'አስቀምጥ' : 'Save Category'}
+
+          {loading
+            ? isAm
+              ? 'በማስቀመጥ ላይ...'
+              : 'Saving...'
+            : isAm
+              ? 'ምድብ አስቀምጥ'
+              : 'Save Category'}
         </button>
-
       </form>
-
     </div>
   )
 }

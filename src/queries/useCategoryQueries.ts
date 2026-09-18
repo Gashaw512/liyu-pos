@@ -2,7 +2,7 @@
 
 'use client'
 
-import { getSupabaseBrowserClient } from '@/lib/supabase/client'
+import createClient from '@/lib/supabase/client'
 import type { Category } from '@/types/database/catalog'
 
 // ============================================================
@@ -24,13 +24,24 @@ export interface CreateCategoryPayload {
   name_am?: string | null
   icon?: string | null
   color?: string | null
-  group_type?: string | null
   sort_order?: number
 }
 
-export type UpdateCategoryPayload = Partial<
-  Omit<Category, 'id' | 'business_id' | 'created_at'>
->
+export interface UpdateCategoryPayload {
+  name?: string
+  name_am?: string | null
+  icon?: string | null
+  color?: string | null
+  sort_order?: number
+  is_active?: boolean
+}
+
+// ============================================================
+// DEFAULTS
+// ============================================================
+
+const DEFAULT_CATEGORY_ICON = '📦'
+const DEFAULT_CATEGORY_COLOR = '#8B2635'
 
 // ============================================================
 // GET ALL CATEGORIES
@@ -43,7 +54,7 @@ export async function getCategories(
     throw new Error('Business ID is required')
   }
 
-  const supabase = getSupabaseBrowserClient()
+  const supabase = createClient()
 
   const { data, error } = await supabase
     .from('categories')
@@ -60,14 +71,18 @@ export async function getCategories(
     .order('name', { ascending: true })
 
   if (error) {
-    console.error('[getCategories] Error:', error)
+    console.error('[getCategories] Failed to load categories:', {
+      businessId,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      code: error.code,
+    })
 
-    throw new Error(
-      `Failed to fetch categories: ${error.message}`
-    )
+    throw new Error(`Failed to fetch categories: ${error.message}`)
   }
 
-  return (data as CategoryWithProducts[]) ?? []
+  return (data ?? []) as CategoryWithProducts[]
 }
 
 // ============================================================
@@ -75,30 +90,38 @@ export async function getCategories(
 // ============================================================
 
 export async function getCategoryById(
-  categoryId: string
+  categoryId: string,
+  businessId: string
 ): Promise<Category> {
   if (!categoryId) {
     throw new Error('Category ID is required')
   }
 
-  const supabase = getSupabaseBrowserClient()
+  if (!businessId) {
+    throw new Error('Business ID is required')
+  }
+
+  const supabase = createClient()
 
   const { data, error } = await supabase
     .from('categories')
     .select('*')
     .eq('id', categoryId)
+    .eq('business_id', businessId)
     .is('deleted_at', null)
     .single()
 
   if (error) {
-    console.error(
-      `[getCategoryById] Error for ID ${categoryId}:`,
-      error
-    )
+    console.error('[getCategoryById] Failed to load category:', {
+      categoryId,
+      businessId,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      code: error.code,
+    })
 
-    throw new Error(
-      `Failed to fetch category: ${error.message}`
-    )
+    throw new Error(`Failed to fetch category: ${error.message}`)
   }
 
   return data as Category
@@ -111,10 +134,6 @@ export async function getCategoryById(
 export async function createCategory(
   payload: CreateCategoryPayload
 ): Promise<Category> {
-  // ----------------------------------------------------------
-  // Validate input
-  // ----------------------------------------------------------
-
   if (!payload.business_id) {
     throw new Error('Business ID is required')
   }
@@ -125,33 +144,49 @@ export async function createCategory(
     throw new Error('Category name cannot be empty')
   }
 
-  const supabase = getSupabaseBrowserClient()
+  const nameAm = payload.name_am?.trim() || null
 
-  // ----------------------------------------------------------
-  // Insert
-  // ----------------------------------------------------------
+  const icon =
+    payload.icon?.trim() || DEFAULT_CATEGORY_ICON
+
+  const color =
+    payload.color?.trim() || DEFAULT_CATEGORY_COLOR
+
+  const sortOrder =
+    Number.isFinite(payload.sort_order)
+      ? Number(payload.sort_order)
+      : 0
+
+  const supabase = createClient()
 
   const { data, error } = await supabase
     .from('categories')
     .insert({
       business_id: payload.business_id,
       name,
-      name_am: payload.name_am?.trim() || null,
-      icon: payload.icon || '📦',
-      color: payload.color || '#8B2635',
-      group_type: payload.group_type || null,
-      sort_order: payload.sort_order ?? 0,
+      name_am: nameAm,
+      icon,
+      color,
+      sort_order: sortOrder,
       is_active: true,
     })
-    .select()
+    .select('*')
     .single()
 
   if (error) {
-    console.error('[createCategory] Error:', error)
+    console.error('[createCategory] Failed to create category:', {
+      businessId: payload.business_id,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      code: error.code,
+    })
 
-    throw new Error(
-      `Failed to create category: ${error.message}`
-    )
+    throw new Error(`Failed to create category: ${error.message}`)
+  }
+
+  if (!data) {
+    throw new Error('Category was not created')
   }
 
   return data as Category
@@ -163,30 +198,94 @@ export async function createCategory(
 
 export async function updateCategory(
   categoryId: string,
+  businessId: string,
   payload: UpdateCategoryPayload
 ): Promise<Category> {
   if (!categoryId) {
     throw new Error('Category ID is required')
   }
 
-  const supabase = getSupabaseBrowserClient()
+  if (!businessId) {
+    throw new Error('Business ID is required')
+  }
+
+  // ----------------------------------------------------------
+  // Build a clean update object.
+  //
+  // IMPORTANT:
+  // business_id, id, created_at and deleted_at are intentionally
+  // not accepted here.
+  // ----------------------------------------------------------
+
+  const updates: UpdateCategoryPayload = {}
+
+  if (payload.name !== undefined) {
+    const name = payload.name.trim()
+
+    if (!name) {
+      throw new Error('Category name cannot be empty')
+    }
+
+    updates.name = name
+  }
+
+  if (payload.name_am !== undefined) {
+    updates.name_am = payload.name_am?.trim() || null
+  }
+
+  if (payload.icon !== undefined) {
+    updates.icon =
+      payload.icon?.trim() || DEFAULT_CATEGORY_ICON
+  }
+
+  if (payload.color !== undefined) {
+    updates.color =
+      payload.color?.trim() || DEFAULT_CATEGORY_COLOR
+  }
+
+  if (payload.sort_order !== undefined) {
+    if (!Number.isFinite(payload.sort_order)) {
+      throw new Error('Category sort order must be a valid number')
+    }
+
+    updates.sort_order = Number(payload.sort_order)
+  }
+
+  if (payload.is_active !== undefined) {
+    updates.is_active = payload.is_active
+  }
+
+  if (Object.keys(updates).length === 0) {
+    throw new Error('No category changes were provided')
+  }
+
+  const supabase = createClient()
 
   const { data, error } = await supabase
     .from('categories')
-    .update(payload)
+    .update(updates)
     .eq('id', categoryId)
+    .eq('business_id', businessId)
     .is('deleted_at', null)
-    .select()
+    .select('*')
     .single()
 
   if (error) {
-    console.error(
-      `[updateCategory] Error for ID ${categoryId}:`,
-      error
-    )
+    console.error('[updateCategory] Failed to update category:', {
+      categoryId,
+      businessId,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      code: error.code,
+    })
 
+    throw new Error(`Failed to update category: ${error.message}`)
+  }
+
+  if (!data) {
     throw new Error(
-      `Failed to update category: ${error.message}`
+      'Category was not updated or is not accessible.'
     )
   }
 
@@ -197,96 +296,81 @@ export async function updateCategory(
 // DELETE CATEGORY
 // ============================================================
 //
-// SOFT DELETE ONLY.
+// Soft delete only.
 //
-// The row remains in the database.
+// Database row remains:
 //
-// Before:
-//   deleted_at = NULL
-//   is_active  = TRUE
+//   deleted_at = timestamp
+//   is_active  = false
 //
-// After:
-//   deleted_at = current timestamp
-//   is_active  = FALSE
-//
-// Authorization is enforced by Supabase RLS.
-//
+// The database RLS policy remains the final authorization layer.
 // ============================================================
 
 export async function deleteCategory(
-  categoryId: string
+  categoryId: string,
+  businessId?: string
 ): Promise<boolean> {
   if (!categoryId) {
     throw new Error('Category ID is required')
   }
 
-  const supabase = getSupabaseBrowserClient()
+  const supabase = createClient()
 
-  // ----------------------------------------------------------
-  // Perform soft delete
-  // ----------------------------------------------------------
-  //
-  // IMPORTANT:
-  // Do not perform a separate frontend permission check here.
-  //
-  // The database RLS policy must verify:
-  //
-  //   1. User belongs to the same business
-  //   2. User has the required role
-  //   3. Category is currently active
-  //
-  // The frontend only requests the update.
-  // ----------------------------------------------------------
-
-  const deletedAt = new Date().toISOString()
-
-  const { data, error } = await supabase
+  let query = supabase
     .from('categories')
     .update({
-      deleted_at: deletedAt,
+      deleted_at: new Date().toISOString(),
       is_active: false,
     })
     .eq('id', categoryId)
     .is('deleted_at', null)
-    .select(
-      'id, business_id, name, deleted_at, is_active'
-    )
+
+  // ----------------------------------------------------------
+  // Business scope
+  //
+  // businessId is optional here for backward compatibility with
+  // the existing category list page.
+  //
+  // When provided, the update is explicitly scoped to the
+  // business. RLS still remains the final authorization layer.
+  // ----------------------------------------------------------
+
+  if (businessId) {
+    query = query.eq('business_id', businessId)
+  }
+
+  const { data, error } = await query
+    .select(`
+      id,
+      business_id,
+      name,
+      deleted_at,
+      is_active
+    `)
     .single()
 
-  // ----------------------------------------------------------
-  // Database / RLS error
-  // ----------------------------------------------------------
-
   if (error) {
-    console.error('[deleteCategory] Soft delete failed:', {
+    console.error('[deleteCategory] Failed to delete category:', {
       categoryId,
+      businessId,
       message: error.message,
       details: error.details,
       hint: error.hint,
       code: error.code,
     })
 
-    throw new Error(
-      `Failed to delete category: ${error.message}`
-    )
+    throw new Error(`Failed to delete category: ${error.message}`)
   }
-
-  // ----------------------------------------------------------
-  // Safety check
-  // ----------------------------------------------------------
 
   if (!data) {
     throw new Error(
-      'Category was not deleted. It may already be deleted or is not accessible to the current user.'
+      'Category was not deleted. It may already be deleted or is not accessible.'
     )
   }
 
-  // ----------------------------------------------------------
-  // Success
-  // ----------------------------------------------------------
-
-  console.log('[deleteCategory] Soft delete successful:', {
-    categoryId,
+  console.log('[deleteCategory] Category soft-deleted:', {
+    categoryId: data.id,
+    businessId: data.business_id,
     deletedAt: data.deleted_at,
   })
 

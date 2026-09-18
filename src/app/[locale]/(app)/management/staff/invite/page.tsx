@@ -1,25 +1,39 @@
-// src/app/[locale]/staff/invite/page.tsx
-import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import type { Route } from 'next'
-import { ChevronLeft } from "lucide-react";
-// import InviteStaffForm from "@/components/user/StaffWorkspaceTabs";
-// 1. Change line 7 to import the actual wizard form component:
-import InviteStaffWizard from "@/components/user/InviteStaffWizard";
+import { ChevronLeft, UserPlus } from "lucide-react";
 
+import { createClient } from "@/lib/supabase/server";
+import InviteStaffWizard from "@/components/user/InviteStaffWizard";
+import { Route } from "next";
 
 interface PageProps {
   params: Promise<{ locale: string }>;
 }
 
-export default async function InviteStaffPage({ params }: PageProps) {
+export const dynamic = "force-dynamic";
+
+export default async function InviteStaffPage({
+  params,
+}: PageProps) {
   const { locale } = await params;
   const supabase = await createClient();
-  const isAm = locale === 'am';
+  const isAm = locale === "am";
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect(`/${locale}/auth/login` as Route);
+  // --------------------------------------------------
+  // Authentication
+  // --------------------------------------------------
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect(`/${locale}/auth/login` as Route);
+  }
+
+  // --------------------------------------------------
+  // Authorization
+  // --------------------------------------------------
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -27,38 +41,52 @@ export default async function InviteStaffPage({ params }: PageProps) {
     .eq("id", user.id)
     .single();
 
-  if ((profile?.role !== 'owner' && profile?.role !== 'manager') || !profile?.business_id) {
+  const canInvite =
+    profile?.business_id &&
+    (profile.role === "owner" || profile.role === "manager");
+
+  if (!canInvite) {
     redirect(`/${locale}/dashboard`);
   }
 
+  // --------------------------------------------------
+  // Page
+  // --------------------------------------------------
+
   return (
-    <div className="max-w-md mx-auto p-4 pb-24 font-['DM_Sans',sans-serif]">
-      
-      {/* Back Button */}
-      <Link 
-        href={`/${locale}/staff`} 
-        className="inline-flex items-center gap-1 text-xs font-bold text-coffee-600 mb-6 bg-white px-3 py-1.5 rounded-xl border border-cream-200 active:scale-95 transition-transform"
-      >
-        <ChevronLeft className="h-4 w-4" />
-        {isAm ? 'ተመለስ' : 'Back to Crew'}
-      </Link>
+    <main className="min-h-screen bg-cream-100">
+      <div className="mx-auto w-full max-w-2xl px-4 py-5 pb-24 sm:px-6">
+        {/* Back */}
+        <Link
+          href={`/${locale}/management/staff`}
+          className="mb-5 inline-flex items-center gap-1.5 rounded-xl border border-cream-300 bg-white px-3 py-2 text-sm font-semibold text-coffee-600 transition-colors hover:bg-cream-50"
+        >
+          <ChevronLeft className="h-4 w-4" />
+          {isAm ? "ለሰራተኞች ይመለሱ" : "Back to Staff"}
+        </Link>
 
-      <div className="bg-white rounded-2xl border border-cream-200 p-5 shadow-sm space-y-4">
-        <div>
-          <h2 className="text-xl font-black text-coffee-950 tracking-tight">
-            {isAm ? 'አዲስ ሰራተኛ መጋበዣ' : 'Create Invitation Link'}
-          </h2>
-          <p className="text-xs text-coffee-500 mt-1">
-            {isAm 
-              ? 'የሰራተኛውን ስም እና የስራ ሚና በመምረጥ የማረጋገጫ ኮድ ያመንጩ።' 
-              : 'Specify full details below to issue an encrypted verification pass-code.'}
+        {/* Header */}
+        <header className="mb-5">
+          <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-berbere-500 text-white">
+            <UserPlus className="h-5 w-5" />
+          </div>
+
+          <h1 className="text-2xl font-bold tracking-tight text-coffee-700">
+            {isAm ? "አዲስ ሰራተኛ ይጋብዙ" : "Invite Staff"}
+          </h1>
+
+          <p className="mt-1 text-sm leading-6 text-coffee-500">
+            {isAm
+              ? "የሰራተኛውን መረጃ እና ሚና ያስገቡ። ከዚያ የመግቢያ ግብዣ ይፍጠሩ።"
+              : "Enter the staff member's details and role, then create their invitation."}
           </p>
-        </div>
+        </header>
 
-        {/* Form Client Core component interaction */}
-        <InviteStaffWizard locale={locale} />
+        {/* Invitation form */}
+        <section className="rounded-2xl border border-cream-300 bg-white p-5 shadow-sm sm:p-6">
+          <InviteStaffWizard locale={locale} />
+        </section>
       </div>
-
-    </div>
+    </main>
   );
 }

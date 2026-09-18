@@ -44,5 +44,10 @@
     "supabase": "^2.102.0",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "overrides": {
+    "@types/next-pwa": {
+      "next": "16.2.6"
+    }
   }
 }

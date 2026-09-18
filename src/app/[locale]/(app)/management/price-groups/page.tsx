@@ -2,24 +2,55 @@
 
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
-import { useRouter, useParams } from 'next/navigation'
+import {
+  useCallback,
+  useEffect,
+  useState,
+} from 'react'
+import {
+  useParams,
+  useRouter,
+} from 'next/navigation'
 
 import {
-  Plus,
-  Trash2,
-  Edit2,
-  Loader2,
   ArrowLeft,
   Coins,
-  Layers
+  Edit2,
+  Layers,
+  Loader2,
+  Plus,
+  Trash2,
+  X,
 } from 'lucide-react'
 
 import { getBusinessId } from '@/lib/auth/getBusinessId'
 import {
+  deletePriceGroup,
   getPriceGroups,
-  deletePriceGroup
 } from '@/queries/usePriceGroupQueries'
+
+// ============================================================
+// TYPES
+// ============================================================
+
+interface PriceGroupProduct {
+  id: string
+  name: string
+}
+
+interface PriceGroup {
+  id: string
+  name: string
+  name_am: string | null
+  amount: number
+  is_active: boolean
+  updated_at?: string | null
+  products?: PriceGroupProduct[]
+}
+
+// ============================================================
+// PAGE
+// ============================================================
 
 export default function PriceGroupsPage() {
   const router = useRouter()
@@ -28,387 +59,954 @@ export default function PriceGroupsPage() {
   const locale = String(params?.locale ?? 'am')
   const isAm = locale === 'am'
 
-  const [groups, setGroups] = useState<any[]>([])
+  const [groups, setGroups] = useState<PriceGroup[]>([])
   const [loading, setLoading] = useState(true)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [previewGroup, setPreviewGroup] =
+    useState<PriceGroup | null>(null)
 
-  // ✅ NEW: Preview Drawer State
-  const [previewOpen, setPreviewOpen] = useState(false)
-  const [previewGroup, setPreviewGroup] = useState<any>(null)
+  // ==========================================================
+  // LOAD
+  // ==========================================================
 
-  /* ───────────────── LOAD ───────────────── */
   const loadGroups = useCallback(async () => {
     try {
       setLoading(true)
 
       const businessId = await getBusinessId()
-      if (!businessId) return
+
+      if (!businessId) {
+        throw new Error('Business ID is required')
+      }
 
       const data = await getPriceGroups(businessId)
-      setGroups(data)
-    } catch (err) {
-      console.error('Load error:', err)
+
+      setGroups((data ?? []) as PriceGroup[])
+    } catch (error) {
+      console.error(
+        '[PriceGroupsPage] Failed to load price groups:',
+        error
+      )
+
+      setGroups([])
     } finally {
       setLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    loadGroups()
+    void loadGroups()
   }, [loadGroups])
 
-  /* ───────────────── DELETE ───────────────── */
+  // ==========================================================
+  // CLOSE PREVIEW WITH ESCAPE
+  // ==========================================================
+
+  useEffect(() => {
+    if (!previewGroup) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setPreviewGroup(null)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [previewGroup])
+
+  // ==========================================================
+  // DELETE
+  // ==========================================================
+
   const handleDelete = async (id: string) => {
-    const ok = confirm(
+    const confirmed = window.confirm(
       isAm
-        ? 'ይህን ቦኖ ማጥፋት እርግጠኛ ነዎት?'
+        ? 'ይህን የዋጋ ቡድን ለመሰረዝ እርግጠኛ ነዎት?'
         : 'Delete this price group?'
     )
-    if (!ok) return
+
+    if (!confirmed) return
 
     try {
+      setDeletingId(id)
+
       await deletePriceGroup(id)
-      await loadGroups()
-    } catch (err) {
-      console.error(err)
-      alert(isAm ? 'ማጥፋት አልተሳካም' : 'Delete failed')
+
+      setGroups((current) =>
+        current.filter((group) => group.id !== id)
+      )
+
+      setPreviewGroup((current) =>
+        current?.id === id ? null : current
+      )
+    } catch (error) {
+      console.error(
+        '[PriceGroupsPage] Delete failed:',
+        error
+      )
+
+      window.alert(
+        isAm
+          ? 'የዋጋ ቡድኑን መሰረዝ አልተቻለም።'
+          : 'Failed to delete the price group.'
+      )
+    } finally {
+      setDeletingId(null)
     }
   }
 
-  /* ───────────────── UI STATES ───────────────── */
+  // ==========================================================
+  // LOADING
+  // ==========================================================
+
   if (loading) {
     return (
-      <div className="flex justify-center py-20">
-        <Loader2 className="w-7 h-7 animate-spin text-berbere-500" />
+      <div className="min-h-[50vh] flex items-center justify-center bg-cream-100">
+        <div className="flex flex-col items-center gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-berbere-50">
+            <Loader2 className="h-5 w-5 animate-spin text-berbere-500" />
+          </div>
+
+          <p className="text-xs font-semibold text-coffee-400">
+            {isAm
+              ? 'በመጫን ላይ...'
+              : 'Loading price groups...'}
+          </p>
+        </div>
       </div>
     )
   }
 
-  /* ───────────────── UI ───────────────── */
+  // ==========================================================
+  // UI
+  // ==========================================================
+
   return (
-    <div className="max-w-md mx-auto pb-24 space-y-5 px-4 pt-4">
+    <div className="min-h-screen bg-cream-100 pb-24">
+      <div className="mx-auto w-full max-w-5xl px-4 py-4 sm:px-6 lg:px-8 lg:py-6">
 
-      {/* TOP BAR */}
-      <div className="flex items-center justify-between">
+        {/* ====================================================
+            TOP BAR
+        ===================================================== */}
 
-        <button
-          onClick={() => router.push(`/${locale}/management`)}
-          className="flex items-center gap-2 text-xs font-bold text-coffee-500"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          {isAm ? 'Back' : 'Back'}
-        </button>
+        <div className="mb-6 flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() =>
+              router.push(`/${locale}/management`)
+            }
+            className="
+              inline-flex items-center gap-2
+              rounded-xl px-2.5 py-2
+              text-sm font-bold
+              text-coffee-700
+              transition
+              hover:bg-white
+              hover:text-berbere-600
+            "
+          >
+            <ArrowLeft className="h-4 w-4" />
 
-        <button
-          onClick={() =>
-            router.push(`/${locale}/management/price-groups/new`)
-          }
-          className="bg-berbere-500 text-white px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          {isAm ? 'አዲስ' : 'Create'}
-        </button>
+            <span>
+              {isAm ? 'ተመለስ' : 'Back'}
+            </span>
+          </button>
 
-      </div>
+          <button
+            type="button"
+            onClick={() =>
+              router.push(
+                `/${locale}/management/price-groups/new`
+              )
+            }
+            className="
+              inline-flex items-center gap-2
+              rounded-xl
+              bg-berbere-500
+              px-4 py-2.5
+              text-xs font-black
+              text-white
+              shadow-sm
+              transition
+              hover:bg-berbere-600
+              active:scale-[0.98]
+            "
+          >
+            <Plus className="h-4 w-4" />
 
-      {/* TITLE */}
-      <div className="flex items-center gap-3">
-
-        <div className="relative w-12 h-12 rounded-full bg-gradient-to-br from-berbere-500 to-red-500 flex items-center justify-center shadow-lg">
-          <div className="absolute inset-0 rounded-full animate-pulse opacity-30 bg-white" />
-          <Coins className="w-6 h-6 text-white relative z-10" />
+            <span>
+              {isAm ? 'አዲስ ቡድን' : 'New Group'}
+            </span>
+          </button>
         </div>
 
-        <div className="flex flex-col">
-          <h1 className="text-lg font-black text-coffee-900 tracking-tight">
-            {isAm ? 'ቦኖ ስርዓት' : 'Bono Pricing System'}
-          </h1>
-          <p className="text-[11px] font-bold text-coffee-400 uppercase tracking-widest">
-            {isAm ? 'የዋጋ ቡድን አስተዳደር' : 'Group-based pricing engine'}
-          </p>
+        {/* ====================================================
+            HEADER
+        ===================================================== */}
+
+        <div className="mb-6 flex items-center gap-3">
+          <div
+            className="
+              flex h-12 w-12 shrink-0
+              items-center justify-center
+              rounded-2xl
+              bg-coffee-700
+              shadow-sm
+            "
+          >
+            <Coins className="h-6 w-6 text-gold-400" />
+          </div>
+
+          <div className="min-w-0">
+            <h1 className="text-xl font-black tracking-tight text-coffee-700 sm:text-2xl">
+              {isAm ? 'የዋጋ ቡድኖች' : 'Price Groups'}
+            </h1>
+
+            <p className="mt-0.5 text-xs font-medium text-coffee-400 sm:text-sm">
+              {isAm
+                ? 'የተለያዩ ምርቶችን በቡድን ዋጋ ያስተዳድሩ'
+                : 'Manage shared pricing across products'}
+            </p>
+          </div>
         </div>
 
-      </div>
+        {/* ====================================================
+            SUMMARY
+        ===================================================== */}
 
-      {/* SUMMARY CARD */}
-      <div className="bg-gradient-to-r from-berbere-500 to-red-500 rounded-3xl p-5 text-white">
-        <p className="text-xs uppercase tracking-widest opacity-80">
-          Price Groups
-        </p>
+        <div
+          className="
+            mb-7
+            overflow-hidden
+            rounded-3xl
+            bg-coffee-700
+            shadow-sm
+          "
+        >
+          <div className="flex items-center justify-between p-5 sm:p-6">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/55">
+                {isAm ? 'የዋጋ ቡድኖች' : 'Price Groups'}
+              </p>
 
-        <h2 className="text-3xl font-black">
-          {groups.length}
-        </h2>
+              <p className="mt-1 text-3xl font-black text-white">
+                {groups.length}
+              </p>
 
-        <p className="text-xs opacity-90">
-          Active Bono Configurations
-        </p>
-      </div>
+              <p className="mt-1 text-xs font-medium text-white/65">
+                {isAm
+                  ? 'የተፈጠሩ የዋጋ ቡድኖች'
+                  : 'Configured pricing groups'}
+              </p>
+            </div>
 
-      {/* LIST */}
-      <div className="space-y-3">
+            <div
+              className="
+                flex h-12 w-12
+                items-center justify-center
+                rounded-2xl
+                bg-gold-400/10
+              "
+            >
+              <Layers className="h-6 w-6 text-gold-400" />
+            </div>
+          </div>
+        </div>
+
+        {/* ====================================================
+            EMPTY STATE
+        ===================================================== */}
 
         {groups.length === 0 ? (
-          <p className="text-center text-xs text-gray-400 py-10">
-            {isAm ? 'ምንም ቦኖ የለም' : 'No price groups found'}
-          </p>
-        ) : (
-          groups.map((g) => (
+          <div
+            className="
+              rounded-3xl
+              border border-cream-200
+              bg-white
+              px-6 py-12
+              text-center
+              shadow-sm
+            "
+          >
             <div
-              key={g.id}
-              onClick={() => {
-                setPreviewGroup(g)
-                setPreviewOpen(true)
-              }}
-              className="bg-white rounded-2xl border border-cream-200 shadow-card overflow-hidden hover:shadow-lg transition-all cursor-pointer"
+              className="
+                mx-auto mb-4
+                flex h-14 w-14
+                items-center justify-center
+                rounded-2xl
+                bg-berbere-50
+              "
             >
+              <Coins className="h-7 w-7 text-berbere-500" />
+            </div>
 
-              {/* HEADER */}
-              <div className="p-4 flex items-start justify-between">
+            <h2 className="text-base font-black text-coffee-700">
+              {isAm
+                ? 'እስካሁን የዋጋ ቡድን የለም'
+                : 'No price groups yet'}
+            </h2>
 
-                <div className="flex items-start gap-3">
+            <p className="mx-auto mt-1 max-w-sm text-xs leading-5 text-coffee-400">
+              {isAm
+                ? 'የምርቶችን ዋጋ በቡድን ለማስተዳደር የመጀመሪያዎን ቡድን ይፍጠሩ።'
+                : 'Create a price group to manage shared pricing across products.'}
+            </p>
 
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-berbere-500 to-red-500 flex items-center justify-center shadow-md">
-                    <Coins className="w-5 h-5 text-white" />
+            <button
+              type="button"
+              onClick={() =>
+                router.push(
+                  `/${locale}/management/price-groups/new`
+                )
+              }
+              className="
+                mt-5
+                inline-flex items-center gap-2
+                rounded-xl
+                bg-berbere-500
+                px-4 py-2.5
+                text-xs font-black
+                text-white
+                transition
+                hover:bg-berbere-600
+              "
+            >
+              <Plus className="h-4 w-4" />
+
+              {isAm
+                ? 'የመጀመሪያ ቡድን ይፍጠሩ'
+                : 'Create First Group'}
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+
+            {/* ==================================================
+                SECTION LABEL
+            =================================================== */}
+
+            <div className="flex items-center justify-between px-1">
+              <h2 className="text-xs font-black uppercase tracking-[0.14em] text-coffee-400">
+                {isAm
+                  ? 'የዋጋ ቡድኖች'
+                  : 'Your Price Groups'}
+              </h2>
+
+              <span className="text-[11px] font-bold text-coffee-300">
+                {groups.length}
+              </span>
+            </div>
+
+            {/* ==================================================
+                GROUP CARDS
+            =================================================== */}
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {groups.map((group) => {
+                const productCount =
+                  group.products?.length ?? 0
+
+                const displayName =
+                  isAm
+                    ? group.name_am || group.name
+                    : group.name
+
+                const secondaryName =
+                  isAm
+                    ? group.name
+                    : group.name_am
+
+                const isDeleting =
+                  deletingId === group.id
+
+                return (
+                  <div
+                    key={group.id}
+                    className="
+                      overflow-hidden
+                      rounded-2xl
+                      border border-cream-200
+                      bg-white
+                      shadow-sm
+                      transition
+                      hover:-translate-y-0.5
+                      hover:border-cream-300
+                      hover:shadow-md
+                    "
+                  >
+                    {/* CARD CONTENT */}
+
+                    <button
+                      type="button"
+                      onClick={() => setPreviewGroup(group)}
+                      className="
+                        w-full
+                        p-4
+                        text-left
+                        transition
+                        hover:bg-cream-50
+                        focus:outline-none
+                        focus:ring-2
+                        focus:ring-inset
+                        focus:ring-gold-400
+                      "
+                    >
+                      <div className="flex items-start gap-3">
+
+                        {/* ICON */}
+
+                        <div
+                          className="
+                            flex h-11 w-11 shrink-0
+                            items-center justify-center
+                            rounded-xl
+                            bg-berbere-50
+                          "
+                        >
+                          <Coins className="h-5 w-5 text-berbere-500" />
+                        </div>
+
+                        {/* CONTENT */}
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-3">
+
+                            <div className="min-w-0">
+                              <h3 className="truncate text-sm font-black text-coffee-700">
+                                {displayName}
+                              </h3>
+
+                              {secondaryName && (
+                                <p className="mt-0.5 truncate text-[11px] font-medium text-coffee-300">
+                                  {secondaryName}
+                                </p>
+                              )}
+                            </div>
+
+                            {/* PRICE */}
+
+                            <div className="shrink-0 text-right">
+                              <p className="text-lg font-black text-berbere-500">
+                                {Number(group.amount).toFixed(2)}
+                              </p>
+
+                              <p className="text-[10px] font-bold text-coffee-300">
+                                ETB
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* META */}
+
+                          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-coffee-400">
+                              <Layers className="h-3.5 w-3.5 text-gold-400" />
+
+                              {productCount}{' '}
+                              {isAm
+                                ? 'ምርቶች'
+                                : 'products'}
+                            </span>
+
+                            <span
+                              className={`
+                                inline-flex items-center gap-1.5
+                                text-[11px] font-bold
+                                ${
+                                  group.is_active
+                                    ? 'text-emerald-700'
+                                    : 'text-coffee-300'
+                                }
+                              `}
+                            >
+                              <span
+                                className={`
+                                  h-1.5 w-1.5 rounded-full
+                                  ${
+                                    group.is_active
+                                      ? 'bg-emerald-500'
+                                      : 'bg-coffee-300'
+                                  }
+                                `}
+                              />
+
+                              {group.is_active
+                                ? isAm
+                                  ? 'ንቁ'
+                                  : 'Active'
+                                : isAm
+                                  ? 'ያልነቃ'
+                                  : 'Inactive'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+
+                    {/* ACTIONS */}
+
+                    <div className="grid grid-cols-2 border-t border-cream-200">
+
+                      <button
+                        type="button"
+                        disabled={isDeleting}
+                        onClick={() =>
+                          router.push(
+                            `/${locale}/management/price-groups/${group.id}/edit`
+                          )
+                        }
+                        className="
+                          flex items-center justify-center gap-2
+                          py-3
+                          text-gold-600
+                          transition
+                          hover:bg-gold-50
+                          disabled:opacity-50
+                        "
+                      >
+                        <Edit2 className="h-4 w-4" />
+
+                        <span className="text-xs font-black">
+                          {isAm ? 'አርም' : 'Edit'}
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={isDeleting}
+                        onClick={() =>
+                          void handleDelete(group.id)
+                        }
+                        className="
+                          flex items-center justify-center gap-2
+                          border-l border-cream-200
+                          py-3
+                          text-berbere-600
+                          transition
+                          hover:bg-berbere-50
+                          disabled:opacity-50
+                        "
+                      >
+                        {isDeleting ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+
+                        <span className="text-xs font-black">
+                          {isDeleting
+                            ? isAm
+                              ? 'በመሰረዝ...'
+                              : 'Deleting...'
+                            : isAm
+                              ? 'ሰርዝ'
+                              : 'Delete'}
+                        </span>
+                      </button>
+
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ======================================================
+          PREVIEW
+          Mobile: bottom sheet
+          Desktop: centered dialog
+      ======================================================= */}
+
+      {previewGroup && (
+        <div
+          className="
+            fixed inset-0 z-[100]
+            flex items-end justify-center
+            bg-coffee-900/45
+            p-0
+            backdrop-blur-[2px]
+            sm:items-center
+            sm:p-6
+          "
+          role="dialog"
+          aria-modal="true"
+          aria-label={
+            isAm
+              ? 'የዋጋ ቡድን ዝርዝር'
+              : 'Price group details'
+          }
+        >
+          {/* BACKDROP */}
+
+          <button
+            type="button"
+            aria-label="Close preview"
+            onClick={() => setPreviewGroup(null)}
+            className="absolute inset-0 cursor-default"
+          />
+
+          {/* ==================================================
+              MODAL / SHEET
+          =================================================== */}
+
+          <div
+            className="
+              relative
+              flex w-full flex-col
+              overflow-hidden
+              rounded-t-3xl
+              bg-cream-100
+              shadow-2xl
+              sm:max-w-xl
+              sm:rounded-3xl
+              lg:max-w-2xl
+            "
+          >
+            {/* HEADER */}
+
+            <div className="shrink-0 border-b border-cream-200 bg-white px-5 py-4 sm:px-6">
+              <div className="flex items-center justify-between gap-4">
+
+                <div className="flex min-w-0 items-center gap-3">
+                  <div
+                    className="
+                      flex h-11 w-11 shrink-0
+                      items-center justify-center
+                      rounded-xl
+                      bg-coffee-700
+                    "
+                  >
+                    <Coins className="h-5 w-5 text-gold-400" />
                   </div>
 
-                  <div>
-                    <h3 className="font-black text-coffee-900 text-base">
-                      {isAm ? g.name_am : g.name}
+                  <div className="min-w-0">
+                    <h3 className="truncate text-base font-black text-coffee-700">
+                      {isAm
+                        ? previewGroup.name_am ||
+                          previewGroup.name
+                        : previewGroup.name}
                     </h3>
 
-                    <p className="text-[11px] text-coffee-400 font-bold uppercase">
-                      {isAm ? g.name : g.name_am}
-                    </p>
-
-                    <p className="text-[10px] text-coffee-300 mt-1">
-                      {g.is_active ? 'Active Pricing Rule' : 'Inactive'}
+                    <p className="mt-0.5 truncate text-[11px] font-medium text-coffee-300">
+                      {isAm
+                        ? previewGroup.name
+                        : previewGroup.name_am ||
+                          'Price group'}
                     </p>
                   </div>
-
                 </div>
 
-                <div className="text-right">
-                  <div className="bg-berbere-50 text-berbere-700 px-3 py-1.5 rounded-xl font-black text-lg">
-                    {Number(g.amount).toFixed(2)}
-                  </div>
-                  <p className="text-[10px] text-coffee-400">
-                    ETB / Group
+                <button
+                  type="button"
+                  onClick={() => setPreviewGroup(null)}
+                  className="
+                    flex h-9 w-9 shrink-0
+                    items-center justify-center
+                    rounded-xl
+                    bg-cream-100
+                    text-coffee-400
+                    transition
+                    hover:bg-cream-200
+                    hover:text-coffee-700
+                  "
+                  aria-label="Close"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* CONTENT */}
+
+            <div className="max-h-[78vh] overflow-y-auto p-5 sm:max-h-[75vh] sm:p-6">
+
+              {/* ==================================================
+                  SUMMARY
+              =================================================== */}
+
+              <div className="grid grid-cols-2 gap-3">
+
+                <div
+                  className="
+                    rounded-2xl
+                    border border-cream-200
+                    bg-white
+                    p-4
+                  "
+                >
+                  <p className="text-[10px] font-black uppercase tracking-wider text-coffee-300">
+                    {isAm ? 'ዋጋ' : 'Price'}
+                  </p>
+
+                  <p className="mt-1 text-xl font-black text-berbere-500">
+                    {Number(previewGroup.amount).toFixed(2)}
+                  </p>
+
+                  <p className="text-[10px] font-bold text-coffee-300">
+                    ETB
                   </p>
                 </div>
 
+                <div
+                  className="
+                    rounded-2xl
+                    border border-cream-200
+                    bg-white
+                    p-4
+                  "
+                >
+                  <p className="text-[10px] font-black uppercase tracking-wider text-coffee-300">
+                    {isAm ? 'ምርቶች' : 'Products'}
+                  </p>
+
+                  <p className="mt-1 text-xl font-black text-coffee-700">
+                    {previewGroup.products?.length ?? 0}
+                  </p>
+
+                  <p className="text-[10px] font-bold text-coffee-300">
+                    {isAm
+                      ? 'በዚህ ቡድን'
+                      : 'linked to group'}
+                  </p>
+                </div>
               </div>
 
-              {/* INFO */}
-              <div className="px-4 pb-3 flex justify-between text-xs font-bold text-coffee-500">
-                <div className="flex items-center gap-2">
-                  <Layers className="w-4 h-4 text-coffee-400" />
-                  {g.products?.length ?? 0} Products
+              {/* ==================================================
+                  PRODUCTS
+              =================================================== */}
+
+              <div className="mt-6">
+                <div className="mb-3 flex items-center justify-between">
+                  <h4 className="text-xs font-black uppercase tracking-[0.12em] text-coffee-400">
+                    {isAm
+                      ? 'የተገናኙ ምርቶች'
+                      : 'Linked Products'}
+                  </h4>
+
+                  <span className="text-[11px] font-bold text-coffee-300">
+                    {previewGroup.products?.length ?? 0}
+                  </span>
                 </div>
 
-                <span className="text-[10px] uppercase">
-                  Click to preview
-                </span>
-              </div>
-
-              {/* ACTIONS */}
-              <div className="flex border-t border-cream-100">
-
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    router.push(`/${locale}/management/price-groups/${g.id}/edit`)
-                  }}
-                  className="flex-1 py-3 flex items-center justify-center gap-2 text-gold-700 hover:bg-gold-50"
-                >
-                  <Edit2 className="w-4 h-4" />
-                  <span className="text-xs font-black uppercase">
-                    {isAm ? 'አርም' : 'Edit'}
-                  </span>
-                </button>
-
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    handleDelete(g.id)
-                  }}
-                  className="flex-1 py-3 flex items-center justify-center gap-2 text-red-600 hover:bg-red-50"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  <span className="text-xs font-black uppercase">
-                    {isAm ? 'ሰርዝ' : 'Delete'}
-                  </span>
-                </button>
-
-              </div>
-
-            </div>
-          ))
-        )}
-
-      </div>
-
-      {/*
-          BONO QUICK PREVIEW DRAWER
-     */}
-    {previewOpen && previewGroup && (
-  <div className="fixed inset-0 z-50 bg-black/40 flex items-end">
-
-    {/* BACKDROP */}
-    <div
-      className="absolute inset-0"
-      onClick={() => setPreviewOpen(false)}
-    />
-
-    {/* SHEET */}
-    <div className="relative w-full bg-white rounded-t-3xl p-5 max-h-[80vh] overflow-y-auto animate-slide-up">
-
-      {/* HANDLE */}
-      <div className="w-12 h-1.5 bg-gray-300 rounded-full mx-auto mb-4" />
-
-      {/* HEADER */}
-      <div className="flex justify-between items-start mb-4">
-        <div>
-          <h3 className="text-sm font-black text-coffee-900">
-            {previewGroup.name}
-          </h3>
-
-          <p className="text-[11px] text-gray-400 font-bold uppercase">
-            BONO Intelligence Panel
-          </p>
-        </div>
-
-        <button
-          onClick={() => setPreviewOpen(false)}
-          className="text-xs font-bold text-gray-500"
-        >
-          Close
-        </button>
-      </div>
-
-      {/* =========================
-          1. IMPACT SUMMARY
-      ========================== */}
-      <div className="grid grid-cols-2 gap-3 mb-5">
-
-        <div className="bg-cream-50 p-3 rounded-xl">
-          <p className="text-[10px] uppercase text-gray-500">
-            Products
-          </p>
-          <p className="text-lg font-black">
-            {previewGroup.products?.length ?? 0}
-          </p>
-        </div>
-
-        <div className="bg-cream-50 p-3 rounded-xl">
-          <p className="text-[10px] uppercase text-gray-500">
-            Price
-          </p>
-          <p className="text-lg font-black text-berbere-600">
-            {Number(previewGroup.amount).toFixed(2)} ETB
-          </p>
-        </div>
-
-      </div>
-
-      {/* =========================
-          2. INTELLIGENCE SUMMARY
-      ========================== */}
-      <div className="mb-5 space-y-2">
-
-        <p className="text-[11px] font-black text-gray-500 uppercase">
-          Impact Analysis
-        </p>
-
-        <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-xs font-bold text-blue-700">
-          📊 {previewGroup.products?.length ?? 0} products will be priced under this BONO rule
-        </div>
-
-        {(previewGroup.products?.length ?? 0) > 10 && (
-          <div className="bg-yellow-50 border border-yellow-100 rounded-xl p-3 text-xs font-bold text-yellow-700">
-            ⚠ Large group detected — pricing impact is significant
-          </div>
-        )}
-
-      </div>
-
-      {/* =========================
-          3. SMART PRODUCT LIST
-      ========================== */}
-      <div className="space-y-3">
-
-        <p className="text-[11px] font-black text-gray-500 uppercase">
-          Linked Products
-        </p>
-
-        {(previewGroup.products?.length ?? 0) === 0 ? (
-          <p className="text-xs text-gray-400">
-            No products assigned
-          </p>
-        ) : (
-          <>
-            <div className="flex flex-wrap gap-2">
-
-              {(previewGroup.products || [])
-                .slice(0, 8)
-                .map((p: any, idx: number) => (
-                  <span
-                    key={idx}
-                    className="px-3 py-1 bg-berbere-50 text-berbere-700 rounded-full text-[11px] font-bold"
+                {(previewGroup.products?.length ?? 0) === 0 ? (
+                  <div
+                    className="
+                      rounded-2xl
+                      border border-dashed border-cream-300
+                      bg-white
+                      p-6
+                      text-center
+                    "
                   >
-                    {p.name || p}
-                  </span>
-                ))}
+                    <div
+                      className="
+                        mx-auto
+                        flex h-11 w-11
+                        items-center justify-center
+                        rounded-xl
+                        bg-cream-100
+                      "
+                    >
+                      <Layers className="h-5 w-5 text-coffee-300" />
+                    </div>
 
+                    <p className="mt-2 text-xs font-semibold text-coffee-400">
+                      {isAm
+                        ? 'ምንም ምርት አልተመደበም'
+                        : 'No products assigned'}
+                    </p>
+                  </div>
+                ) : (
+                  <div
+                    className="
+                      rounded-2xl
+                      border border-cream-200
+                      bg-white
+                      p-4
+                    "
+                  >
+                    <div className="flex flex-wrap gap-2">
+                      {previewGroup.products
+                        ?.slice(0, 12)
+                        .map((product) => (
+                          <span
+                            key={product.id}
+                            className="
+                              rounded-lg
+                              bg-berbere-50
+                              px-2.5 py-1.5
+                              text-[11px] font-bold
+                              text-berbere-600
+                            "
+                          >
+                            {product.name}
+                          </span>
+                        ))}
+                    </div>
+
+                    {(previewGroup.products?.length ?? 0) >
+                      12 && (
+                      <p className="mt-3 text-[11px] font-bold text-coffee-300">
+                        +
+                        {previewGroup.products!.length -
+                          12}{' '}
+                        {isAm
+                          ? 'ተጨማሪ ምርቶች'
+                          : 'more products'}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* ==================================================
+                  STATUS
+              =================================================== */}
+
+              <div className="mt-4">
+                <div
+                  className={`
+                    rounded-2xl
+                    border
+                    p-4
+                    ${
+                      previewGroup.is_active
+                        ? 'border-gold-200 bg-gold-50'
+                        : 'border-cream-200 bg-white'
+                    }
+                  `}
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`
+                        h-2 w-2 rounded-full
+                        ${
+                          previewGroup.is_active
+                            ? 'bg-emerald-500'
+                            : 'bg-coffee-300'
+                        }
+                      `}
+                    />
+
+                    <p
+                      className={`
+                        text-xs font-bold
+                        ${
+                          previewGroup.is_active
+                            ? 'text-coffee-700'
+                            : 'text-coffee-400'
+                        }
+                      `}
+                    >
+                      {previewGroup.is_active
+                        ? isAm
+                          ? 'ይህ የዋጋ ቡድን ንቁ ነው።'
+                          : 'This price group is active.'
+                        : isAm
+                          ? 'ይህ የዋጋ ቡድን ንቁ አይደለም።'
+                          : 'This price group is inactive.'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* ==================================================
+                  LAST UPDATED
+              =================================================== */}
+
+              {previewGroup.updated_at && (
+                <p className="mt-4 text-center text-[10px] font-medium text-coffee-300">
+                  {isAm
+                    ? 'የመጨረሻ ማሻሻያ'
+                    : 'Last updated'}{' '}
+                  ·{' '}
+                  {new Date(
+                    previewGroup.updated_at
+                  ).toLocaleString()}
+                </p>
+              )}
             </div>
 
-            {(previewGroup.products?.length ?? 0) > 8 && (
-              <p className="text-[11px] text-gray-400 font-bold">
-                +{previewGroup.products.length - 8} more products
-              </p>
-            )}
-          </>
-        )}
+            {/* ==================================================
+                FOOTER ACTIONS
+            =================================================== */}
 
-      </div>
+            <div className="shrink-0 border-t border-cream-200 bg-white p-4 sm:p-5">
+              <div className="grid grid-cols-2 gap-3">
 
-      {/* =========================
-          4. REVENUE SIMULATION
-      ========================== */}
-      <div className="mt-5 space-y-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const id = previewGroup.id
 
-        <p className="text-[11px] font-black text-gray-500 uppercase">
-          Revenue Estimate
-        </p>
+                    setPreviewGroup(null)
 
-        <div className="bg-green-50 border border-green-100 rounded-xl p-3">
+                    router.push(
+                      `/${locale}/management/price-groups/${id}/edit`
+                    )
+                  }}
+                  className="
+                    flex items-center justify-center gap-2
+                    rounded-xl
+                    bg-gold-400
+                    px-4 py-3
+                    text-xs font-black
+                    text-coffee-700
+                    transition
+                    hover:bg-gold-500
+                  "
+                >
+                  <Edit2 className="h-4 w-4" />
 
-          <p className="text-xs font-bold text-green-700">
-            Avg price per item: <span className="font-black">{Number(previewGroup.amount).toFixed(2)} ETB</span>
-          </p>
+                  {isAm ? 'አርም' : 'Edit'}
+                </button>
 
-          <p className="text-xs font-bold text-green-700 mt-1">
-            Estimated full batch value:
-            <span className="font-black">
-              {" "}{((previewGroup.products?.length ?? 0) * Number(previewGroup.amount || 0)).toFixed(2)} ETB
-            </span>
-          </p>
+                <button
+                  type="button"
+                  onClick={() =>
+                    void handleDelete(previewGroup.id)
+                  }
+                  disabled={
+                    deletingId === previewGroup.id
+                  }
+                  className="
+                    flex items-center justify-center gap-2
+                    rounded-xl
+                    border border-berbere-200
+                    bg-white
+                    px-4 py-3
+                    text-xs font-black
+                    text-berbere-600
+                    transition
+                    hover:bg-berbere-50
+                    disabled:opacity-50
+                  "
+                >
+                  {deletingId === previewGroup.id ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-4 w-4" />
+                  )}
 
+                  {deletingId === previewGroup.id
+                    ? isAm
+                      ? 'በመሰረዝ...'
+                      : 'Deleting...'
+                    : isAm
+                      ? 'ሰርዝ'
+                      : 'Delete'}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
-
-      </div>
-
-      {/* =========================
-          FOOTER
-      ========================== */}
-      <div className="mt-5 pt-3 border-t text-[10px] text-gray-400">
-        Last updated:{" "}
-        {new Date(previewGroup.updated_at || Date.now()).toLocaleString()}
-      </div>
-
-    </div>
-  </div>
-)}
-
+      )}
     </div>
   )
 }

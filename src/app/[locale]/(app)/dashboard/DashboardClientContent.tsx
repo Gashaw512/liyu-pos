@@ -9,8 +9,6 @@ import {
   Boxes,
   CheckCircle2,
   CircleDollarSign,
-  ClipboardList,
-  Package,
   RefreshCw,
   ShoppingCart,
   TrendingUp,
@@ -22,6 +20,8 @@ import { DashboardHeader } from '@/components/dashboard/DashboardHeader'
 import { OwnerActionHeader } from '@/components/dashboard/OwnerActionHeader'
 import { CategoryPerformanceTable } from '@/components/dashboard/CategoryPerformanceTable'
 import { LowStockWarningsTable } from '@/components/dashboard/LowStockWarningsTable'
+
+import DashboardPeriodFilter from './DashboardPeriodFilter'
 
 /* ============================================================
    TYPES
@@ -52,15 +52,19 @@ interface DashboardClientProps {
   categoryBreakdown: CategoryPerformance[]
   lowStockAlerts: LowStockItem[]
 
-  todayRevenue: number
-  todayTransactionCount: number
+  periodLabel: string
+  periodFrom: string
+  periodTo: string
 
-  todayGrossProfit: number
-  todayExpenses: number
-  todayNetProfit: number
+  periodRevenue: number
+  periodTransactionCount: number
 
-  todayDiscounts: number
-  todayTax: number
+  periodGrossProfit: number
+  periodExpenses: number
+  periodNetProfit: number
+
+  periodDiscounts: number
+  periodTax: number
 
   averageTicketSize: number
 
@@ -85,15 +89,19 @@ export default function DashboardClientContent({
   categoryBreakdown,
   lowStockAlerts,
 
-  todayRevenue,
-  todayTransactionCount,
+  periodLabel,
+  periodFrom,
+  periodTo,
 
-  todayGrossProfit,
-  todayExpenses,
-  todayNetProfit,
+  periodRevenue,
+  periodTransactionCount,
 
-  todayDiscounts,
-  todayTax,
+  periodGrossProfit,
+  periodExpenses,
+  periodNetProfit,
+
+  periodDiscounts,
+  periodTax,
 
   averageTicketSize,
 
@@ -160,17 +168,17 @@ export default function DashboardClientContent({
   )
 
   const grossMargin =
-    todayRevenue > 0
+    periodRevenue > 0
       ? (
-          (todayGrossProfit / todayRevenue) *
+          (periodGrossProfit / periodRevenue) *
           100
         ).toFixed(1)
       : '0.0'
 
   const netMargin =
-    todayRevenue > 0
+    periodRevenue > 0
       ? (
-          (todayNetProfit / todayRevenue) *
+          (periodNetProfit / periodRevenue) *
           100
         ).toFixed(1)
       : '0.0'
@@ -234,14 +242,14 @@ export default function DashboardClientContent({
     if (isAm) {
       spokenText =
         `እንኳን ደህና መጡ። ` +
-        `ዛሬ ${formatMoney(
-          todayRevenue,
+        `${periodLabel} ${formatMoney(
+          periodRevenue,
         )} ብር የሽያጭ ገቢ አለዎት። ` +
         `${formatNumber(
-          todayTransactionCount,
+          periodTransactionCount,
         )} ግብይቶች ተመዝግበዋል። ` +
         `የተጣራ ትርፍ ${formatMoney(
-          todayNetProfit,
+          periodNetProfit,
         )} ብር ነው። `
 
       if (openShiftCount > 0) {
@@ -267,16 +275,16 @@ export default function DashboardClientContent({
     } else {
       spokenText =
         `Welcome back. ` +
-        `Today you have made ` +
+        `${periodLabel} you have made ` +
         `${formatMoney(
-          todayRevenue,
+          periodRevenue,
         )} ETB from ` +
         `${formatNumber(
-          todayTransactionCount,
+          periodTransactionCount,
         )} transactions. ` +
         `Net profit is ` +
         `${formatMoney(
-          todayNetProfit,
+          periodNetProfit,
         )} ETB. `
 
       if (openShiftCount > 0) {
@@ -344,80 +352,6 @@ export default function DashboardClientContent({
   }, [])
 
   /* ============================================================
-     SMALL REUSABLE CARD
-     ============================================================ */
-
-  const ActionCard = ({
-    icon: Icon,
-    title,
-    description,
-    onClick,
-    iconClass = 'bg-coffee-50 text-coffee-700',
-  }: {
-    icon: React.ElementType
-    title: string
-    description: string
-    onClick: () => void
-    iconClass?: string
-  }) => (
-    <button
-      type="button"
-      onClick={onClick}
-      className="
-        group
-        rounded-2xl
-        border
-        border-coffee-100
-        bg-white
-        p-4
-        text-left
-        shadow-sm
-        transition
-        hover:-translate-y-0.5
-        hover:border-coffee-200
-        hover:shadow-md
-        active:scale-[0.98]
-      "
-    >
-      <div
-        className={`
-          flex
-          h-9
-          w-9
-          items-center
-          justify-center
-          rounded-xl
-          ${iconClass}
-        `}
-      >
-        <Icon className="h-4 w-4" />
-      </div>
-
-      <p
-        className="
-          mt-3
-          text-sm
-          font-black
-          text-coffee-900
-        "
-      >
-        {title}
-      </p>
-
-      <p
-        className="
-          mt-1
-          text-[10px]
-          font-medium
-          text-coffee-400
-        "
-      >
-        {description}
-      </p>
-    </button>
-  )
-
-  /* ============================================================
      RENDER
      ============================================================ */
 
@@ -457,6 +391,13 @@ export default function DashboardClientContent({
         onReceiveStockClick={goToInventory}
         onExpenseClick={goToExpenses}
         lowStockCount={lowStockCount}
+        rightSlot={
+          <DashboardPeriodFilter
+            locale={locale}
+            from={periodFrom}
+            to={periodTo}
+          />
+        }
       />
 
       {/* ======================================================
@@ -509,10 +450,7 @@ export default function DashboardClientContent({
                     text-coffee-400
                   "
                 >
-                  {t(
-                    "Today's Business",
-                    'የዛሬ ንግድ',
-                  )}
+                  {periodLabel}
                 </p>
 
                 <h2
@@ -575,7 +513,7 @@ export default function DashboardClientContent({
                   "
                 >
                   {formatMoney(
-                    todayRevenue,
+                    periodRevenue,
                   )}
                 </p>
 
@@ -614,7 +552,7 @@ export default function DashboardClientContent({
                   "
                 >
                   {formatMoney(
-                    todayGrossProfit,
+                    periodGrossProfit,
                   )}
                 </p>
 
@@ -653,7 +591,7 @@ export default function DashboardClientContent({
                   "
                 >
                   {formatMoney(
-                    todayExpenses,
+                    periodExpenses,
                   )}
                 </p>
 
@@ -697,7 +635,7 @@ export default function DashboardClientContent({
                   "
                 >
                   {formatMoney(
-                    todayNetProfit,
+                    periodNetProfit,
                   )}
                 </p>
 
@@ -710,118 +648,6 @@ export default function DashboardClientContent({
                   ETB
                 </p>
               </div>
-            </div>
-          </section>
-
-          {/* ==================================================
-              QUICK ACTIONS
-             ================================================== */}
-
-          <section>
-            <div className="mb-3">
-              <h2
-                className="
-                  text-sm
-                  font-black
-                  text-coffee-900
-                "
-              >
-                {t(
-                  'Quick Actions',
-                  'ፈጣን እርምጃዎች',
-                )}
-              </h2>
-
-              <p
-                className="
-                  mt-0.5
-                  text-[11px]
-                  font-medium
-                  text-coffee-400
-                "
-              >
-                {t(
-                  'Common business tasks',
-                  'የተለመዱ የንግድ ስራዎች',
-                )}
-              </p>
-            </div>
-
-            <div
-              className="
-                grid
-                grid-cols-2
-                gap-3
-                lg:grid-cols-4
-              "
-            >
-              <ActionCard
-                icon={ShoppingCart}
-                title={t(
-                  'Record Sales',
-                  'ሽያጭ መዝግብ',
-                )}
-                description={t(
-                  "Record today's sales",
-                  'የዛሬን ሽያጭ ይመዝግቡ',
-                )}
-                onClick={goToSales}
-                iconClass="
-                  bg-berbere-50
-                  text-berbere-600
-                "
-              />
-
-              <ActionCard
-                icon={Package}
-                title={t(
-                  'Update Stock',
-                  'ክምችት አዘምን',
-                )}
-                description={t(
-                  'Add or adjust stock',
-                  'እቃ ይጨምሩ ወይም ያስተካክሉ',
-                )}
-                onClick={goToInventory}
-                iconClass="
-                  bg-cream-100
-                  text-coffee-700
-                "
-              />
-
-              <ActionCard
-                icon={ClipboardList}
-                title={t(
-                  'Stock Count',
-                  'የእቃ ቆጠራ',
-                )}
-                description={t(
-                  'Check physical stock',
-                  'ያለውን እቃ ይቆጥሩ',
-                )}
-                onClick={goToInventory}
-                iconClass="
-                  bg-blue-50
-                  text-blue-600
-                "
-              />
-
-              <ActionCard
-                icon={BarChart3}
-                title={t(
-                  'Reports',
-                  'ሪፖርቶች',
-                )}
-                description={t(
-                  'Review business activity',
-                  'የንግድ እንቅስቃሴን ይመልከቱ',
-                )}
-                onClick={goToReports}
-                iconClass="
-                  bg-purple-50
-                  text-purple-600
-                "
-              />
             </div>
           </section>
 
@@ -891,8 +717,8 @@ export default function DashboardClientContent({
                       "
                     >
                       {t(
-                        'Sales Today',
-                        'የዛሬ ሽያጭ',
+                        'Sales',
+                        'ሽያጭ',
                       )}
                     </h3>
 
@@ -903,7 +729,7 @@ export default function DashboardClientContent({
                       "
                     >
                       {formatNumber(
-                        todayTransactionCount,
+                        periodTransactionCount,
                       )}{' '}
                       {t(
                         'transactions',
@@ -1056,7 +882,7 @@ export default function DashboardClientContent({
                     "
                   >
                     {formatMoney(
-                      todayRevenue,
+                      periodRevenue,
                     )}
                   </p>
 
@@ -1131,10 +957,7 @@ export default function DashboardClientContent({
                       text-coffee-400
                     "
                   >
-                    {t(
-                      'Today',
-                      'ዛሬ',
-                    )}
+                    {periodLabel}
                   </p>
                 </div>
               </div>
@@ -1173,7 +996,7 @@ export default function DashboardClientContent({
                     "
                   >
                     {formatMoney(
-                      todayGrossProfit,
+                      periodGrossProfit,
                     )}{' '}
                     ETB
                   </span>
@@ -1208,7 +1031,7 @@ export default function DashboardClientContent({
                   >
                     -
                     {formatMoney(
-                      todayExpenses,
+                      periodExpenses,
                     )}{' '}
                     ETB
                   </span>
@@ -1246,7 +1069,7 @@ export default function DashboardClientContent({
                     "
                   >
                     {formatMoney(
-                      todayNetProfit,
+                      periodNetProfit,
                     )}{' '}
                     ETB
                   </span>
@@ -2009,10 +1832,7 @@ export default function DashboardClientContent({
                       text-coffee-400
                     "
                   >
-                    {t(
-                      "Today's additional activity",
-                      'የዛሬ ተጨማሪ እንቅስቃሴ',
-                    )}
+                    {periodLabel}
                   </p>
                 </div>
               </div>
@@ -2072,7 +1892,7 @@ export default function DashboardClientContent({
                   "
                 >
                   {formatMoney(
-                    todayDiscounts,
+                    periodDiscounts,
                   )}{' '}
                   ETB
                 </p>
@@ -2107,7 +1927,7 @@ export default function DashboardClientContent({
                   "
                 >
                   {formatMoney(
-                    todayTax,
+                    periodTax,
                   )}{' '}
                   ETB
                 </p>

@@ -1,3 +1,4 @@
+// src/components/management/ManagementCard.tsx
 'use client'
 
 import Link from 'next/link'

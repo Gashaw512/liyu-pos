@@ -1,86 +1,88 @@
-'use client'
+"use client";
 
-import React from 'react';
-import { UserRoleRow, UserProfile } from './UserRoleRow';
+import React from "react";
+import { UserRoleRow, UserProfile } from "./UserRoleRow";
 
 interface StaffTableProps {
-  users: UserProfile[];
-  onRefreshList: () => void;
-  locale: string;
+users: UserProfile[];
+onRefreshList: () => void;
+locale: string;
 }
 
-export default function StaffTable({ users = [], onRefreshList, locale }: StaffTableProps) {
-  const isAm = locale === 'am';
+export default function StaffTable({
+users = [],
+onRefreshList,
+locale,
+}: StaffTableProps) {
+const isAm = locale === "am";
 
-  const safeUsers = Array.isArray(users) ? users : [];
+const safeUsers = Array.isArray(users) ? users : [];
 
-  return (
-    <div className="w-full bg-white rounded-2xl border border-cream-200/80 overflow-hidden shadow-sm">
+return (
+<div className="w-full overflow-hidden rounded-2xl border border-cream-200/80 bg-white shadow-sm">
+{/* HEADER */}
+<div className="border-b border-cream-100 bg-cream-50/40 px-3 py-3">
+<h2 className="text-sm font-black text-coffee-950">
+{isAm ? "የሰራተኞች ዝርዝር" : "Staff List"}
+</h2>
 
-      {/* HEADER */}
-      <div className="px-3 py-3 bg-cream-50/40 border-b border-cream-100">
-        <h2 className="text-sm font-black text-coffee-950">
-          {isAm ? "የሰራተኞች ዝርዝር" : "Staff List"}
-        </h2>
-        <p className="text-[10px] text-coffee-500 mt-0.5">
-          {isAm
-            ? "ሰራተኞችን ይመልከቱ እና ሚናቸውን ይቆጣጠሩ"
-            : "View staff and manage roles easily"}
-        </p>
-      </div>
+    <p className="mt-0.5 text-[10px] text-coffee-500">
+      {isAm
+        ? "ሰራተኞችን ይመልከቱ እና ሚናቸውን ይቆጣጠሩ"
+        : "View staff and manage roles easily"}
+    </p>
+  </div>
 
-      {/* TABLE WRAPPER */}
-      <div className="w-full overflow-x-auto select-none">
+  {/* TABLE */}
+  <div className="w-full overflow-x-auto">
+    <table className="w-full min-w-full table-fixed border-collapse text-left">
+      {/* TABLE HEAD */}
+      <thead>
+        <tr className="border-b border-cream-100 bg-cream-50 text-[10px] font-black uppercase tracking-wider text-coffee-500">
+          <th className="w-[60%] px-3 py-3">
+            {isAm ? "ሰራተኛ / ስልክ" : "Employee / Phone"}
+          </th>
 
-        <table className="w-full table-fixed min-w-full text-left border-collapse">
+          <th className="w-[40%] px-3 py-3 text-right">
+            {isAm ? "ሚና" : "Role"}
+          </th>
+        </tr>
+      </thead>
 
-          {/* TABLE HEAD */}
-          <thead>
-            <tr className="bg-cream-50 border-b border-cream-100 text-[10px] font-black uppercase tracking-wider text-coffee-500">
-              <th className="px-3 py-3 w-[60%]">
-                {isAm ? 'ሰራተኛ / ስልክ' : 'Employee / Phone'}
-              </th>
+      {/* TABLE BODY */}
+      <tbody className="divide-y divide-cream-50 text-xs">
+        {safeUsers.length === 0 ? (
+          <tr>
+            <td colSpan={2} className="px-3 py-10 text-center">
+              <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-cream-100 text-coffee-400">
+                <span className="text-lg">+</span>
+              </div>
 
-              <th className="px-3 py-3 w-[40%] text-right">
-                {isAm ? 'ሚና' : 'Role'}
-              </th>
-            </tr>
-          </thead>
+              <p className="text-xs font-bold text-coffee-900">
+                {isAm ? "ምንም ሰራተኛ የለም" : "No staff yet"}
+              </p>
 
-          {/* TABLE BODY */}
-          <tbody className="divide-y divide-cream-50 text-xs">
+              <p className="mt-1 text-[10px] text-coffee-400">
+                {isAm
+                  ? "ከ‘ሰራተኛ ጨምር’ ትር ሰራተኛ ይጋብዙ"
+                  : "Go to Add Staff to invite employees"}
+              </p>
+            </td>
+          </tr>
+        ) : (
+          safeUsers.map((user) => (
+            <UserRoleRow
+              key={user.id}
+              user={user}
+              onRefreshList={onRefreshList}
+              locale={locale}
+            />
+          ))
+        )}
+      </tbody>
+    </table>
+  </div>
+</div>
 
-            {/* EMPTY STATE */}
-            {safeUsers.length === 0 ? (
-              <tr>
-                <td colSpan={2} className="px-3 py-10 text-center">
-                  <div className="text-3xl mb-2">👥</div>
-
-                  <p className="text-xs font-bold text-coffee-900">
-                    {isAm ? "ምንም ሰራተኛ የለም" : "No staff yet"}
-                  </p>
-
-                  <p className="text-[10px] text-coffee-400 mt-1">
-                    {isAm
-                      ? "ከ‘አዲስ ሰራተኛ’ ትር ተጋብዝ"
-                      : "Go to Add Staff to invite employees"}
-                  </p>
-                </td>
-              </tr>
-            ) : (
-              safeUsers.map((user) => (
-                <UserRoleRow
-                  key={user.id}
-                  user={user}
-                  onRefreshList={onRefreshList}
-                  locale={locale}
-                />
-              ))
-            )}
-
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
+);
 }

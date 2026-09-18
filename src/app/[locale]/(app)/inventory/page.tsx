@@ -50,16 +50,6 @@ const INVENTORY_CHANNEL_NAME = 'liyu-pos-inventory'
 const REFRESH_DEBOUNCE_MS = 180
 const AUTO_REFRESH_INTERVAL_MS = 60_000
 
-const COLORS = {
-  navy: '#1B2B50',
-  orange: '#F26522',
-  cream: '#F7F4EB',
-  text: '#2B1E1A',
-  muted: '#6B625D',
-  border: '#E8E0D6',
-  white: '#FFFFFF',
-} as const
-
 const LIVE_REFRESH_OPTIONS = {
   silent: true,
   preserveEditedCounts: true,
@@ -77,7 +67,7 @@ type RefreshOptions = {
 function getLocalizedValue(
   english: string | null | undefined,
   amharic: string | null | undefined,
-  isAm: boolean
+  isAm: boolean,
 ) {
   return (isAm && amharic ? amharic : english) ?? ''
 }
@@ -121,19 +111,6 @@ export default function InventoryPage() {
   const [rowSavingId, setRowSavingId] =
     useState<string | null>(null)
 
-  const [isRefreshing, setIsRefreshing] =
-    useState(false)
-
-  const [isOnline, setIsOnline] =
-    useState(
-      typeof navigator !== 'undefined'
-        ? navigator.onLine
-        : true
-    )
-
-  const [lastUpdated, setLastUpdated] =
-    useState<Date | null>(null)
-
   // Receive stock
   const [showReceiveModal, setShowReceiveModal] =
     useState(false)
@@ -170,9 +147,9 @@ export default function InventoryPage() {
   const t = useCallback(
     (
       english: string,
-      amharic: string
+      amharic: string,
     ) => (isAm ? amharic : english),
-    [isAm]
+    [isAm],
   )
 
   const getProductLabel = useCallback(
@@ -180,9 +157,9 @@ export default function InventoryPage() {
       getLocalizedValue(
         product.name,
         product.name_am,
-        isAm
+        isAm,
       ),
-    [isAm]
+    [isAm],
   )
 
   // ==========================================================
@@ -197,7 +174,7 @@ export default function InventoryPage() {
     setRowSavingId,
     setIsSaving,
     t,
-    isAm
+    isAm,
   )
 
   // ==========================================================
@@ -206,7 +183,7 @@ export default function InventoryPage() {
 
   const refreshInventory = useCallback(
     async (
-      options: RefreshOptions = {}
+      options: RefreshOptions = {},
     ) => {
       if (refreshingRef.current) {
         return
@@ -220,10 +197,6 @@ export default function InventoryPage() {
       const preserveEditedCounts =
         options.preserveEditedCounts ?? true
 
-      if (!silent && mountedRef.current) {
-        setIsRefreshing(true)
-      }
-
       try {
         const db = await getDB()
 
@@ -233,7 +206,7 @@ export default function InventoryPage() {
         const computedMap =
           await computeLiveLocalStock(
             db,
-            baseProducts
+            baseProducts,
           )
 
         if (!mountedRef.current) {
@@ -255,24 +228,22 @@ export default function InventoryPage() {
             const hasExistingCount =
               Object.prototype.hasOwnProperty.call(
                 previous,
-                product.id
+                product.id,
               )
 
             next[product.id] =
               preserveEditedCounts &&
-                hasExistingCount
+              hasExistingCount
                 ? previous[product.id]
                 : systemCount
           }
 
           return next
         })
-
-        setLastUpdated(new Date())
       } catch (error) {
         console.error(
           '[InventoryPage] refresh failed',
-          error
+          error,
         )
 
         if (
@@ -282,20 +253,16 @@ export default function InventoryPage() {
           toast(
             t(
               'Unable to refresh inventory right now.',
-              'የእቃ መረጃውን አሁን ማደስ አልተቻለም።'
+              'የእቃ መረጃውን አሁን ማደስ አልተቻለም።',
             ),
-            'error'
+            'error',
           )
         }
       } finally {
         refreshingRef.current = false
-
-        if (mountedRef.current) {
-          setIsRefreshing(false)
-        }
       }
     },
-    [t]
+    [t],
   )
 
   // ==========================================================
@@ -305,22 +272,20 @@ export default function InventoryPage() {
   const scheduleInventoryRefresh =
     useCallback(
       (
-        options: RefreshOptions = {}
+        options: RefreshOptions = {},
       ) => {
         if (refreshTimerRef.current) {
           clearTimeout(
-            refreshTimerRef.current
+            refreshTimerRef.current,
           )
         }
 
         refreshTimerRef.current =
           setTimeout(() => {
-            void refreshInventory(
-              options
-            )
+            void refreshInventory(options)
           }, REFRESH_DEBOUNCE_MS)
       },
-      [refreshInventory]
+      [refreshInventory],
     )
 
   // ==========================================================
@@ -340,7 +305,7 @@ export default function InventoryPage() {
 
       if (refreshTimerRef.current) {
         clearTimeout(
-          refreshTimerRef.current
+          refreshTimerRef.current,
         )
       }
     }
@@ -348,9 +313,6 @@ export default function InventoryPage() {
 
   // ==========================================================
   // AUTOMATIC REFRESH
-  //
-  // Refresh every 60 seconds while the page is visible.
-  // Existing event-based refresh remains active below.
   // ==========================================================
 
   useEffect(() => {
@@ -364,65 +326,23 @@ export default function InventoryPage() {
         }
 
         void refreshInventory(
-          LIVE_REFRESH_OPTIONS
+          LIVE_REFRESH_OPTIONS,
         )
       }, AUTO_REFRESH_INTERVAL_MS)
 
     return () => {
-      window.clearInterval(
-        interval
-      )
+      window.clearInterval(interval)
     }
   }, [refreshInventory])
 
   // ==========================================================
-  // ONLINE / OFFLINE
-  // ==========================================================
-
-  useEffect(() => {
-    const handleOnline = () => {
-      setIsOnline(true)
-
-      scheduleInventoryRefresh(
-        LIVE_REFRESH_OPTIONS
-      )
-    }
-
-    const handleOffline = () => {
-      setIsOnline(false)
-    }
-
-    window.addEventListener(
-      'online',
-      handleOnline
-    )
-
-    window.addEventListener(
-      'offline',
-      handleOffline
-    )
-
-    return () => {
-      window.removeEventListener(
-        'online',
-        handleOnline
-      )
-
-      window.removeEventListener(
-        'offline',
-        handleOffline
-      )
-    }
-  }, [scheduleInventoryRefresh])
-
-  // ==========================================================
-  // REFRESH WHEN USER RETURNS TO PAGE
+  // REFRESH WHEN USER RETURNS
   // ==========================================================
 
   useEffect(() => {
     const refresh = () => {
       scheduleInventoryRefresh(
-        LIVE_REFRESH_OPTIONS
+        LIVE_REFRESH_OPTIONS,
       )
     }
 
@@ -437,23 +357,23 @@ export default function InventoryPage() {
 
     document.addEventListener(
       'visibilitychange',
-      handleVisibility
+      handleVisibility,
     )
 
     window.addEventListener(
       'focus',
-      refresh
+      refresh,
     )
 
     return () => {
       document.removeEventListener(
         'visibilitychange',
-        handleVisibility
+        handleVisibility,
       )
 
       window.removeEventListener(
         'focus',
-        refresh
+        refresh,
       )
     }
   }, [scheduleInventoryRefresh])
@@ -465,29 +385,29 @@ export default function InventoryPage() {
   useEffect(() => {
     const refresh = () => {
       scheduleInventoryRefresh(
-        LIVE_REFRESH_OPTIONS
+        LIVE_REFRESH_OPTIONS,
       )
     }
 
     window.addEventListener(
       INVENTORY_REFRESH_EVENT,
-      refresh
+      refresh,
     )
 
     window.addEventListener(
       SYNC_COMPLETE_EVENT,
-      refresh
+      refresh,
     )
 
     return () => {
       window.removeEventListener(
         INVENTORY_REFRESH_EVENT,
-        refresh
+        refresh,
       )
 
       window.removeEventListener(
         SYNC_COMPLETE_EVENT,
-        refresh
+        refresh,
       )
     }
   }, [scheduleInventoryRefresh])
@@ -499,48 +419,44 @@ export default function InventoryPage() {
   useEffect(() => {
     if (
       typeof window === 'undefined' ||
-      typeof BroadcastChannel ===
-      'undefined'
+      typeof BroadcastChannel === 'undefined'
     ) {
       return
     }
 
     const channel =
       new BroadcastChannel(
-        INVENTORY_CHANNEL_NAME
+        INVENTORY_CHANNEL_NAME,
       )
 
     broadcastChannelRef.current =
       channel
 
     const handleMessage = (
-      event: MessageEvent
+      event: MessageEvent,
     ) => {
       const type =
         event.data?.type
 
-      const shouldRefresh =
-        type ===
-        INVENTORY_REFRESH_EVENT ||
-        type ===
-        SYNC_COMPLETE_EVENT
-
-      if (shouldRefresh) {
+      if (
+        type === INVENTORY_REFRESH_EVENT ||
+        type === SYNC_COMPLETE_EVENT
+      ) {
         scheduleInventoryRefresh(
-          LIVE_REFRESH_OPTIONS
+          LIVE_REFRESH_OPTIONS,
         )
       }
     }
 
     channel.addEventListener(
       'message',
-      handleMessage
+      handleMessage,
     )
 
     return () => {
       channel.removeEventListener(
         'message',
-        handleMessage
+        handleMessage,
       )
 
       channel.close()
@@ -576,22 +492,19 @@ export default function InventoryPage() {
           getLocalizedValue(
             product.category_name,
             product.category_name_am,
-            isAm
+            isAm,
           )
 
         if (category) {
-          categories.add(
-            category
-          )
+          categories.add(category)
         }
       }
 
       return [
         'All',
-        ...Array.from(
-          categories
-        ).sort((a, b) =>
-          a.localeCompare(b)
+        ...Array.from(categories).sort(
+          (a, b) =>
+            a.localeCompare(b),
         ),
       ]
     }, [products, isAm])
@@ -609,25 +522,22 @@ export default function InventoryPage() {
       let result = products
 
       if (
-        selectedCategory !==
-        'All'
+        selectedCategory !== 'All'
       ) {
         result =
-          result.filter(
-            product => {
-              const category =
-                getLocalizedValue(
-                  product.category_name,
-                  product.category_name_am,
-                  isAm
-                )
-
-              return (
-                category ===
-                selectedCategory
+          result.filter(product => {
+            const category =
+              getLocalizedValue(
+                product.category_name,
+                product.category_name_am,
+                isAm,
               )
-            }
-          )
+
+            return (
+              category ===
+              selectedCategory
+            )
+          })
       }
 
       const query =
@@ -639,24 +549,22 @@ export default function InventoryPage() {
         return result
       }
 
-      return result.filter(
-        product => {
-          const searchableValues = [
-            product.name,
-            product.name_am,
-            product.category_name,
-            product.category_name_am,
-            product.barcode,
-          ]
+      return result.filter(product => {
+        const searchableValues = [
+          product.name,
+          product.name_am,
+          product.category_name,
+          product.category_name_am,
+          product.barcode,
+        ]
 
-          return searchableValues.some(
-            value =>
-              value
-                ?.toLowerCase()
-                .includes(query)
-          )
-        }
-      )
+        return searchableValues.some(
+          value =>
+            value
+              ?.toLowerCase()
+              .includes(query),
+        )
+      })
     }, [
       products,
       selectedCategory,
@@ -672,7 +580,7 @@ export default function InventoryPage() {
     useCallback(
       (
         productId: string,
-        value: number
+        value: number,
       ) => {
         if (
           !Number.isFinite(value)
@@ -683,14 +591,13 @@ export default function InventoryPage() {
         setCounts(previous => ({
           ...previous,
 
-          [productId]:
-            Math.max(
-              0,
-              Math.floor(value)
-            ),
+          [productId]: Math.max(
+            0,
+            Math.floor(value),
+          ),
         }))
       },
-      []
+      [],
     )
 
   // ==========================================================
@@ -707,24 +614,21 @@ export default function InventoryPage() {
         window.confirm(
           t(
             'Clear all unsaved count changes?',
-            'ሁሉንም ያልተቀመጡ የቆጠራ ለውጦች ማጥፋት ይፈልጋሉ?'
-          )
+            'ሁሉንም ያልተቀመጡ የቆጠራ ለውጦች ማጥፋት ይፈልጋሉ?',
+          ),
         )
 
       if (!confirmed) {
         return
       }
 
-      const nextCounts: Record<
-        string,
-        number
-      > = {}
+      const nextCounts:
+        Record<string, number> = {}
 
       for (const product of products) {
         nextCounts[product.id] =
-          liveStockMap[
-            product.id
-          ]?.systemCount ??
+          liveStockMap[product.id]
+            ?.systemCount ??
           product.opening_count ??
           0
       }
@@ -734,9 +638,9 @@ export default function InventoryPage() {
       toast(
         t(
           'Count changes cleared.',
-          'የቆጠራ ለውጦች ጸድተዋል።'
+          'የቆጠራ ለውጦች ጸድተዋል።',
         ),
-        'success'
+        'success',
       )
     }, [
       products,
@@ -751,159 +655,121 @@ export default function InventoryPage() {
   const handleReceiveStockSubmit =
     useCallback(
       async (
-        e: FormEvent
+        e: FormEvent,
       ) => {
         e.preventDefault()
-
-        // ----------------------------------------------------
-        // Product
-        // ----------------------------------------------------
 
         if (!receiveProductId) {
           toast(
             t(
               'Please select a product.',
-              'እባክዎ ምርት ይምረጡ።'
+              'እባክዎ ምርት ይምረጡ።',
             ),
-            'error'
+            'error',
           )
           return
         }
-
-        // ----------------------------------------------------
-        // Quantity
-        // ----------------------------------------------------
 
         const rawQuantity =
           Number(receiveQty)
 
         if (
           !Number.isFinite(
-            rawQuantity
+            rawQuantity,
           ) ||
           rawQuantity <= 0
         ) {
           toast(
             t(
               'Quantity must be greater than zero.',
-              'ብዛቱ ከዜሮ በላይ መሆን አለበት።'
+              'ብዛቱ ከዜሮ በላይ መሆን አለበት።',
             ),
-            'error'
+            'error',
           )
           return
         }
 
         const quantity =
-          Math.floor(
-            rawQuantity
-          )
+          Math.floor(rawQuantity)
 
         if (quantity <= 0) {
           toast(
             t(
               'Please enter a valid quantity.',
-              'እባክዎ ትክክለኛ የእቃ ብዛት ያስገቡ።'
+              'እባክዎ ትክክለኛ የእቃ ብዛት ያስገቡ።',
             ),
-            'error'
+            'error',
           )
           return
         }
 
-        // ----------------------------------------------------
-        // Unit cost
-        // ----------------------------------------------------
-
         const unitCost =
-          Number(
-            receiveUnitCost
-          )
+          Number(receiveUnitCost)
 
         if (
-          !Number.isFinite(
-            unitCost
-          ) ||
+          !Number.isFinite(unitCost) ||
           unitCost < 0
         ) {
           toast(
             t(
               'Please enter a valid unit cost.',
-              'እባክዎ ትክክለኛ የመግዣ ዋጋ ያስገቡ።'
+              'እባክዎ ትክክለኛ የመግዣ ዋጋ ያስገቡ።',
             ),
-            'error'
+            'error',
           )
           return
         }
-
-        // ----------------------------------------------------
-        // Product
-        // ----------------------------------------------------
 
         const matchedProduct =
           products?.find(
             product =>
               product.id ===
-              receiveProductId
+              receiveProductId,
           )
 
         if (!matchedProduct) {
           toast(
             t(
               'Product could not be found.',
-              'ምርቱ አልተገኘም።'
+              'ምርቱ አልተገኘም።',
             ),
-            'error'
+            'error',
           )
           return
         }
 
         try {
-          const db =
-            await getDB()
-
-          // --------------------------------------------------
-          // Active shift
-          // --------------------------------------------------
+          const db = await getDB()
 
           const activeShift =
             await db.get(
               'active_shift',
-              'current'
+              'current',
             )
 
           if (!activeShift) {
             toast(
               t(
                 'Please open an active shift first.',
-                'እባክዎ መጀመሪያ ክፍት የፈረቃ ስራ ይጀምሩ።'
+                'እባክዎ መጀመሪያ ክፍት የፈረቃ ስራ ይጀምሩ።',
               ),
-              'error'
+              'error',
             )
             return
           }
 
-          // --------------------------------------------------
-          // Total cost
-          // --------------------------------------------------
-
           const totalCost =
-            quantity *
-            unitCost
+            quantity * unitCost
 
           if (
             !Number.isFinite(
-              totalCost
+              totalCost,
             )
           ) {
             throw new Error(
-              'Invalid receipt total.'
+              'Invalid receipt total.',
             )
           }
-
-          // --------------------------------------------------
-          // Save receipt locally
-          //
-          // Sync layer will process it later.
-          // --------------------------------------------------
 
           const receipt = {
             localId:
@@ -938,27 +804,24 @@ export default function InventoryPage() {
               totalCost,
 
             notes:
-              'Stock received from inventory screen',
+              'Stock received',
           }
 
           const tx =
             db.transaction(
               'pending_stock_receipts',
-              'readwrite'
+              'readwrite',
             )
 
           await tx
             .objectStore(
-              'pending_stock_receipts'
+              'pending_stock_receipts',
             )
             .put(receipt)
 
           await tx.done
 
-          // --------------------------------------------------
-          // Update visible stock immediately
-          // --------------------------------------------------
-
+          // Update visible stock immediately.
           const currentStock =
             liveStockMap[
               matchedProduct.id
@@ -967,8 +830,7 @@ export default function InventoryPage() {
             0
 
           const newStock =
-            currentStock +
-            quantity
+            currentStock + quantity
 
           setLiveStockMap(
             previous => ({
@@ -976,7 +838,7 @@ export default function InventoryPage() {
 
               [matchedProduct.id]: {
                 ...previous[
-                matchedProduct.id
+                  matchedProduct.id
                 ],
 
                 systemCount:
@@ -985,7 +847,7 @@ export default function InventoryPage() {
                 hasPendingTransactions:
                   true,
               },
-            })
+            }),
           )
 
           setCounts(
@@ -994,73 +856,55 @@ export default function InventoryPage() {
 
               [matchedProduct.id]:
                 newStock,
-            })
+            }),
           )
 
-          // --------------------------------------------------
-          // Notify other inventory views/tabs
-          // --------------------------------------------------
-
+          // Notify this window.
           window.dispatchEvent(
             new CustomEvent(
-              INVENTORY_REFRESH_EVENT
-            )
+              INVENTORY_REFRESH_EVENT,
+            ),
           )
 
+          // Notify other tabs/windows.
           broadcastChannelRef.current?.postMessage(
             {
               type:
                 INVENTORY_REFRESH_EVENT,
-
               productId:
                 matchedProduct.id,
-            }
+            },
           )
-
-          // --------------------------------------------------
-          // Success message
-          // --------------------------------------------------
 
           const label =
             getProductLabel(
-              matchedProduct
+              matchedProduct,
             )
 
           toast(
             t(
               `Received ${quantity} units of ${label}.`,
-              `${quantity} ፍሬ ${label} ገቢ ተደርጓል።`
+              `${quantity} ፍሬ ${label} ገቢ ተደርጓል።`,
             ),
-            'success'
+            'success',
           )
 
-          // --------------------------------------------------
-          // Reset modal
-          // --------------------------------------------------
-
-          setShowReceiveModal(
-            false
-          )
-
-          setReceiveProductId(
-            ''
-          )
-
+          setShowReceiveModal(false)
+          setReceiveProductId('')
           setReceiveQty(0)
-
           setReceiveUnitCost(0)
         } catch (error) {
           console.error(
             '[InventoryPage] receive stock failed',
-            error
+            error,
           )
 
           toast(
             t(
               'Failed to save received stock locally.',
-              'የገቢ ዕቃውን በአካባቢው ማስቀመጥ አልተቻለም።'
+              'የገቢ ዕቃውን በአካባቢው ማስቀመጥ አልተቻለም።',
             ),
-            'error'
+            'error',
           )
         }
       },
@@ -1072,23 +916,8 @@ export default function InventoryPage() {
         liveStockMap,
         getProductLabel,
         t,
-      ]
+      ],
     )
-
-  // ==========================================================
-  // HEADER
-  // ==========================================================
-
-  const lastUpdatedLabel =
-    lastUpdated
-      ? lastUpdated.toLocaleTimeString(
-        [],
-        {
-          hour: '2-digit',
-          minute: '2-digit',
-        }
-      )
-      : '--:--'
 
   // ==========================================================
   // LOADING
@@ -1096,13 +925,7 @@ export default function InventoryPage() {
 
   if (!products) {
     return (
-      <div
-        className="flex min-h-screen items-center justify-center"
-        style={{
-          backgroundColor:
-            COLORS.cream,
-        }}
-      >
+      <div className="flex min-h-screen items-center justify-center bg-cream">
         <LoadingSpinner />
       </div>
     )
@@ -1113,16 +936,9 @@ export default function InventoryPage() {
   // ==========================================================
 
   return (
-    <div
-      className="min-h-screen"
-      style={{
-        backgroundColor:
-          COLORS.cream,
-        color: COLORS.text,
-      }}
-    >
+    <div className="min-h-screen bg-cream text-coffee-900">
       {/* ======================================================
-          HEADER
+          PAGE HEADER
       ====================================================== */}
 
       <PageHeader
@@ -1131,13 +947,15 @@ export default function InventoryPage() {
           'የእቃ ማስተዳደሪያ',
         )}
         subtitle={t(
-          'Check stock, receive items, and correct counts',
-          'እቃዎን ይመልከቱ፣ ይቀበሉ እና ቆጠራዎን ያስተካክሉ',
+          'Manage stock, receive items, and update counts.',
+          'እቃዎችን ያስተዳድሩ፣ ይቀበሉ እና ቆጠራን ያስተካክሉ።',
         )}
         actions={
           <div className="flex items-center gap-2">
             <Button
-              onClick={() => setShowReceiveModal(true)}
+              onClick={() =>
+                setShowReceiveModal(true)
+              }
             >
               <PlusCircle className="h-4 w-4" />
 
@@ -1164,8 +982,8 @@ export default function InventoryPage() {
               ) : (
                 <span>
                   {t(
-                    'Save All',
-                    'ሁሉንም አስቀምጥ',
+                    'Save Changes',
+                    'ለውጦችን አስቀምጥ',
                   )}
                 </span>
               )}
@@ -1175,135 +993,133 @@ export default function InventoryPage() {
       />
 
       {/* ======================================================
-          MAIN CONTENT
+          CONTENT
       ====================================================== */}
 
-      <main className="mx-auto w-full max-w-5xl space-y-4 px-4 py-4 sm:px-5 lg:px-6">
+      <main className="mx-auto w-full max-w-5xl px-3 py-3 sm:px-5 sm:py-4 lg:px-6">
+        <div className="space-y-3">
 
-        {/* ----------------------------------------------------
-            VALUATION
-        ----------------------------------------------------- */}
+          {/* --------------------------------------------------
+              STOCK OVERVIEW
+          -------------------------------------------------- */}
 
-        <InventoryValuation
-          products={products}
-          liveStockMap={liveStockMap}
-          isAm={isAm}
-        />
-
-        {/* ----------------------------------------------------
-            SEARCH
-        ----------------------------------------------------- */}
-
-        <SearchInput
-          value={searchQuery}
-          onChange={
-            setSearchQuery
-          }
-          placeholder={t(
-            'Search products or barcode...',
-            'ምርቶችን ወይም ባርኮድ ይፈልጉ...'
-          )}
-        />
-
-        {/* ----------------------------------------------------
-            CATEGORIES
-        ----------------------------------------------------- */}
-
-        <InventoryCategoryTabs
-          categories={
-            dynamicCategories
-          }
-          selected={
-            selectedCategory
-          }
-          onSelect={
-            setSelectedCategory
-          }
-          allLabel={t(
-            'All Groups',
-            'ሁሉም ምድቦች'
-          )}
-        />
-
-        {/* ----------------------------------------------------
-            PRODUCTS
-        ----------------------------------------------------- */}
-
-        {filteredProducts.length ===
-          0 ? (
-          <InventoryEmptyState
-            t={t}
-          />
-        ) : (
-          <InventoryProductList
-            products={
-              filteredProducts
-            }
-            counts={counts}
-            liveStockMap={
-              liveStockMap
-            }
-            rowSavingId={
-              rowSavingId
-            }
+          <InventoryValuation
+            products={products}
+            liveStockMap={liveStockMap}
             isAm={isAm}
-            t={t}
-            onCountChange={
-              handleCountChange
-            }
-            onSaveRow={
-              product =>
-                handleSaveSingleRow(
-                  product,
-                  counts,
-                  liveStockMap
-                )
-            }
           />
-        )}
 
-        {/* ----------------------------------------------------
-            CLEAR UNSAVED CHANGES
-        ----------------------------------------------------- */}
+          {/* --------------------------------------------------
+              SEARCH
+          -------------------------------------------------- */}
 
-        <div className="flex justify-end pt-1">
-          <Button
-            variant="ghost"
-            onClick={
-              handleResetForm
-            }
-            className="text-xs"
-            aria-label={t(
-              'Clear unsaved count changes',
-              'ያልተቀመጡ የቆጠራ ለውጦችን አጽዳ'
+          <SearchInput
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder={t(
+              'Search product or barcode...',
+              'ምርት ወይም ባርኮድ ይፈልጉ...',
             )}
-            title={t(
-              'Clear unsaved count changes',
-              'ያልተቀመጡ የቆጠራ ለውጦችን አጽዳ'
-            )}
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
+          />
 
-            {t(
-              'Clear Changes',
-              'ለውጦችን አጽዳ'
-            )}
-          </Button>
+          {/* --------------------------------------------------
+              CATEGORY FILTER
+          -------------------------------------------------- */}
+
+          <div className="-mx-3 overflow-x-auto px-3 sm:-mx-5 sm:px-5 lg:-mx-6 lg:px-6">
+            <InventoryCategoryTabs
+              categories={
+                dynamicCategories
+              }
+              selected={
+                selectedCategory
+              }
+              onSelect={
+                setSelectedCategory
+              }
+              allLabel={t(
+                'All',
+                'ሁሉም',
+              )}
+            />
+          </div>
+
+          {/* --------------------------------------------------
+              PRODUCTS
+          -------------------------------------------------- */}
+
+          {filteredProducts.length ===
+          0 ? (
+            <InventoryEmptyState
+              t={t}
+            />
+          ) : (
+            <InventoryProductList
+              products={
+                filteredProducts
+              }
+              counts={counts}
+              liveStockMap={
+                liveStockMap
+              }
+              rowSavingId={
+                rowSavingId
+              }
+              isAm={isAm}
+              t={t}
+              onCountChange={
+                handleCountChange
+              }
+              onSaveRow={
+                product =>
+                  handleSaveSingleRow(
+                    product,
+                    counts,
+                    liveStockMap,
+                  )
+              }
+            />
+          )}
+
+          {/* --------------------------------------------------
+              UNSAVED CHANGES
+          -------------------------------------------------- */}
+
+          <div className="flex justify-end pt-0.5">
+            <Button
+              variant="ghost"
+              onClick={
+                handleResetForm
+              }
+              className="text-sm"
+              aria-label={t(
+                'Clear unsaved count changes',
+                'ያልተቀመጡ የቆጠራ ለውጦችን አጽዳ',
+              )}
+              title={t(
+                'Clear unsaved count changes',
+                'ያልተቀመጡ የቆጠራ ለውጦችን አጽዳ',
+              )}
+            >
+              <RotateCcw className="h-4 w-4" />
+
+              {t(
+                'Clear Changes',
+                'ለውጦችን አጽዳ',
+              )}
+            </Button>
+          </div>
         </div>
       </main>
 
       {/* ======================================================
-          RECEIVE STOCK MODAL
+          RECEIVE STOCK
       ====================================================== */}
 
       <ReceiveStockModal
-        open={
-          showReceiveModal
-        }
+        open={showReceiveModal}
         onClose={() =>
-          setShowReceiveModal(
-            false
-          )
+          setShowReceiveModal(false)
         }
         products={products}
         isAm={isAm}
@@ -1313,9 +1129,7 @@ export default function InventoryPage() {
         setReceiveProductId={
           setReceiveProductId
         }
-        receiveQty={
-          receiveQty
-        }
+        receiveQty={receiveQty}
         setReceiveQty={
           setReceiveQty
         }

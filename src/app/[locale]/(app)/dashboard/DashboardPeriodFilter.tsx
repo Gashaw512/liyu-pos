@@ -21,6 +21,14 @@ import {
   ChevronDown,
 } from 'lucide-react'
 
+import {
+  CalendarDate,
+  EthiopicCalendar,
+  GregorianCalendar,
+  parseDate as parseCalendarDate,
+  toCalendar,
+} from '@internationalized/date'
+
 import EthiopianDatePicker from '@/components/dashboard/EthiopianDatePicker'
 
 /* ============================================================
@@ -52,6 +60,38 @@ type PickerTarget =
 
 const TIME_ZONE =
   'Africa/Addis_Ababa'
+
+const ETHIOPIAN_MONTHS_EN = [
+  'Meskerem',
+  'Tikimt',
+  'Hidar',
+  'Tahsas',
+  'Tir',
+  'Yekatit',
+  'Megabit',
+  'Miyazya',
+  'Ginbot',
+  'Sene',
+  'Hamle',
+  'Nehase',
+  'Pagumen',
+]
+
+const ETHIOPIAN_MONTHS_AM = [
+  'መስከረም',
+  'ጥቅምት',
+  'ኅዳር',
+  'ታኅሣሥ',
+  'ጥር',
+  'የካቲት',
+  'መጋቢት',
+  'ሚያዝያ',
+  'ግንቦት',
+  'ሰኔ',
+  'ሐምሌ',
+  'ነሐሴ',
+  'ጳጉሜን',
+]
 
 /* ============================================================
    DATE HELPERS
@@ -194,24 +234,60 @@ function currentMonthStart(
   )
 }
 
+/* ============================================================
+   ETHIOPIAN DATE FORMATTING
+   ============================================================ */
+
+/**
+ * Converts a Gregorian YYYY-MM-DD string
+ * into an Ethiopian CalendarDate.
+ *
+ * This does NOT use Intl.DateTimeFormat,
+ * so server and browser output stays identical.
+ */
+function gregorianToEthiopian(
+  value: string,
+): CalendarDate {
+  return toCalendar(
+    parseCalendarDate(value),
+    new EthiopicCalendar(),
+  )
+}
+
+/**
+ * Formats a Gregorian date as a deterministic
+ * Ethiopian calendar date.
+ *
+ * Example:
+ *   2026-09-18
+ *   -> Nehasе 8, 2019
+ *
+ * The exact output depends on the locale.
+ */
 function formatEthiopianDate(
   dateString: string,
   locale: string,
 ): string {
   const date =
-    parseDate(dateString)
+    gregorianToEthiopian(
+      dateString,
+    )
 
-  return new Intl.DateTimeFormat(
+  const months =
     locale === 'am'
-      ? 'am-ET-u-ca-ethiopic'
-      : 'en-ET-u-ca-ethiopic',
-    {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    },
-  ).format(date)
+      ? ETHIOPIAN_MONTHS_AM
+      : ETHIOPIAN_MONTHS_EN
+
+  const month =
+    months[date.month - 1] ??
+    String(date.month)
+
+  return `${month} ${date.day}, ${date.year}`
 }
+
+/* ============================================================
+   DATE VALIDATION
+   ============================================================ */
 
 function isValidDate(
   value: string,
@@ -314,6 +390,7 @@ export default function DashboardPeriodFilter({
 
   useEffect(() => {
     setCustomFrom(from)
+
     setCustomTo(
       addDays(to, -1),
     )
@@ -344,15 +421,17 @@ export default function DashboardPeriodFilter({
     const handleKeyDown =
       (event: KeyboardEvent) => {
         if (
-          event.key === 'Escape'
+          event.key !== 'Escape'
         ) {
-          if (pickerTarget) {
-            setPickerTarget(null)
-            return
-          }
-
-          setOpen(false)
+          return
         }
+
+        if (pickerTarget) {
+          setPickerTarget(null)
+          return
+        }
+
+        setOpen(false)
       }
 
     document.addEventListener(
@@ -474,6 +553,16 @@ export default function DashboardPeriodFilter({
         return null
       }
 
+      /*
+       * `to` is exclusive internally.
+       *
+       * Example:
+       *   from = 2026-09-01
+       *   to   = 2026-09-19
+       *
+       * Visible range:
+       *   Sep 1 – Sep 18
+       */
       const visibleTo =
         addDays(
           to,
@@ -646,6 +735,12 @@ export default function DashboardPeriodFilter({
     value: string,
   ) => {
     if (
+      !isValidDate(value)
+    ) {
+      return
+    }
+
+    if (
       pickerTarget === 'from'
     ) {
       setCustomFrom(value)
@@ -705,6 +800,7 @@ export default function DashboardPeriodFilter({
           setOpen(
             value => !value,
           )
+
           setPickerTarget(null)
         }}
         aria-haspopup="menu"
@@ -978,7 +1074,9 @@ export default function DashboardPeriodFilter({
                 gap-2
               "
             >
-              {/* FROM */}
+              {/* ==================================================
+                  FROM
+                  ================================================== */}
 
               <div className="relative">
                 <span
@@ -1083,7 +1181,9 @@ export default function DashboardPeriodFilter({
                 )}
               </div>
 
-              {/* TO */}
+              {/* ==================================================
+                  TO
+                  ================================================== */}
 
               <div className="relative">
                 <span

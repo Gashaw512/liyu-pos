@@ -1,29 +1,33 @@
-'use client'
+"use client";
 
-import { Button } from '@/components/ui/Button'
-import { Modal } from '@/components/ui/Modal'
-import type { InventoryProduct } from '@/types/inventory'
+import type { FormEvent } from "react";
+
+import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
+import type { InventoryProduct } from "@/types/inventory";
 
 interface Props {
-  open: boolean
-  onClose: () => void
+  open: boolean;
+  onClose: () => void;
 
-  products: InventoryProduct[]
+  products: InventoryProduct[];
 
-  isAm: boolean
+  isAm: boolean;
 
-  receiveProductId: string
-  setReceiveProductId: (value: string) => void
+  receiveProductId: string;
+  setReceiveProductId: (value: string) => void;
 
-  receiveQty: number
-  setReceiveQty: (value: number) => void
+  receiveQty: number;
+  setReceiveQty: (value: number) => void;
 
-  receiveUnitCost: number
-  setReceiveUnitCost: (value: number) => void
+  receiveUnitCost: number;
+  setReceiveUnitCost: (value: number) => void;
 
-  onSubmit: (e: React.FormEvent) => void
+  onSubmit: (
+    e: FormEvent<HTMLFormElement>,
+  ) => void | Promise<void>;
 
-  t: (en: string, am: string) => string
+  t: (en: string, am: string) => string;
 }
 
 export default function ReceiveStockModal({
@@ -47,7 +51,7 @@ export default function ReceiveStockModal({
   return (
     <Modal
       open={open}
-      title={t('Receive Stock', 'ዕቃ ተቀበል')}
+      title={t("Receive Stock", "ዕቃ ተቀበል")}
       onClose={onClose}
     >
       <form
@@ -55,27 +59,26 @@ export default function ReceiveStockModal({
         className="space-y-5"
       >
         {/* Product */}
-
         <div>
-          <label className="block mb-2 text-xs font-bold text-[#5a3e38]">
-            {t('Product', 'ምርት')}
+          <label className="mb-2 block text-xs font-bold text-coffee-500">
+            {t("Product", "ምርት")}
           </label>
 
           <select
             required
             value={receiveProductId}
             onChange={(e) => {
-              setReceiveProductId(e.target.value)
+              setReceiveProductId(e.target.value);
 
               const target = products.find(
-                p => p.id === e.target.value
-              )
+                (p) => p.id === e.target.value,
+              );
 
               if (target) {
                 setReceiveUnitCost(
                   target.cost_price ??
-                  target.retail_price * 0.7
-                )
+                    target.retail_price * 0.7,
+                );
               }
             }}
             className="
@@ -83,19 +86,19 @@ export default function ReceiveStockModal({
               min-h-[52px]
               rounded-xl
               border
-              border-slate-200
+              border-cream-300
               bg-white
               px-4
               text-sm
               outline-none
               focus:ring-2
-              focus:ring-[#8B2635]
+              focus:ring-berbere-300
             "
           >
             <option value="">
               {t(
-                'Select Product',
-                'ምርት ይምረጡ'
+                "Select Product",
+                "ምርት ይምረጡ",
               )}
             </option>
 
@@ -113,20 +116,19 @@ export default function ReceiveStockModal({
         </div>
 
         {/* Quantity */}
-
         <div>
-          <label className="block mb-2 text-xs font-bold text-[#5a3e38]">
-            {t('Quantity', 'ብዛት')}
+          <label className="mb-2 block text-xs font-bold text-coffee-500">
+            {t("Quantity", "ብዛት")}
           </label>
 
           <input
             type="number"
             min="1"
             required
-            value={receiveQty || ''}
+            value={receiveQty || ""}
             onChange={(e) =>
               setReceiveQty(
-                Number(e.target.value)
+                Number(e.target.value),
               )
             }
             placeholder="0"
@@ -135,25 +137,24 @@ export default function ReceiveStockModal({
               min-h-[52px]
               rounded-xl
               border
-              border-slate-200
+              border-cream-300
               bg-white
               px-4
               text-sm
               font-mono
               outline-none
               focus:ring-2
-              focus:ring-[#8B2635]
+              focus:ring-berbere-300
             "
           />
         </div>
 
         {/* Cost */}
-
         <div>
-          <label className="block mb-2 text-xs font-bold text-[#5a3e38]">
+          <label className="mb-2 block text-xs font-bold text-coffee-500">
             {t(
-              'Unit Cost (ETB)',
-              'የአንዱ መግዣ ዋጋ'
+              "Unit Cost (ETB)",
+              "የአንዱ መግዣ ዋጋ",
             )}
           </label>
 
@@ -162,10 +163,10 @@ export default function ReceiveStockModal({
             min="0"
             step="0.01"
             required
-            value={receiveUnitCost || ''}
+            value={receiveUnitCost || ""}
             onChange={(e) =>
               setReceiveUnitCost(
-                Number(e.target.value)
+                Number(e.target.value),
               )
             }
             placeholder="0.00"
@@ -174,52 +175,50 @@ export default function ReceiveStockModal({
               min-h-[52px]
               rounded-xl
               border
-              border-slate-200
+              border-cream-300
               bg-white
               px-4
               text-sm
               font-mono
               outline-none
               focus:ring-2
-              focus:ring-[#8B2635]
+              focus:ring-berbere-300
             "
           />
         </div>
 
         {/* Total */}
-
         {receiveQty > 0 &&
           receiveUnitCost > 0 && (
             <div
               className="
                 rounded-xl
                 border
-                border-[#f9cdd3]
-                bg-[#fdf0f2]
+                border-berbere-100
+                bg-berbere-50
                 p-4
               "
             >
               <div className="flex items-center justify-between">
-                <span className="text-sm text-[#5a3e38]">
+                <span className="text-sm text-coffee-500">
                   {t(
-                    'Total Cost',
-                    'ጠቅላላ ወጪ'
+                    "Total Cost",
+                    "ጠቅላላ ወጪ",
                   )}
                 </span>
 
-                <span className="font-bold text-[#8B2635]">
+                <span className="font-bold text-berbere-500">
                   {(
                     receiveQty *
                     receiveUnitCost
-                  ).toLocaleString()}
-                  {' '}ETB
+                  ).toLocaleString()}{" "}
+                  ETB
                 </span>
               </div>
             </div>
           )}
 
         {/* Actions */}
-
         <div className="flex gap-3 pt-2">
           <Button
             type="button"
@@ -227,7 +226,7 @@ export default function ReceiveStockModal({
             className="flex-1"
             onClick={onClose}
           >
-            {t('Cancel', 'ሰርዝ')}
+            {t("Cancel", "ሰርዝ")}
           </Button>
 
           <Button
@@ -235,12 +234,12 @@ export default function ReceiveStockModal({
             className="flex-1"
           >
             {t(
-              'Receive Stock',
-              'ዕቃ ተቀበል'
+              "Receive Stock",
+              "ዕቃ ተቀበል",
             )}
           </Button>
         </div>
       </form>
     </Modal>
-  )
+  );
 }

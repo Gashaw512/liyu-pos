@@ -1,9 +1,9 @@
 // src/app/[locale]/(app)/management/products/page.tsx
 
-'use client'
+"use client";
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useCallback, useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
 
 import {
   AlertTriangle,
@@ -17,29 +17,29 @@ import {
   Search,
   Tag,
   X,
-} from 'lucide-react'
+} from "lucide-react";
 
-import { getBusinessId } from '@/lib/auth/getBusinessId'
+import { getBusinessId } from "@/lib/auth/getBusinessId";
 
 import {
   deleteProduct,
   getProducts,
-} from '@/queries/useProductsQuery'
+} from "@/queries/useProductsQuery";
 
-import type { ProductListItem } from '@/queries/useProductsQuery'
+import type { ProductListItem } from "@/queries/useProductsQuery";
 
 export default function ProductsPage() {
-  const router = useRouter()
-  const params = useParams()
+  const router = useRouter();
+  const params = useParams();
 
-  const locale = String(params?.locale ?? 'am')
-  const isAm = locale === 'am'
+  const locale = String(params?.locale ?? "am");
+  const isAm = locale === "am";
 
-  const [products, setProducts] = useState<ProductListItem[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [search, setSearch] = useState('')
-  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [products, setProducts] = useState<ProductListItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   /* ============================================================
      LOAD PRODUCTS
@@ -47,88 +47,79 @@ export default function ProductsPage() {
 
   const loadProducts = useCallback(async () => {
     try {
-      setLoading(true)
-      setError(null)
+      setLoading(true);
+      setError(null);
 
-      const businessId = await getBusinessId()
+      const businessId = await getBusinessId();
 
       if (!businessId) {
         throw new Error(
           isAm
-            ? 'የንግድ መረጃ አልተገኘም'
-            : 'Missing business session'
-        )
+            ? "የንግድ መረጃ አልተገኘም"
+            : "Missing business session",
+        );
       }
 
-      const data = await getProducts(businessId)
+      const data = await getProducts(businessId);
 
-      setProducts(data)
+      setProducts(data);
     } catch (err: unknown) {
-      console.error('[ProductsPage] Load products error:', err)
+      console.error("[ProductsPage] Load products error:", err);
 
       setError(
         err instanceof Error
           ? err.message
           : isAm
-            ? 'ምርቶችን መጫን አልተቻለም'
-            : 'Failed to load products'
-      )
+            ? "ምርቶችን መጫን አልተቻለም"
+            : "Failed to load products",
+      );
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }, [isAm])
+  }, [isAm]);
 
   useEffect(() => {
-    void loadProducts()
-  }, [loadProducts])
+    void loadProducts();
+  }, [loadProducts]);
 
   /* ============================================================
      FILTER PRODUCTS
   ============================================================ */
 
-  const filteredProducts = useMemo(() => {
-    const query = search.trim().toLowerCase()
+  const query = search.trim().toLowerCase();
 
-    if (!query) {
-      return products
-    }
+  const filteredProducts = query
+    ? products.filter((product) => {
+        const name = product.name?.toLowerCase() ?? "";
+        const nameAm = product.name_am?.toLowerCase() ?? "";
+        const category = product.category_name?.toLowerCase() ?? "";
+        const categoryAm =
+          product.category_name_am?.toLowerCase() ?? "";
+        const barcode = product.barcode?.toLowerCase() ?? "";
+        const sku = product.sku?.toLowerCase() ?? "";
+        const price = String(product.retail_price ?? "");
 
-    return products.filter((product) => {
-      const name = product.name?.toLowerCase() ?? ''
-      const nameAm = product.name_am?.toLowerCase() ?? ''
-      const category = product.category_name?.toLowerCase() ?? ''
-      const categoryAm =
-        product.category_name_am?.toLowerCase() ?? ''
-      const barcode = product.barcode?.toLowerCase() ?? ''
-      const sku = product.sku?.toLowerCase() ?? ''
-      const price = String(product.retail_price ?? '')
-
-      return (
-        name.includes(query) ||
-        nameAm.includes(query) ||
-        category.includes(query) ||
-        categoryAm.includes(query) ||
-        barcode.includes(query) ||
-        sku.includes(query) ||
-        price.includes(query)
-      )
-    })
-  }, [products, search])
+        return (
+          name.includes(query) ||
+          nameAm.includes(query) ||
+          category.includes(query) ||
+          categoryAm.includes(query) ||
+          barcode.includes(query) ||
+          sku.includes(query) ||
+          price.includes(query)
+        );
+      })
+    : products;
 
   /* ============================================================
      SUMMARY
   ============================================================ */
 
-  const activeCount = useMemo(
-    () =>
-      products.filter(
-        (product) => product.is_active
-      ).length,
-    [products]
-  )
+  const activeCount = products.filter(
+    (product) => product.is_active,
+  ).length;
 
-  const inactiveCount =
-    products.length - activeCount
+  const inactiveCount = products.length - activeCount;
 
   /* ============================================================
      DELETE PRODUCT
@@ -136,80 +127,60 @@ export default function ProductsPage() {
 
   const handleDelete = async (id: string) => {
     const product = products.find(
-      (item) => item.id === id
-    )
+      (item) => item.id === id,
+    );
 
     if (!product) {
-      return
+      return;
     }
 
     const confirmed = window.confirm(
       isAm
         ? `“${product.name}” ምርትን ማስወገድ ይፈልጋሉ?`
-        : `Remove “${product.name}” from your products?`
-    )
+        : `Remove “${product.name}” from your products?`,
+    );
 
     if (!confirmed) {
-      return
+      return;
     }
 
     try {
-      setDeletingId(id)
+      setDeletingId(id);
 
-      /*
-       * deleteProduct requires both productId and businessId.
-       */
-      const businessId = await getBusinessId()
+      const businessId = await getBusinessId();
 
       if (!businessId) {
         throw new Error(
           isAm
-            ? 'የንግድ መረጃ አልተገኘም'
-            : 'Missing business session'
-        )
+            ? "የንግድ መረጃ አልተገኘም"
+            : "Missing business session",
+        );
       }
 
-      /*
-       * deleteProduct returns Promise<void>.
-       *
-       * Therefore we simply await it.
-       * If the operation fails, it throws and execution
-       * goes to catch().
-       */
-      await deleteProduct(id, businessId)
+      await deleteProduct(id, businessId);
 
-      /*
-       * Optimistically remove the successfully deleted
-       * product from the current list.
-       */
       setProducts((current) =>
-        current.filter(
-          (item) => item.id !== id
-        )
-      )
+        current.filter((item) => item.id !== id),
+      );
     } catch (err: unknown) {
       console.error(
-        '[ProductsPage] Delete product error:',
-        err
-      )
+        "[ProductsPage] Delete product error:",
+        err,
+      );
 
       window.alert(
         err instanceof Error
           ? err.message
           : isAm
-            ? 'ምርቱን ማስወገድ አልተሳካም'
-            : 'Failed to remove product'
-      )
+            ? "ምርቱን ማስወገድ አልተሳካም"
+            : "Failed to remove product",
+      );
 
-      /*
-       * Refresh the list in case the server state changed
-       * but the local update failed.
-       */
-      await loadProducts()
+      await loadProducts();
     } finally {
-      setDeletingId(null)
+      setDeletingId(null);
     }
-  }
+  };
 
   /* ============================================================
      LOADING STATE
@@ -226,13 +197,13 @@ export default function ProductsPage() {
 
             <p className="text-xs font-bold text-coffee-400">
               {isAm
-                ? 'ምርቶች በመጫን ላይ...'
-                : 'Loading products...'}
+                ? "ምርቶች በመጫን ላይ..."
+                : "Loading products..."}
             </p>
           </div>
         </div>
       </div>
-    )
+    );
   }
 
   /* ============================================================
@@ -243,15 +214,15 @@ export default function ProductsPage() {
     return (
       <div className="min-h-screen bg-cream-50 px-4 py-10">
         <div className="mx-auto flex min-h-[50vh] w-full max-w-md items-center justify-center">
-          <div className="w-full rounded-2xl border border-red-100 bg-white p-6 text-center shadow-sm">
-            <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-red-50">
-              <AlertTriangle className="h-5 w-5 text-red-500" />
+          <div className="w-full rounded-2xl border border-berbere-100 bg-white p-6 text-center shadow-sm">
+            <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-berbere-50">
+              <AlertTriangle className="h-5 w-5 text-berbere-500" />
             </div>
 
             <h1 className="mt-4 text-sm font-black text-coffee-900">
               {isAm
-                ? 'ምርቶችን መጫን አልተቻለም'
-                : 'Could not load products'}
+                ? "ምርቶችን መጫን አልተቻለም"
+                : "Could not load products"}
             </h1>
 
             <p className="mt-1 text-xs leading-5 text-coffee-400">
@@ -263,14 +234,12 @@ export default function ProductsPage() {
               onClick={() => void loadProducts()}
               className="mt-5 rounded-xl bg-coffee-900 px-5 py-2.5 text-xs font-black text-white transition hover:bg-coffee-800"
             >
-              {isAm
-                ? 'እንደገና ሞክር'
-                : 'Try again'}
+              {isAm ? "እንደገና ሞክር" : "Try again"}
             </button>
           </div>
         </div>
       </div>
-    )
+    );
   }
 
   /* ============================================================
@@ -295,23 +264,21 @@ export default function ProductsPage() {
           >
             <ArrowLeft className="h-4 w-4" />
 
-            {isAm ? 'ተመለስ' : 'Back'}
+            {isAm ? "ተመለስ" : "Back"}
           </button>
 
           <button
             type="button"
             onClick={() =>
               router.push(
-                `/${locale}/management/products/new`
+                `/${locale}/management/products/new`,
               )
             }
             className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-coffee-900 px-3.5 text-xs font-black text-white shadow-sm transition hover:bg-coffee-800 active:scale-[0.98]"
           >
             <Plus className="h-4 w-4" />
 
-            {isAm
-              ? 'አዲስ ምርት'
-              : 'Add product'}
+            {isAm ? "አዲስ ምርት" : "Add product"}
           </button>
         </div>
 
@@ -327,15 +294,13 @@ export default function ProductsPage() {
 
             <div className="min-w-0">
               <h1 className="text-xl font-black tracking-tight text-coffee-900">
-                {isAm
-                  ? 'ምርቶች'
-                  : 'Products'}
+                {isAm ? "ምርቶች" : "Products"}
               </h1>
 
               <p className="mt-0.5 text-xs leading-5 text-coffee-400">
                 {isAm
-                  ? 'የሚሸጡ ምርቶችን እና የምርት መረጃን ያስተዳድሩ።'
-                  : 'Manage the products your business sells.'}
+                  ? "የሚሸጡ ምርቶችን እና የምርት መረጃን ያስተዳድሩ።"
+                  : "Manage the products your business sells."}
               </p>
             </div>
           </div>
@@ -348,9 +313,7 @@ export default function ProductsPage() {
         <div className="mt-5 grid grid-cols-2 gap-2 sm:max-w-md">
           <div className="rounded-2xl border border-cream-200 bg-white px-4 py-3 shadow-sm">
             <p className="text-[10px] font-black uppercase tracking-wider text-coffee-400">
-              {isAm
-                ? 'ሁሉም'
-                : 'Total'}
+              {isAm ? "ሁሉም" : "Total"}
             </p>
 
             <p className="mt-1 text-lg font-black text-coffee-900">
@@ -360,9 +323,7 @@ export default function ProductsPage() {
 
           <div className="rounded-2xl border border-cream-200 bg-white px-4 py-3 shadow-sm">
             <p className="text-[10px] font-black uppercase tracking-wider text-coffee-400">
-              {isAm
-                ? 'ንቁ'
-                : 'Active'}
+              {isAm ? "ንቁ" : "Active"}
             </p>
 
             <p className="mt-1 text-lg font-black text-berbere-600">
@@ -371,10 +332,8 @@ export default function ProductsPage() {
 
             {inactiveCount > 0 && (
               <p className="mt-0.5 text-[10px] font-bold text-coffee-400">
-                {inactiveCount}{' '}
-                {isAm
-                  ? 'ያልነቁ'
-                  : 'inactive'}
+                {inactiveCount}{" "}
+                {isAm ? "ያልነቁ" : "inactive"}
               </p>
             )}
           </div>
@@ -396,8 +355,8 @@ export default function ProductsPage() {
               }
               placeholder={
                 isAm
-                  ? 'ምርት፣ ምድብ፣ SKU ወይም ባርኮድ ይፈልጉ...'
-                  : 'Search products, categories, SKU or barcode...'
+                  ? "ምርት፣ ምድብ፣ SKU ወይም ባርኮድ ይፈልጉ..."
+                  : "Search products, categories, SKU or barcode..."
               }
               className="h-11 w-full rounded-xl border border-cream-200 bg-white pl-10 pr-10 text-sm font-medium text-coffee-900 outline-none transition placeholder:text-coffee-300 focus:border-berbere-300 focus:ring-2 focus:ring-berbere-50"
             />
@@ -405,11 +364,9 @@ export default function ProductsPage() {
             {search && (
               <button
                 type="button"
-                onClick={() => setSearch('')}
+                onClick={() => setSearch("")}
                 aria-label={
-                  isAm
-                    ? 'ፍለጋ አጽዳ'
-                    : 'Clear search'
+                  isAm ? "ፍለጋ አጽዳ" : "Clear search"
                 }
                 className="absolute right-2.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-coffee-400 hover:bg-cream-50 hover:text-coffee-700"
               >
@@ -425,9 +382,7 @@ export default function ProductsPage() {
 
         <div className="mt-4 flex items-center justify-between px-1">
           <p className="text-[10px] font-black uppercase tracking-widest text-coffee-400">
-            {isAm
-              ? 'ምርት ዝርዝር'
-              : 'Product list'}
+            {isAm ? "ምርት ዝርዝር" : "Product list"}
           </p>
 
           <p className="text-[11px] font-bold text-coffee-400">
@@ -435,11 +390,11 @@ export default function ProductsPage() {
 
             {search
               ? isAm
-                ? ' ውጤት'
-                : ' results'
+                ? " ውጤት"
+                : " results"
               : isAm
-                ? ' ምርቶች'
-                : ' products'}
+                ? " ምርቶች"
+                : " products"}
           </p>
         </div>
 
@@ -449,187 +404,168 @@ export default function ProductsPage() {
 
         <div className="mt-2 overflow-hidden rounded-2xl border border-cream-200 bg-white shadow-sm">
           {filteredProducts.length > 0 ? (
-            filteredProducts.map(
-              (product, index) => {
-                const isInactive =
-                  !product.is_active
+            filteredProducts.map((product, index) => {
+              const isInactive = !product.is_active;
+              const isGroup = product.price_type === "group";
+              const isDeleting = deletingId === product.id;
 
-                const isGroup =
-                  product.price_type === 'group'
+              return (
+                <div key={product.id}>
+                  <div
+                    className={`group px-3.5 py-3.5 sm:px-4 ${
+                      isInactive ? "opacity-60" : ""
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
 
-                const isDeleting =
-                  deletingId === product.id
+                      {/* IMAGE */}
 
-                return (
-                  <div key={product.id}>
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-cream-200 bg-cream-50">
+                        {product.image_url ? (
+                          <img
+                            src={product.image_url}
+                            alt={product.name}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <ImageIcon className="h-5 w-5 text-coffee-300" />
+                        )}
+                      </div>
 
-                    {/* PRODUCT ROW */}
+                      {/* PRODUCT INFO */}
 
-                    <div
-                      className={`group px-3.5 py-3.5 sm:px-4 ${
-                        isInactive
-                          ? 'opacity-60'
-                          : ''
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <h3 className="truncate text-sm font-black text-coffee-900">
+                            {product.name}
+                          </h3>
 
-                        {/* IMAGE */}
-
-                        <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-cream-200 bg-cream-50">
-                          {product.image_url ? (
-                            <img
-                              src={product.image_url}
-                              alt={product.name}
-                              className="h-full w-full object-cover"
-                            />
-                          ) : (
-                            <ImageIcon className="h-5 w-5 text-coffee-300" />
+                          {isInactive && (
+                            <span className="shrink-0 rounded-full bg-berbere-50 px-1.5 py-0.5 text-[9px] font-black text-berbere-600">
+                              {isAm ? "ዝግ" : "Inactive"}
+                            </span>
                           )}
                         </div>
 
-                        {/* PRODUCT INFO */}
+                        <div className="mt-1 flex min-w-0 items-center gap-2">
+                          <span className="inline-flex min-w-0 items-center gap-1 text-[11px] font-medium text-coffee-400">
+                            <Tag className="h-3 w-3 shrink-0" />
 
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <h3 className="truncate text-sm font-black text-coffee-900">
-                              {product.name}
-                            </h3>
-
-                            {isInactive && (
-                              <span className="shrink-0 rounded-full bg-red-50 px-1.5 py-0.5 text-[9px] font-black text-red-600">
-                                {isAm
-                                  ? 'ዝግ'
-                                  : 'Inactive'}
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="mt-1 flex min-w-0 items-center gap-2">
-                            <span className="inline-flex min-w-0 items-center gap-1 text-[11px] font-medium text-coffee-400">
-                              <Tag className="h-3 w-3 shrink-0" />
-
-                              <span className="truncate">
-                                {isAm
-                                  ? product.category_name_am ||
-                                    product.category_name ||
-                                    'ምድብ የለም'
-                                  : product.category_name ||
-                                    'No category'}
-                              </span>
+                            <span className="truncate">
+                              {isAm
+                                ? product.category_name_am ||
+                                  product.category_name ||
+                                  "ምድብ የለም"
+                                : product.category_name ||
+                                  "No category"}
                             </span>
-
-                            {isGroup && (
-                              <>
-                                <span className="text-coffee-200">
-                                  •
-                                </span>
-
-                                <span className="shrink-0 text-[10px] font-black text-berbere-600">
-                                  {isAm
-                                    ? 'ቡድን ዋጋ'
-                                    : 'Group price'}
-                                </span>
-                              </>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* PRICE */}
-
-                        <div className="shrink-0 text-right">
-                          <p className="text-sm font-black text-coffee-900">
-                            {Number(
-                              product.retail_price ?? 0
-                            ).toLocaleString()}
-                          </p>
-
-                          <p className="text-[9px] font-bold uppercase tracking-wide text-coffee-300">
-                            ETB
-                          </p>
-                        </div>
-
-                        {/* EDIT */}
-
-                        <button
-                          type="button"
-                          disabled={isDeleting}
-                          onClick={() =>
-                            router.push(
-                              `/${locale}/management/products/${product.id}/edit`
-                            )
-                          }
-                          aria-label={
-                            isAm
-                              ? 'ምርት አስተካክል'
-                              : 'Edit product'
-                          }
-                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cream-50 text-coffee-500 transition hover:bg-berbere-50 hover:text-berbere-600 disabled:opacity-40"
-                        >
-                          <Edit3 className="h-4 w-4" />
-                        </button>
-                      </div>
-
-                      {/* SECONDARY ROW */}
-
-                      <div className="mt-2.5 flex items-center justify-between gap-3 pl-[60px]">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`rounded-full px-2 py-1 text-[9px] font-black ${
-                              isGroup
-                                ? 'bg-berbere-50 text-berbere-700'
-                                : 'bg-cream-100 text-coffee-500'
-                            }`}
-                          >
-                            {isGroup
-                              ? isAm
-                                ? 'የቡድን ዋጋ'
-                                : 'GROUP'
-                              : isAm
-                                ? 'ቀጥታ ዋጋ'
-                                : 'FIXED'}
                           </span>
 
-                          {product.track_inventory && (
-                            <span className="rounded-full bg-cream-100 px-2 py-1 text-[9px] font-black text-coffee-500">
-                              {isAm
-                                ? 'ክምችት'
-                                : 'STOCK'}
-                            </span>
+                          {isGroup && (
+                            <>
+                              <span className="text-coffee-200">
+                                •
+                              </span>
+
+                              <span className="shrink-0 text-[10px] font-black text-berbere-600">
+                                {isAm
+                                  ? "ቡድን ዋጋ"
+                                  : "Group price"}
+                              </span>
+                            </>
                           )}
                         </div>
-
-                        <button
-                          type="button"
-                          disabled={isDeleting}
-                          onClick={() =>
-                            void handleDelete(
-                              product.id
-                            )
-                          }
-                          className="text-[10px] font-bold text-red-400 transition hover:text-red-600 disabled:opacity-40"
-                        >
-                          {isDeleting
-                            ? isAm
-                              ? 'በማስወገድ ላይ...'
-                              : 'Removing...'
-                            : isAm
-                              ? 'አስወግድ'
-                              : 'Remove'}
-                        </button>
                       </div>
+
+                      {/* PRICE */}
+
+                      <div className="shrink-0 text-right">
+                        <p className="text-sm font-black text-coffee-900">
+                          {Number(
+                            product.retail_price ?? 0,
+                          ).toLocaleString()}
+                        </p>
+
+                        <p className="text-[9px] font-bold uppercase tracking-wide text-coffee-300">
+                          ETB
+                        </p>
+                      </div>
+
+                      {/* EDIT */}
+
+                      <button
+                        type="button"
+                        disabled={isDeleting}
+                        onClick={() =>
+                          router.push(
+                            `/${locale}/management/products/${product.id}/edit`,
+                          )
+                        }
+                        aria-label={
+                          isAm
+                            ? "ምርት አስተካክል"
+                            : "Edit product"
+                        }
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cream-50 text-coffee-500 transition hover:bg-berbere-50 hover:text-berbere-600 disabled:opacity-40"
+                      >
+                        <Edit3 className="h-4 w-4" />
+                      </button>
                     </div>
 
-                    {/* DIVIDER */}
+                    {/* SECONDARY ROW */}
 
-                    {index <
-                      filteredProducts.length - 1 && (
-                      <div className="mx-3.5 border-b border-cream-100 sm:mx-4" />
-                    )}
+                    <div className="mt-2.5 flex items-center justify-between gap-3 pl-[60px]">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`rounded-full px-2 py-1 text-[9px] font-black ${
+                            isGroup
+                              ? "bg-berbere-50 text-berbere-700"
+                              : "bg-cream-100 text-coffee-500"
+                          }`}
+                        >
+                          {isGroup
+                            ? isAm
+                              ? "የቡድን ዋጋ"
+                              : "GROUP"
+                            : isAm
+                              ? "ቀጥታ ዋጋ"
+                              : "FIXED"}
+                        </span>
+
+                        {product.track_inventory && (
+                          <span className="rounded-full bg-cream-100 px-2 py-1 text-[9px] font-black text-coffee-500">
+                            {isAm ? "ክምችት" : "STOCK"}
+                          </span>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        disabled={isDeleting}
+                        onClick={() =>
+                          void handleDelete(product.id)
+                        }
+                        className="text-[10px] font-bold text-coffee-400 transition hover:text-berbere-600 disabled:opacity-40"
+                      >
+                        {isDeleting
+                          ? isAm
+                            ? "በማስወገድ ላይ..."
+                            : "Removing..."
+                          : isAm
+                            ? "አስወግድ"
+                            : "Remove"}
+                      </button>
+                    </div>
                   </div>
-                )
-              }
-            )
+
+                  {/* DIVIDER */}
+
+                  {index < filteredProducts.length - 1 && (
+                    <div className="mx-3.5 border-b border-cream-100 sm:mx-4" />
+                  )}
+                </div>
+              );
+            })
           ) : (
             /* ==================================================
                EMPTY STATE
@@ -647,21 +583,21 @@ export default function ProductsPage() {
               <h2 className="mt-4 text-sm font-black text-coffee-900">
                 {search
                   ? isAm
-                    ? 'ምንም ውጤት የለም'
-                    : 'No matching products'
+                    ? "ምንም ውጤት የለም"
+                    : "No matching products"
                   : isAm
-                    ? 'ምርት የለም'
-                    : 'No products yet'}
+                    ? "ምርት የለም"
+                    : "No products yet"}
               </h2>
 
               <p className="mx-auto mt-1 max-w-xs text-xs leading-5 text-coffee-400">
                 {search
                   ? isAm
-                    ? 'ሌላ የፍለጋ ቃል ይሞክሩ።'
-                    : 'Try a different product, category, SKU or barcode.'
+                    ? "ሌላ የፍለጋ ቃል ይሞክሩ።"
+                    : "Try a different product, category, SKU or barcode."
                   : isAm
-                    ? 'የመጀመሪያዎን ምርት ይጨምሩ።'
-                    : 'Add your first product to get started.'}
+                    ? "የመጀመሪያዎን ምርት ይጨምሩ።"
+                    : "Add your first product to get started."}
               </p>
 
               {!search && (
@@ -669,16 +605,14 @@ export default function ProductsPage() {
                   type="button"
                   onClick={() =>
                     router.push(
-                      `/${locale}/management/products/new`
+                      `/${locale}/management/products/new`,
                     )
                   }
                   className="mt-5 inline-flex items-center gap-2 rounded-xl bg-berbere-500 px-4 py-2.5 text-xs font-black text-white transition hover:bg-berbere-600"
                 >
                   <Plus className="h-4 w-4" />
 
-                  {isAm
-                    ? 'ምርት ጨምር'
-                    : 'Add product'}
+                  {isAm ? "ምርት ጨምር" : "Add product"}
                 </button>
               )}
             </div>
@@ -694,14 +628,12 @@ export default function ProductsPage() {
             type="button"
             onClick={() =>
               router.push(
-                `/${locale}/management/categories`
+                `/${locale}/management/categories`,
               )
             }
             className="inline-flex items-center gap-1 text-[11px] font-bold text-coffee-400 transition hover:text-coffee-800"
           >
-            {isAm
-              ? 'ምድቦችን ይዩ'
-              : 'View categories'}
+            {isAm ? "ምድቦችን ይዩ" : "View categories"}
 
             <ChevronRight className="h-3.5 w-3.5" />
           </button>
@@ -710,19 +642,17 @@ export default function ProductsPage() {
             type="button"
             onClick={() =>
               router.push(
-                `/${locale}/management/price-groups`
+                `/${locale}/management/price-groups`,
               )
             }
             className="inline-flex items-center gap-1 text-[11px] font-bold text-coffee-400 transition hover:text-coffee-800"
           >
-            {isAm
-              ? 'የዋጋ ስርዓት'
-              : 'Pricing'}
+            {isAm ? "የዋጋ ስርዓት" : "Pricing"}
 
             <ChevronRight className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>
     </div>
-  )
+  );
 }

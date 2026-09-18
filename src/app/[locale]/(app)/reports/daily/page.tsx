@@ -1,17 +1,17 @@
 // src/app/[locale]/(app)/reports/daily/page.tsx
 
-'use client'
+"use client";
+
 import {
   useCallback,
   useEffect,
-  useMemo,
   useState,
-} from 'react'
+} from "react";
 
 import {
   useParams,
   useRouter,
-} from 'next/navigation'
+} from "next/navigation";
 
 import {
   AlertTriangle,
@@ -32,39 +32,37 @@ import {
   Wallet,
   Wifi,
   WifiOff,
-} from 'lucide-react'
+} from "lucide-react";
 
 import {
   getDailyReport,
-} from '@/lib/reports/daily-report.service'
+} from "@/lib/reports/daily-report.service";
 
 import type {
   DailyReport,
   LowStockSummary,
-} from '@/lib/reports/report.types'
+} from "@/lib/reports/report.types";
 
 import {
   useBusinessContext,
-} from '@/lib/auth/useBusinessContext'
+} from "@/lib/auth/useBusinessContext";
 
 /* ============================================================
    HELPERS
 ============================================================ */
 
 function numberValue(value: unknown): number {
-  const number = Number(value)
+  const number = Number(value);
 
-  return Number.isFinite(number)
-    ? number
-    : 0
+  return Number.isFinite(number) ? number : 0;
 }
 
 function formatMoney(value: number): string {
-  return `${Math.round(value).toLocaleString()} ETB`
+  return `${Math.round(value).toLocaleString()} ETB`;
 }
 
 function formatNumber(value: number): string {
-  return Math.round(value).toLocaleString()
+  return Math.round(value).toLocaleString();
 }
 
 /* ============================================================
@@ -72,11 +70,11 @@ function formatNumber(value: number): string {
 ============================================================ */
 
 export default function DailyReportPage() {
-  const params = useParams()
-  const router = useRouter()
+  const params = useParams();
+  const router = useRouter();
 
-  const locale = String(params.locale || 'en')
-  const isAm = locale === 'am'
+  const locale = String(params.locale || "en");
+  const isAm = locale === "am";
 
   /* ==========================================================
      BUSINESS CONTEXT
@@ -89,33 +87,25 @@ export default function DailyReportPage() {
     loading: contextLoading,
     error: contextError,
     refresh: refreshContext,
-  } = useBusinessContext()
+  } = useBusinessContext();
 
   /* ==========================================================
      STATE
   ========================================================== */
 
-  const [loading, setLoading] = useState(true)
-
-  const [refreshing, setRefreshing] =
-    useState(false)
-
-  const [report, setReport] =
-    useState<DailyReport | null>(null)
-
-  const [lastUpdated, setLastUpdated] =
-    useState<Date | null>(null)
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [report, setReport] = useState<DailyReport | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   /* ==========================================================
      TRANSLATION
   ========================================================== */
 
   const t = useCallback(
-    (en: string, am: string) => {
-      return isAm ? am : en
-    },
+    (en: string, am: string) => (isAm ? am : en),
     [isAm],
-  )
+  );
 
   /* ==========================================================
      LOAD REPORT
@@ -123,63 +113,48 @@ export default function DailyReportPage() {
 
   const loadReport = useCallback(
     async (showRefresh = false) => {
-      if (
-        !businessId ||
-        !branchId ||
-        !userId
-      ) {
-        return
+      if (!businessId || !branchId || !userId) {
+        return;
       }
 
       try {
         if (showRefresh) {
-          setRefreshing(true)
+          setRefreshing(true);
         } else {
-          setLoading(true)
+          setLoading(true);
         }
 
-        const dailyReport =
-          await getDailyReport({
-            businessId,
-            branchId,
-            userId,
-            date: new Date(),
-            allowRemote: true,
-          })
+        const dailyReport = await getDailyReport({
+          businessId,
+          branchId,
+          userId,
+          date: new Date(),
+          allowRemote: true,
+        });
 
-        setReport(dailyReport)
+        setReport(dailyReport);
 
-        const updatedValue =
-          dailyReport.sync?.lastUpdated
+        const updatedValue = dailyReport.sync?.lastUpdated;
 
         if (updatedValue) {
-          const updated =
-            new Date(updatedValue)
+          const updated = new Date(updatedValue);
 
-          if (
-            !Number.isNaN(
-              updated.getTime(),
-            )
-          ) {
-            setLastUpdated(updated)
+          if (!Number.isNaN(updated.getTime())) {
+            setLastUpdated(updated);
           }
         }
       } catch (error) {
         console.error(
-          '[DailyReport] Failed to load report:',
+          "[DailyReport] Failed to load report:",
           error,
-        )
+        );
       } finally {
-        setLoading(false)
-        setRefreshing(false)
+        setLoading(false);
+        setRefreshing(false);
       }
     },
-    [
-      businessId,
-      branchId,
-      userId,
-    ],
-  )
+    [businessId, branchId, userId],
+  );
 
   /* ==========================================================
      INITIAL LOAD
@@ -187,89 +162,68 @@ export default function DailyReportPage() {
 
   useEffect(() => {
     if (contextLoading) {
-      return
+      return;
     }
 
-    if (
-      !businessId ||
-      !branchId ||
-      !userId
-    ) {
-      setLoading(false)
-      return
+    if (!businessId || !branchId || !userId) {
+      setLoading(false);
+      return;
     }
 
-    void loadReport()
+    void loadReport();
   }, [
     contextLoading,
     businessId,
     branchId,
     userId,
     loadReport,
-  ])
+  ]);
 
   /* ==========================================================
      SAFE REPORT DATA
   ========================================================== */
 
-  const financials =
-    report?.financials
+  const financials = report?.financials;
+  const expenses = report?.expenses;
+  const inventory = report?.inventory;
 
-  const expenses =
-    report?.expenses
+  const categories = report?.categories ?? [];
+  const products = report?.products ?? [];
 
-  const inventory =
-    report?.inventory
-
-  const categories =
-    report?.categories ?? []
-
-  const products =
-    report?.products ?? []
-
-  const activeShift =
-    report?.activeShift ?? null
-
-  const sync =
-    report?.sync
+  const activeShift = report?.activeShift ?? null;
+  const sync = report?.sync;
 
   /* ==========================================================
      FINANCIAL VALUES
   ========================================================== */
 
-  const salesTotal =
-    numberValue(
-      financials?.revenue,
-    )
+  const salesTotal = numberValue(
+    financials?.revenue,
+  );
 
-  const grossProfit =
-    numberValue(
-      financials?.grossProfit,
-    )
+  const grossProfit = numberValue(
+    financials?.grossProfit,
+  );
 
-  const netProfit =
-    numberValue(
-      financials?.netProfit,
-    )
+  const netProfit = numberValue(
+    financials?.netProfit,
+  );
 
-  const totalReceived =
-    numberValue(
-      financials?.totalReceived ??
-        financials?.revenue,
-    )
+  const totalReceived = numberValue(
+    financials?.totalReceived ?? financials?.revenue,
+  );
 
-  const tips =
-    numberValue(
-      financials?.tips,
-    )
+  const tips = numberValue(
+    financials?.tips,
+  );
 
-  const expenseTotal =
-    numberValue(
-      expenses?.total,
-    )
+  const expenseTotal = numberValue(
+    expenses?.total,
+  );
 
   /*
    * IMPORTANT:
+   *
    * DailyFinancialSummary already contains these values.
    *
    * Do NOT use:
@@ -277,111 +231,82 @@ export default function DailyReportPage() {
    * report.summary.itemsSold
    */
 
-  const orderCount =
-    numberValue(
-      financials?.transactions,
-    )
+  const orderCount = numberValue(
+    financials?.transactions,
+  );
 
-  const itemsSold =
-    numberValue(
-      financials?.itemsSold,
-    )
+  const itemsSold = numberValue(
+    financials?.itemsSold,
+  );
 
   /* ==========================================================
      PAYMENT SUMMARY
   ========================================================== */
 
-  const paymentSummary =
-    useMemo(() => {
-      return [
-        {
-          label: 'Cash',
-          am: 'ካሽ',
-          amount: numberValue(
-            financials?.cash,
-          ),
-        },
-        {
-          label: 'Telebirr',
-          am: 'ቴሌብር',
-          amount: numberValue(
-            financials?.telebirr,
-          ),
-        },
-        {
-          label: 'Bank',
-          am: 'ባንክ',
-          amount: numberValue(
-            financials?.bank,
-          ),
-        },
-        {
-          label: 'Card',
-          am: 'ካርድ',
-          amount: numberValue(
-            financials?.card,
-          ),
-        },
-        {
-          label: 'Other',
-          am: 'ሌላ',
-          amount: numberValue(
-            financials?.other,
-          ),
-        },
-      ]
-    }, [financials])
+  const paymentSummary = [
+    {
+      label: "Cash",
+      am: "ካሽ",
+      amount: numberValue(financials?.cash),
+    },
+    {
+      label: "Telebirr",
+      am: "ቴሌብር",
+      amount: numberValue(financials?.telebirr),
+    },
+    {
+      label: "Bank",
+      am: "ባንክ",
+      amount: numberValue(financials?.bank),
+    },
+    {
+      label: "Card",
+      am: "ካርድ",
+      amount: numberValue(financials?.card),
+    },
+    {
+      label: "Other",
+      am: "ሌላ",
+      amount: numberValue(financials?.other),
+    },
+  ];
 
-  const paymentTotal =
-    useMemo(() => {
-      return paymentSummary.reduce(
-        (sum, payment) =>
-          sum + payment.amount,
-        0,
-      )
-    }, [paymentSummary])
+  const paymentTotal = paymentSummary.reduce(
+    (sum, payment) => sum + payment.amount,
+    0,
+  );
 
   /* ==========================================================
      EXPENSE CATEGORIES
   ========================================================== */
 
-  const expenseCategories =
-    useMemo(() => {
-      return expenses?.byCategory ?? []
-    }, [expenses])
+  const expenseCategories = expenses?.byCategory ?? [];
 
-  const expenseTransactionCount =
-    numberValue(
-      expenses?.transactions,
-    )
+  const expenseTransactionCount = numberValue(
+    expenses?.transactions,
+  );
 
   /* ==========================================================
      PRODUCT REPORT
   ========================================================== */
 
-  const productReport =
-    useMemo(() => {
-      return [...products]
-        .sort(
-          (a, b) =>
-            numberValue(b.revenue) -
-            numberValue(a.revenue),
-        )
-        .slice(0, 20)
-    }, [products])
+  const productReport = [...products]
+    .sort(
+      (a, b) =>
+        numberValue(b.revenue) -
+        numberValue(a.revenue),
+    )
+    .slice(0, 20);
 
   /* ==========================================================
      CATEGORY REPORT
   ========================================================== */
 
-  const categoryReport =
-    useMemo(() => {
-      return [...categories].sort(
-        (a, b) =>
-          numberValue(b.revenue) -
-          numberValue(a.revenue),
-      )
-    }, [categories])
+  const categoryReport = [...categories].sort(
+    (a, b) =>
+      numberValue(b.revenue) -
+      numberValue(a.revenue),
+  );
 
   /* ==========================================================
      INVENTORY
@@ -399,289 +324,233 @@ export default function DailyReportPage() {
    * lowStockProducts
    */
 
-  const lowStockProducts =
-    useMemo<LowStockSummary[]>(() => {
-      return inventory?.lowStock ?? []
-    }, [inventory])
+  const lowStockProducts: LowStockSummary[] =
+    inventory?.lowStock ?? [];
 
-  const lowStockCount =
-    numberValue(
-      inventory?.lowStockCount,
-    )
+  const lowStockCount = numberValue(
+    inventory?.lowStockCount,
+  );
 
-  const outOfStockCount =
-    numberValue(
-      inventory?.outOfStockCount,
-    )
+  const outOfStockCount = numberValue(
+    inventory?.outOfStockCount,
+  );
 
   /* ==========================================================
      SHIFT / CASH
   ========================================================== */
 
-  const openingCash =
-    numberValue(
-      activeShift?.opening_cash,
-    )
+  const openingCash = numberValue(
+    activeShift?.opening_cash,
+  );
 
-  const cashSales =
-    numberValue(
-      financials?.cash,
-    )
+  const cashSales = numberValue(
+    financials?.cash,
+  );
 
-  const expectedCash =
-    openingCash + cashSales
+  const expectedCash = openingCash + cashSales;
 
   const actualCash =
     activeShift?.actual_cash != null
-      ? numberValue(
-          activeShift.actual_cash,
-        )
-      : null
+      ? numberValue(activeShift.actual_cash)
+      : null;
 
   const cashDifference =
     actualCash != null
       ? actualCash - expectedCash
-      : null
+      : null;
 
   /* ==========================================================
      SYNC
   ========================================================== */
 
   const remoteAvailable =
-    sync?.remoteAvailable ?? false
+    sync?.remoteAvailable ?? false;
 
-  const remoteSalesCount =
-    numberValue(
-      sync?.remoteSales,
-    )
+  const remoteSalesCount = numberValue(
+    sync?.remoteSales,
+  );
 
-  const localOnlySalesCount =
-    numberValue(
-      sync?.localOnlySales,
-    )
+  const localOnlySalesCount = numberValue(
+    sync?.localOnlySales,
+  );
 
   /* ==========================================================
      DATE
   ========================================================== */
 
-  const reportDate =
-    useMemo(() => {
-      return new Date().toLocaleDateString(
-        isAm ? 'am-ET' : 'en-ET',
-        {
-          weekday: 'long',
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
-        },
-      )
-    }, [isAm])
+  const reportDate = new Date().toLocaleDateString(
+    isAm ? "am-ET" : "en-ET",
+    {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    },
+  );
 
   /* ==========================================================
      SHARE REPORT
   ========================================================== */
 
-  const shareReport =
-    useCallback(async () => {
-      const text = [
-        'LIYU POS — DAILY REPORT',
-        reportDate,
-        '',
-        `Sales: ${formatMoney(
-          salesTotal,
-        )}`,
-        `Tips: ${formatMoney(
-          tips,
-        )}`,
-        `Total Received: ${formatMoney(
-          totalReceived,
-        )}`,
-        `Expenses: ${formatMoney(
-          expenseTotal,
-        )}`,
-        `Net Profit: ${formatMoney(
-          netProfit,
-        )}`,
-        '',
-        `Orders: ${formatNumber(
-          orderCount,
-        )}`,
-        `Items Sold: ${formatNumber(
-          itemsSold,
-        )}`,
-        '',
-        'PAYMENTS',
-        `Cash: ${formatMoney(
-          numberValue(
-            financials?.cash,
-          ),
-        )}`,
-        `Telebirr: ${formatMoney(
-          numberValue(
-            financials?.telebirr,
-          ),
-        )}`,
-        `Bank: ${formatMoney(
-          numberValue(
-            financials?.bank,
-          ),
-        )}`,
-        `Card: ${formatMoney(
-          numberValue(
-            financials?.card,
-          ),
-        )}`,
-        `Other: ${formatMoney(
-          numberValue(
-            financials?.other,
-          ),
-        )}`,
-        '',
-        `Shift: ${
-          activeShift
-            ? 'Open'
-            : 'Closed'
-        }`,
-      ].join('\n')
-
-      try {
-        if (
-          typeof navigator !==
-            'undefined' &&
-          navigator.share
-        ) {
-          await navigator.share({
-            title:
-              'Liyu POS Daily Report',
-            text,
-          })
-
-          return
-        }
-
-        if (
-          typeof navigator !==
-            'undefined' &&
-          navigator.clipboard
-        ) {
-          await navigator.clipboard.writeText(
-            text,
-          )
-
-          window.alert(
-            t(
-              'Report copied to clipboard.',
-              'ሪፖርቱ ወደ clipboard ተቀድቷል።',
-            ),
-          )
-        }
-      } catch (error) {
-        if (
-          error instanceof Error &&
-          error.name ===
-            'AbortError'
-        ) {
-          return
-        }
-
-        console.error(
-          '[DailyReport] Unable to share:',
-          error,
-        )
-      }
-    }, [
+  const shareReport = useCallback(async () => {
+    const text = [
+      "LIYU POS — DAILY REPORT",
       reportDate,
-      salesTotal,
-      tips,
-      totalReceived,
-      expenseTotal,
-      netProfit,
-      orderCount,
-      itemsSold,
-      financials,
-      activeShift,
-      t,
-    ])
+      "",
+      `Sales: ${formatMoney(salesTotal)}`,
+      `Tips: ${formatMoney(tips)}`,
+      `Total Received: ${formatMoney(totalReceived)}`,
+      `Expenses: ${formatMoney(expenseTotal)}`,
+      `Net Profit: ${formatMoney(netProfit)}`,
+      "",
+      `Orders: ${formatNumber(orderCount)}`,
+      `Items Sold: ${formatNumber(itemsSold)}`,
+      "",
+      "PAYMENTS",
+      `Cash: ${formatMoney(
+        numberValue(financials?.cash),
+      )}`,
+      `Telebirr: ${formatMoney(
+        numberValue(financials?.telebirr),
+      )}`,
+      `Bank: ${formatMoney(
+        numberValue(financials?.bank),
+      )}`,
+      `Card: ${formatMoney(
+        numberValue(financials?.card),
+      )}`,
+      `Other: ${formatMoney(
+        numberValue(financials?.other),
+      )}`,
+      "",
+      `Shift: ${activeShift ? "Open" : "Closed"}`,
+    ].join("\n");
+
+    try {
+      if (
+        typeof navigator !== "undefined" &&
+        navigator.share
+      ) {
+        await navigator.share({
+          title: "Liyu POS Daily Report",
+          text,
+        });
+
+        return;
+      }
+
+      if (
+        typeof navigator !== "undefined" &&
+        navigator.clipboard
+      ) {
+        await navigator.clipboard.writeText(text);
+
+        window.alert(
+          t(
+            "Report copied to clipboard.",
+            "ሪፖርቱ ወደ clipboard ተቀድቷል።",
+          ),
+        );
+      }
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.name === "AbortError"
+      ) {
+        return;
+      }
+
+      console.error(
+        "[DailyReport] Unable to share:",
+        error,
+      );
+    }
+  }, [
+    reportDate,
+    salesTotal,
+    tips,
+    totalReceived,
+    expenseTotal,
+    netProfit,
+    orderCount,
+    itemsSold,
+    financials,
+    activeShift,
+    t,
+  ]);
 
   /* ==========================================================
      LOADING
   ========================================================== */
 
-  if (
-    contextLoading ||
-    loading
-  ) {
+  if (contextLoading || loading) {
     return (
-      <div className="min-h-screen bg-[#F7F4EB] flex items-center justify-center px-4">
+      <div className="flex min-h-screen items-center justify-center bg-cream-100 px-4">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-11 h-11 rounded-2xl bg-[#8B2635] flex items-center justify-center shadow-sm">
-            <Loader2 className="w-5 h-5 text-white animate-spin" />
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-berbere-500 shadow-sm">
+            <Loader2 className="h-5 w-5 animate-spin text-white" />
           </div>
 
-          <p className="text-sm font-black text-[#5A3E38]">
+          <p className="text-sm font-black text-coffee-700">
             {t(
-              'Preparing today’s report...',
-              'የዛሬን ሪፖርት በማዘጋጀት ላይ...',
+              "Preparing today’s report...",
+              "የዛሬን ሪፖርት በማዘጋጀት ላይ...",
             )}
           </p>
 
-          <p className="text-[10px] text-slate-400">
+          <p className="text-[10px] text-coffee-400">
             {t(
-              'Checking local and remote records',
-              'የlocal እና remote መረጃዎችን በመፈተሽ ላይ',
+              "Checking local and remote records",
+              "የlocal እና remote መረጃዎችን በመፈተሽ ላይ",
             )}
           </p>
         </div>
       </div>
-    )
+    );
   }
 
   /* ==========================================================
      CONTEXT ERROR
   ========================================================== */
 
-  if (
-    !businessId ||
-    !branchId ||
-    !userId
-  ) {
+  if (!businessId || !branchId || !userId) {
     return (
-      <main className="min-h-screen bg-[#F7F4EB] flex items-center justify-center px-4">
-        <div className="w-full max-w-md rounded-2xl bg-white border border-[#2B1E1A]/10 shadow-sm p-6 text-center">
-          <div className="mx-auto w-11 h-11 rounded-2xl bg-amber-50 flex items-center justify-center">
-            <AlertTriangle className="w-5 h-5 text-amber-600" />
+      <main className="flex min-h-screen items-center justify-center bg-cream-100 px-4">
+        <div className="w-full max-w-md rounded-2xl border border-coffee-700/10 bg-white p-6 text-center shadow-sm">
+          <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-gold-50">
+            <AlertTriangle className="h-5 w-5 text-gold-600" />
           </div>
 
-          <h1 className="mt-4 text-base font-black text-[#2B1E1A]">
+          <h1 className="mt-4 text-base font-black text-coffee-700">
             {t(
-              'Business context unavailable',
-              'የንግድ መረጃ አልተገኘም',
+              "Business context unavailable",
+              "የንግድ መረጃ አልተገኘም",
             )}
           </h1>
 
-          <p className="mt-2 text-xs leading-5 text-slate-500">
+          <p className="mt-2 text-xs leading-5 text-coffee-500">
             {contextError ||
               t(
-                'Your account is not currently connected to a business and branch.',
-                'የእርስዎ መለያ ከንግድ እና ቅርንጫፍ ጋር አልተገናኘም።',
+                "Your account is not currently connected to a business and branch.",
+                "የእርስዎ መለያ ከንግድ እና ቅርንጫፍ ጋር አልተገናኘም።",
               )}
           </p>
 
           <button
             type="button"
             onClick={() => {
-              void refreshContext()
+              void refreshContext();
             }}
-            className="mt-5 h-10 px-4 rounded-xl bg-[#8B2635] text-white text-xs font-black hover:bg-[#76202E] active:scale-95 transition"
+            className="mt-5 h-10 rounded-xl bg-berbere-500 px-4 text-xs font-black text-white transition hover:bg-berbere-600 active:scale-95"
           >
             {t(
-              'Try Again',
-              'እንደገና ሞክር',
+              "Try Again",
+              "እንደገና ሞክር",
             )}
           </button>
         </div>
       </main>
-    )
+    );
   }
 
   /* ==========================================================
@@ -689,84 +558,80 @@ export default function DailyReportPage() {
   ========================================================== */
 
   return (
-    <main className="min-h-screen bg-[#F7F4EB] pb-28">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5 space-y-5">
+    <main className="min-h-screen bg-cream-100 pb-28">
+      <div className="mx-auto max-w-6xl space-y-4 px-4 py-5 sm:px-6">
 
         {/* ======================================================
             HEADER
         ====================================================== */}
 
-        <header className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-start gap-3">
 
             <button
               type="button"
               onClick={() =>
-                router.push(
-                  `/${locale}/reports`,
-                )
+                router.push(`/${locale}/reports`)
               }
-              className="w-10 h-10 shrink-0 rounded-xl bg-white border border-[#2B1E1A]/10 shadow-sm flex items-center justify-center text-[#5A3E38] hover:bg-[#FAF8F2] active:scale-95 transition"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-coffee-700/10 bg-white text-coffee-500 shadow-sm transition hover:bg-cream-50 active:scale-95"
               aria-label={t(
-                'Back',
-                'ተመለስ',
+                "Back",
+                "ተመለስ",
               )}
             >
-              <ArrowLeft className="w-4 h-4" />
+              <ArrowLeft className="h-4 w-4" />
             </button>
 
             <div>
               <div className="flex flex-wrap items-center gap-2">
 
-                <h1 className="text-xl sm:text-2xl font-black text-[#2B1E1A]">
+                <h1 className="text-xl font-black text-coffee-700 sm:text-2xl">
                   {t(
-                    'Daily Business Report',
-                    'የዕለት የንግድ ሪፖርት',
+                    "Daily Business Report",
+                    "የዕለት የንግድ ሪፖርት",
                   )}
                 </h1>
 
                 <span
-                  className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full border text-[9px] font-black ${
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[9px] font-black ${
                     activeShift
-                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                      : 'bg-slate-100 text-slate-600 border-slate-200'
+                      ? "border-berbere-200 bg-berbere-50 text-berbere-600"
+                      : "border-coffee-200 bg-cream-200 text-coffee-500"
                   }`}
                 >
                   <span
-                    className={`w-1.5 h-1.5 rounded-full ${
+                    className={`h-1.5 w-1.5 rounded-full ${
                       activeShift
-                        ? 'bg-emerald-500'
-                        : 'bg-slate-400'
+                        ? "bg-berbere-500"
+                        : "bg-coffee-400"
                     }`}
                   />
 
                   {activeShift
                     ? t(
-                        'Shift Open',
-                        'ፈረቃ ክፍት',
+                        "Shift Open",
+                        "ፈረቃ ክፍት",
                       )
                     : t(
-                        'Shift Closed',
-                        'ፈረቃ ተዘግቷል',
+                        "Shift Closed",
+                        "ፈረቃ ተዘግቷል",
                       )}
                 </span>
               </div>
 
-              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-coffee-500">
 
                 <span className="flex items-center gap-1.5">
-                  <CalendarDays className="w-3.5 h-3.5" />
+                  <CalendarDays className="h-3.5 w-3.5" />
                   {reportDate}
                 </span>
 
                 {lastUpdated && (
-                  <span className="hidden sm:flex items-center gap-1">
-                    <Clock3 className="w-3 h-3" />
+                  <span className="hidden items-center gap-1 sm:flex">
+                    <Clock3 className="h-3 w-3" />
 
                     {lastUpdated.toLocaleTimeString(
-                      isAm
-                        ? 'am-ET'
-                        : 'en-ET',
+                      isAm ? "am-ET" : "en-ET",
                     )}
                   </span>
                 )}
@@ -777,63 +642,57 @@ export default function DailyReportPage() {
           <div className="flex items-center gap-2">
 
             <div
-              className={`hidden sm:flex items-center gap-2 px-3 h-10 rounded-xl border text-[10px] font-bold ${
+              className={`hidden h-10 items-center gap-2 rounded-xl border px-3 text-[10px] font-bold sm:flex ${
                 remoteAvailable
-                  ? 'bg-white border-emerald-200 text-emerald-700'
-                  : 'bg-amber-50 border-amber-200 text-amber-700'
+                  ? "border-berbere-200 bg-berbere-50 text-berbere-600"
+                  : "border-gold-200 bg-gold-50 text-gold-700"
               }`}
             >
               {remoteAvailable ? (
-                <Wifi className="w-3.5 h-3.5" />
+                <Wifi className="h-3.5 w-3.5" />
               ) : (
-                <WifiOff className="w-3.5 h-3.5" />
+                <WifiOff className="h-3.5 w-3.5" />
               )}
 
               {remoteAvailable
                 ? t(
-                    'Remote connected',
-                    'Remote ተገናኝቷል',
+                    "Remote connected",
+                    "Remote ተገናኝቷል",
                   )
                 : t(
-                    'Remote unavailable',
-                    'Remote አልተገናኘም',
+                    "Remote unavailable",
+                    "Remote አልተገናኘም",
                   )}
             </div>
 
             <button
               type="button"
-              onClick={() =>
-                void loadReport(true)
-              }
+              onClick={() => void loadReport(true)}
               disabled={refreshing}
-              className="h-10 px-3 rounded-xl bg-white border border-[#2B1E1A]/10 shadow-sm text-[#5A3E38] text-xs font-bold flex items-center gap-2 hover:bg-[#FAF8F2] disabled:opacity-60"
+              className="flex h-10 items-center gap-2 rounded-xl border border-coffee-700/10 bg-white px-3 text-xs font-bold text-coffee-500 shadow-sm transition hover:bg-cream-50 disabled:opacity-60"
             >
               <RefreshCw
-                className={`w-3.5 h-3.5 ${
-                  refreshing
-                    ? 'animate-spin'
-                    : ''
+                className={`h-3.5 w-3.5 ${
+                  refreshing ? "animate-spin" : ""
                 }`}
               />
 
               {t(
-                'Refresh',
-                'አድስ',
+                "Refresh",
+                "አድስ",
               )}
             </button>
 
             <button
               type="button"
-              onClick={() =>
-                void shareReport()
-              }
-              className="h-10 px-3 rounded-xl bg-[#8B2635] text-white text-xs font-bold flex items-center gap-2 shadow-sm hover:bg-[#76202E] active:scale-95 transition"
+              onClick={() => void shareReport()}
+              className="flex h-10 items-center gap-2 rounded-xl bg-berbere-500 px-3 text-xs font-bold text-white shadow-sm transition hover:bg-berbere-600 active:scale-95"
             >
-              <Share2 className="w-3.5 h-3.5" />
+              <Share2 className="h-3.5 w-3.5" />
 
               {t(
-                'Share',
-                'አጋራ',
+                "Share",
+                "አጋራ",
               )}
             </button>
           </div>
@@ -843,161 +702,147 @@ export default function DailyReportPage() {
             KPI CARDS
         ====================================================== */}
 
-        <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
 
           {/* TOTAL RECEIVED */}
 
-          <div className="rounded-2xl bg-[#8B2635] p-4 shadow-sm">
+          <div className="rounded-2xl bg-berbere-500 p-4 shadow-sm">
             <div className="flex items-start justify-between">
 
               <div>
-                <p className="text-[9px] uppercase tracking-[0.14em] font-black text-white/60">
+                <p className="text-[9px] font-black uppercase tracking-[0.14em] text-white/60">
                   {t(
-                    'Total Received',
-                    'ጠቅላላ የተቀበለ',
+                    "Total Received",
+                    "ጠቅላላ የተቀበለ",
                   )}
                 </p>
 
-                <p className="mt-2 text-xl sm:text-2xl font-black text-white font-mono">
-                  {formatMoney(
-                    totalReceived,
-                  )}
+                <p className="mt-2 font-mono text-xl font-black text-white sm:text-2xl">
+                  {formatMoney(totalReceived)}
                 </p>
               </div>
 
-              <div className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center">
-                <CircleDollarSign className="w-4 h-4 text-white" />
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/10">
+                <CircleDollarSign className="h-4 w-4 text-white" />
               </div>
             </div>
 
-            <p className="mt-2 text-[9px] text-white/55">
-              {formatMoney(
-                salesTotal,
-              )}{' '}
+            <p className="mt-2 text-[9px] text-white/60">
+              {formatMoney(salesTotal)}{" "}
               {t(
-                'sales + tips',
-                'ሽያጭ + ጉርሻ',
+                "sales + tips",
+                "ሽያጭ + ጉርሻ",
               )}
             </p>
           </div>
 
           {/* EXPENSES */}
 
-          <div className="rounded-2xl bg-white border border-[#2B1E1A]/10 p-4 shadow-sm">
+          <div className="rounded-2xl border border-coffee-700/10 bg-white p-4 shadow-sm">
             <div className="flex items-start justify-between">
 
               <div>
-                <p className="text-[9px] uppercase tracking-[0.14em] font-black text-slate-400">
+                <p className="text-[9px] font-black uppercase tracking-[0.14em] text-coffee-400">
                   {t(
-                    'Expenses',
-                    'ወጪ',
+                    "Expenses",
+                    "ወጪ",
                   )}
                 </p>
 
-                <p className="mt-2 text-xl sm:text-2xl font-black text-[#2B1E1A] font-mono">
-                  {formatMoney(
-                    expenseTotal,
-                  )}
+                <p className="mt-2 font-mono text-xl font-black text-coffee-700 sm:text-2xl">
+                  {formatMoney(expenseTotal)}
                 </p>
               </div>
 
-              <div className="w-8 h-8 rounded-xl bg-rose-50 flex items-center justify-center">
-                <ArrowDownRight className="w-4 h-4 text-rose-600" />
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gold-50">
+                <ArrowDownRight className="h-4 w-4 text-gold-600" />
               </div>
             </div>
 
-            <p className="mt-2 text-[9px] text-slate-400">
-              {formatNumber(
-                expenseTransactionCount,
-              )}{' '}
+            <p className="mt-2 text-[9px] text-coffee-400">
+              {formatNumber(expenseTransactionCount)}{" "}
               {t(
-                'expense records',
-                'የወጪ መዝገቦች',
+                "expense records",
+                "የወጪ መዝገቦች",
               )}
             </p>
           </div>
 
           {/* NET PROFIT */}
 
-          <div className="rounded-2xl bg-white border border-[#2B1E1A]/10 p-4 shadow-sm">
+          <div className="rounded-2xl border border-coffee-700/10 bg-white p-4 shadow-sm">
             <div className="flex items-start justify-between">
 
               <div>
-                <p className="text-[9px] uppercase tracking-[0.14em] font-black text-slate-400">
+                <p className="text-[9px] font-black uppercase tracking-[0.14em] text-coffee-400">
                   {t(
-                    'Net Profit',
-                    'የተጣራ ትርፍ',
+                    "Net Profit",
+                    "የተጣራ ትርፍ",
                   )}
                 </p>
 
                 <p
-                  className={`mt-2 text-xl sm:text-2xl font-black font-mono ${
+                  className={`mt-2 font-mono text-xl font-black sm:text-2xl ${
                     netProfit >= 0
-                      ? 'text-emerald-700'
-                      : 'text-rose-600'
+                      ? "text-berbere-600"
+                      : "text-gold-700"
                   }`}
                 >
-                  {formatMoney(
-                    netProfit,
-                  )}
+                  {formatMoney(netProfit)}
                 </p>
               </div>
 
               <div
-                className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+                className={`flex h-8 w-8 items-center justify-center rounded-xl ${
                   netProfit >= 0
-                    ? 'bg-emerald-50'
-                    : 'bg-rose-50'
+                    ? "bg-berbere-50"
+                    : "bg-gold-50"
                 }`}
               >
                 {netProfit >= 0 ? (
-                  <ArrowUpRight className="w-4 h-4 text-emerald-600" />
+                  <ArrowUpRight className="h-4 w-4 text-berbere-600" />
                 ) : (
-                  <ArrowDownRight className="w-4 h-4 text-rose-600" />
+                  <ArrowDownRight className="h-4 w-4 text-gold-700" />
                 )}
               </div>
             </div>
 
-            <p className="mt-2 text-[9px] text-slate-400">
+            <p className="mt-2 text-[9px] text-coffee-400">
               {t(
-                'After expenses',
-                'ከወጪ በኋላ',
+                "After expenses",
+                "ከወጪ በኋላ",
               )}
             </p>
           </div>
 
           {/* ORDERS */}
 
-          <div className="rounded-2xl bg-white border border-[#2B1E1A]/10 p-4 shadow-sm">
+          <div className="rounded-2xl border border-coffee-700/10 bg-white p-4 shadow-sm">
             <div className="flex items-start justify-between">
 
               <div>
-                <p className="text-[9px] uppercase tracking-[0.14em] font-black text-slate-400">
+                <p className="text-[9px] font-black uppercase tracking-[0.14em] text-coffee-400">
                   {t(
-                    'Orders',
-                    'ትዕዛዞች',
+                    "Orders",
+                    "ትዕዛዞች",
                   )}
                 </p>
 
-                <p className="mt-2 text-xl sm:text-2xl font-black text-[#2B1E1A] font-mono">
-                  {formatNumber(
-                    orderCount,
-                  )}
+                <p className="mt-2 font-mono text-xl font-black text-coffee-700 sm:text-2xl">
+                  {formatNumber(orderCount)}
                 </p>
               </div>
 
-              <div className="w-8 h-8 rounded-xl bg-amber-50 flex items-center justify-center">
-                <ShoppingBag className="w-4 h-4 text-amber-700" />
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gold-50">
+                <ShoppingBag className="h-4 w-4 text-gold-700" />
               </div>
             </div>
 
-            <p className="mt-2 text-[9px] text-slate-400">
-              {formatNumber(
-                itemsSold,
-              )}{' '}
+            <p className="mt-2 text-[9px] text-coffee-400">
+              {formatNumber(itemsSold)}{" "}
               {t(
-                'items sold',
-                'እቃዎች ተሸጡ',
+                "items sold",
+                "እቃዎች ተሸጡ",
               )}
             </p>
           </div>
@@ -1007,51 +852,47 @@ export default function DailyReportPage() {
             REPORT DATA / SYNC
         ====================================================== */}
 
-        <section className="rounded-2xl bg-white border border-[#2B1E1A]/10 shadow-sm p-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <section className="rounded-2xl border border-coffee-700/10 bg-white p-4 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 
             <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">
+              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-coffee-400">
                 {t(
-                  'Report Data',
-                  'የሪፖርት መረጃ',
+                  "Report Data",
+                  "የሪፖርት መረጃ",
                 )}
               </p>
 
-              <p className="mt-1 text-xs font-bold text-[#2B1E1A]">
+              <p className="mt-1 text-xs font-bold text-coffee-700">
                 {t(
-                  'Remote records are combined with genuinely local-only offline transactions.',
-                  'Remote መረጃ ከበእውነት local-only offline ግብይቶች ጋር ተጣምሯል።',
+                  "Remote records are combined with genuinely local-only offline transactions.",
+                  "Remote መረጃ ከበእውነት local-only offline ግብይቶች ጋር ተጣምሯል።",
                 )}
               </p>
             </div>
 
             <div className="flex flex-wrap gap-2">
 
-              <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 border border-emerald-100 px-2.5 py-1.5 text-[9px] font-bold text-emerald-700">
-                <Wifi className="w-3 h-3" />
+              <span className="inline-flex items-center gap-1.5 rounded-lg border border-berbere-100 bg-berbere-50 px-2.5 py-1.5 text-[9px] font-bold text-berbere-600">
+                <Wifi className="h-3 w-3" />
 
-                {formatNumber(
-                  remoteSalesCount,
-                )}{' '}
+                {formatNumber(remoteSalesCount)}{" "}
 
                 {t(
-                  'remote sales',
-                  'remote ሽያጭ',
+                  "remote sales",
+                  "remote ሽያጭ",
                 )}
               </span>
 
               {localOnlySalesCount > 0 && (
-                <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 border border-amber-100 px-2.5 py-1.5 text-[9px] font-bold text-amber-700">
-                  <WifiOff className="w-3 h-3" />
+                <span className="inline-flex items-center gap-1.5 rounded-lg border border-gold-100 bg-gold-50 px-2.5 py-1.5 text-[9px] font-bold text-gold-700">
+                  <WifiOff className="h-3 w-3" />
 
-                  {formatNumber(
-                    localOnlySalesCount,
-                  )}{' '}
+                  {formatNumber(localOnlySalesCount)}{" "}
 
                   {t(
-                    'offline only',
-                    'offline ብቻ',
+                    "offline only",
+                    "offline ብቻ",
                   )}
                 </span>
               )}
@@ -1063,130 +904,118 @@ export default function DailyReportPage() {
             FINANCIAL + EXPENSE
         ====================================================== */}
 
-        <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
 
           {/* FINANCIAL OVERVIEW */}
 
-          <section className="bg-white rounded-2xl border border-[#2B1E1A]/10 shadow-sm overflow-hidden">
+          <section className="overflow-hidden rounded-2xl border border-coffee-700/10 bg-white shadow-sm">
 
-            <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-[#8B2635]" />
+            <div className="flex items-center gap-2 border-b border-cream-200 px-4 py-3">
+              <TrendingUp className="h-4 w-4 text-berbere-500" />
 
               <div>
-                <h2 className="text-sm font-black text-[#2B1E1A]">
+                <h2 className="text-sm font-black text-coffee-700">
                   {t(
-                    'Financial Overview',
-                    'የገንዘብ አጠቃላይ እይታ',
+                    "Financial Overview",
+                    "የገንዘብ አጠቃላይ እይታ",
                   )}
                 </h2>
 
-                <p className="text-[10px] text-slate-400">
+                <p className="text-[10px] text-coffee-400">
                   {t(
-                    'Where the business stands today',
-                    'የንግዱ የዛሬ ሁኔታ',
+                    "Where the business stands today",
+                    "የንግዱ የዛሬ ሁኔታ",
                   )}
                 </p>
               </div>
             </div>
 
-            <div className="p-4 space-y-3">
+            <div className="space-y-3 p-4">
 
               <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-500">
+                <span className="text-xs text-coffee-500">
                   {t(
-                    'Sales',
-                    'ሽያጭ',
+                    "Sales",
+                    "ሽያጭ",
                   )}
                 </span>
 
-                <span className="font-mono text-sm font-black text-[#2B1E1A]">
-                  {formatMoney(
-                    salesTotal,
-                  )}
+                <span className="font-mono text-sm font-black text-coffee-700">
+                  {formatMoney(salesTotal)}
                 </span>
               </div>
 
               <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-500">
+                <span className="text-xs text-coffee-500">
                   {t(
-                    'Tips',
-                    'ጉርሻ',
+                    "Tips",
+                    "ጉርሻ",
                   )}
                 </span>
 
-                <span className="font-mono text-sm font-bold text-[#2B1E1A]">
-                  {formatMoney(
-                    tips,
-                  )}
+                <span className="font-mono text-sm font-bold text-coffee-700">
+                  {formatMoney(tips)}
                 </span>
               </div>
 
-              <div className="h-px bg-slate-100" />
+              <div className="h-px bg-cream-200" />
 
               <div className="flex items-center justify-between">
-                <span className="text-xs font-black text-[#2B1E1A]">
+                <span className="text-xs font-black text-coffee-700">
                   {t(
-                    'Total Received',
-                    'ጠቅላላ የተቀበለ',
+                    "Total Received",
+                    "ጠቅላላ የተቀበለ",
                   )}
                 </span>
 
-                <span className="font-mono text-base font-black text-[#8B2635]">
-                  {formatMoney(
-                    totalReceived,
-                  )}
+                <span className="font-mono text-base font-black text-berbere-500">
+                  {formatMoney(totalReceived)}
                 </span>
               </div>
 
               <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-500">
+                <span className="text-xs text-coffee-500">
                   {t(
-                    'Expenses',
-                    'ወጪ',
+                    "Expenses",
+                    "ወጪ",
                   )}
                 </span>
 
-                <span className="font-mono text-sm font-black text-rose-600">
-                  - {formatMoney(
-                    expenseTotal,
-                  )}
+                <span className="font-mono text-sm font-black text-gold-700">
+                  - {formatMoney(expenseTotal)}
                 </span>
               </div>
 
-              <div className="rounded-xl bg-[#F7F4EB] px-3.5 py-3 flex items-center justify-between">
-                <span className="text-xs font-black text-[#2B1E1A]">
+              <div className="flex items-center justify-between rounded-xl bg-cream-100 px-3.5 py-3">
+                <span className="text-xs font-black text-coffee-700">
                   {t(
-                    'Net Profit',
-                    'የተጣራ ትርፍ',
+                    "Net Profit",
+                    "የተጣራ ትርፍ",
                   )}
                 </span>
 
                 <span
                   className={`font-mono text-base font-black ${
                     netProfit >= 0
-                      ? 'text-emerald-700'
-                      : 'text-rose-600'
+                      ? "text-berbere-600"
+                      : "text-gold-700"
                   }`}
                 >
-                  {formatMoney(
-                    netProfit,
-                  )}
+                  {formatMoney(netProfit)}
                 </span>
               </div>
 
               {grossProfit !== 0 && (
                 <div className="flex items-center justify-between pt-1">
-                  <span className="text-[10px] text-slate-400">
+                  <span className="text-[10px] text-coffee-400">
                     {t(
-                      'Gross Profit',
-                      'ጠቅላላ ትርፍ',
+                      "Gross Profit",
+                      "ጠቅላላ ትርፍ",
                     )}
                   </span>
 
-                  <span className="font-mono text-xs font-bold text-emerald-700">
-                    {formatMoney(
-                      grossProfit,
-                    )}
+                  <span className="font-mono text-xs font-bold text-berbere-600">
+                    {formatMoney(grossProfit)}
                   </span>
                 </div>
               )}
@@ -1195,23 +1024,23 @@ export default function DailyReportPage() {
 
           {/* EXPENSES */}
 
-          <section className="bg-white rounded-2xl border border-[#2B1E1A]/10 shadow-sm overflow-hidden">
+          <section className="overflow-hidden rounded-2xl border border-coffee-700/10 bg-white shadow-sm">
 
-            <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
-              <ArrowDownRight className="w-4 h-4 text-rose-600" />
+            <div className="flex items-center gap-2 border-b border-cream-200 px-4 py-3">
+              <ArrowDownRight className="h-4 w-4 text-gold-600" />
 
               <div>
-                <h2 className="text-sm font-black text-[#2B1E1A]">
+                <h2 className="text-sm font-black text-coffee-700">
                   {t(
-                    'Today’s Expenses',
-                    'የዛሬ ወጪዎች',
+                    "Today’s Expenses",
+                    "የዛሬ ወጪዎች",
                   )}
                 </h2>
 
-                <p className="text-[10px] text-slate-400">
+                <p className="text-[10px] text-coffee-400">
                   {t(
-                    'Money spent by expense category',
-                    'በወጪ ምድብ የወጣ ገንዘብ',
+                    "Money spent by expense category",
+                    "በወጪ ምድብ የወጣ ገንዘብ",
                   )}
                 </p>
               </div>
@@ -1221,81 +1050,65 @@ export default function DailyReportPage() {
 
               {expenseCategories.length === 0 ? (
                 <div className="py-8 text-center">
-                  <p className="text-xs font-bold text-slate-400">
+                  <p className="text-xs font-bold text-coffee-400">
                     {t(
-                      'No expenses recorded today.',
-                      'ዛሬ ምንም ወጪ አልተመዘገበም።',
+                      "No expenses recorded today.",
+                      "ዛሬ ምንም ወጪ አልተመዘገበም።",
                     )}
                   </p>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {expenseCategories.map(
-                    (item) => {
-                      const amount =
-                        numberValue(
-                          item.amount,
-                        )
+                  {expenseCategories.map((item) => {
+                    const amount = numberValue(
+                      item.amount,
+                    );
 
-                      const percentage =
-                        expenseTotal > 0
-                          ? (amount /
-                              expenseTotal) *
-                            100
-                          : 0
+                    const percentage =
+                      expenseTotal > 0
+                        ? (amount / expenseTotal) * 100
+                        : 0;
 
-                      return (
-                        <div
-                          key={
-                            item.category
-                          }
-                        >
-                          <div className="flex items-center justify-between mb-1">
+                    return (
+                      <div key={item.category}>
+                        <div className="mb-1 flex items-center justify-between">
+                          <span className="text-xs font-bold text-coffee-700">
+                            {item.category}
+                          </span>
 
-                            <span className="text-xs font-bold text-[#2B1E1A]">
-                              {
-                                item.category
-                              }
-                            </span>
-
-                            <span className="font-mono text-xs font-black text-rose-600">
-                              {formatMoney(
-                                amount,
-                              )}
-                            </span>
-                          </div>
-
-                          <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
-                            <div
-                              className="h-full rounded-full bg-rose-400"
-                              style={{
-                                width: `${Math.min(
-                                  percentage,
-                                  100,
-                                )}%`,
-                              }}
-                            />
-                          </div>
+                          <span className="font-mono text-xs font-black text-gold-700">
+                            {formatMoney(amount)}
+                          </span>
                         </div>
-                      )
-                    },
-                  )}
+
+                        <div className="h-1.5 overflow-hidden rounded-full bg-cream-200">
+                          <div
+                            className="h-full rounded-full bg-gold-400"
+                            style={{
+                              width: `${Math.min(
+                                percentage,
+                                100,
+                              )}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
               {expenseTotal > 0 && (
-                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                  <span className="text-xs font-black">
+                <div className="mt-4 flex items-center justify-between border-t border-cream-200 pt-3">
+                  <span className="text-xs font-black text-coffee-700">
                     {t(
-                      'Total Expenses',
-                      'ጠቅላላ ወጪ',
+                      "Total Expenses",
+                      "ጠቅላላ ወጪ",
                     )}
                   </span>
 
-                  <span className="font-mono font-black text-rose-600">
-                    {formatMoney(
-                      expenseTotal,
-                    )}
+                  <span className="font-mono font-black text-gold-700">
+                    {formatMoney(expenseTotal)}
                   </span>
                 </div>
               )}
@@ -1307,66 +1120,59 @@ export default function DailyReportPage() {
             PAYMENTS
         ====================================================== */}
 
-        <section className="bg-white rounded-2xl border border-[#2B1E1A]/10 shadow-sm overflow-hidden">
+        <section className="overflow-hidden rounded-2xl border border-coffee-700/10 bg-white shadow-sm">
 
-          <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
-            <Wallet className="w-4 h-4 text-[#8B2635]" />
+          <div className="flex items-center gap-2 border-b border-cream-200 px-4 py-3">
+            <Wallet className="h-4 w-4 text-berbere-500" />
 
             <div>
-              <h2 className="text-sm font-black text-[#2B1E1A]">
+              <h2 className="text-sm font-black text-coffee-700">
                 {t(
-                  'Payment Summary',
-                  'የክፍያ ማጠቃለያ',
+                  "Payment Summary",
+                  "የክፍያ ማጠቃለያ",
                 )}
               </h2>
 
-              <p className="text-[10px] text-slate-400">
+              <p className="text-[10px] text-coffee-400">
                 {t(
-                  'How customers paid today',
-                  'ደንበኞች ዛሬ እንዴት እንደከፈሉ',
+                  "How customers paid today",
+                  "ደንበኞች ዛሬ እንዴት እንደከፈሉ",
                 )}
               </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-5 divide-x divide-slate-100">
+          <div className="grid grid-cols-2 divide-x divide-cream-200 sm:grid-cols-5">
 
-            {paymentSummary.map(
-              (item) => (
-                <div
-                  key={item.label}
-                  className="p-4"
-                >
-                  <p className="text-[9px] font-bold text-slate-400">
-                    {t(
-                      item.label,
-                      item.am,
-                    )}
-                  </p>
+            {paymentSummary.map((item) => (
+              <div
+                key={item.label}
+                className="p-4"
+              >
+                <p className="text-[9px] font-bold text-coffee-400">
+                  {t(
+                    item.label,
+                    item.am,
+                  )}
+                </p>
 
-                  <p className="mt-1 font-mono text-sm font-black text-[#2B1E1A]">
-                    {formatMoney(
-                      item.amount,
-                    )}
-                  </p>
-                </div>
-              ),
-            )}
+                <p className="mt-1 font-mono text-sm font-black text-coffee-700">
+                  {formatMoney(item.amount)}
+                </p>
+              </div>
+            ))}
           </div>
 
-          <div className="px-4 py-3 bg-[#F7F4EB]/60 border-t border-slate-100 flex items-center justify-between">
-
-            <span className="text-xs font-black">
+          <div className="flex items-center justify-between border-t border-cream-200 bg-cream-100/70 px-4 py-3">
+            <span className="text-xs font-black text-coffee-700">
               {t(
-                'Payment Total',
-                'ጠቅላላ ክፍያ',
+                "Payment Total",
+                "ጠቅላላ ክፍያ",
               )}
             </span>
 
-            <span className="font-mono font-black text-[#8B2635]">
-              {formatMoney(
-                paymentTotal,
-              )}
+            <span className="font-mono font-black text-berbere-500">
+              {formatMoney(paymentTotal)}
             </span>
           </div>
         </section>
@@ -1375,23 +1181,23 @@ export default function DailyReportPage() {
             PRODUCTS SOLD
         ====================================================== */}
 
-        <section className="bg-white rounded-2xl border border-[#2B1E1A]/10 shadow-sm overflow-hidden">
+        <section className="overflow-hidden rounded-2xl border border-coffee-700/10 bg-white shadow-sm">
 
-          <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
-            <ShoppingBag className="w-4 h-4 text-[#8B2635]" />
+          <div className="flex items-center gap-2 border-b border-cream-200 px-4 py-3">
+            <ShoppingBag className="h-4 w-4 text-berbere-500" />
 
             <div>
-              <h2 className="text-sm font-black text-[#2B1E1A]">
+              <h2 className="text-sm font-black text-coffee-700">
                 {t(
-                  'Products Sold Today',
-                  'ዛሬ የተሸጡ ምርቶች',
+                  "Products Sold Today",
+                  "ዛሬ የተሸጡ ምርቶች",
                 )}
               </h2>
 
-              <p className="text-[10px] text-slate-400">
+              <p className="text-[10px] text-coffee-400">
                 {t(
-                  'Best-selling products by quantity and revenue',
-                  'በብዛትና በገቢ የተሸጡ ምርቶች',
+                  "Best-selling products by quantity and revenue",
+                  "በብዛትና በገቢ የተሸጡ ምርቶች",
                 )}
               </p>
             </div>
@@ -1400,31 +1206,31 @@ export default function DailyReportPage() {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[560px] text-sm">
 
-              <thead className="bg-slate-50">
+              <thead className="bg-cream-50">
                 <tr>
 
-                  <th className="px-4 py-2.5 text-left text-[9px] uppercase tracking-wider text-slate-400 font-black">
+                  <th className="px-4 py-2.5 text-left text-[9px] font-black uppercase tracking-wider text-coffee-400">
                     #
                   </th>
 
-                  <th className="px-4 py-2.5 text-left text-[9px] uppercase tracking-wider text-slate-400 font-black">
+                  <th className="px-4 py-2.5 text-left text-[9px] font-black uppercase tracking-wider text-coffee-400">
                     {t(
-                      'Product',
-                      'ምርት',
+                      "Product",
+                      "ምርት",
                     )}
                   </th>
 
-                  <th className="px-4 py-2.5 text-right text-[9px] uppercase tracking-wider text-slate-400 font-black">
+                  <th className="px-4 py-2.5 text-right text-[9px] font-black uppercase tracking-wider text-coffee-400">
                     {t(
-                      'Qty',
-                      'ብዛት',
+                      "Qty",
+                      "ብዛት",
                     )}
                   </th>
 
-                  <th className="px-4 py-2.5 text-right text-[9px] uppercase tracking-wider text-slate-400 font-black">
+                  <th className="px-4 py-2.5 text-right text-[9px] font-black uppercase tracking-wider text-coffee-400">
                     {t(
-                      'Revenue',
-                      'ገቢ',
+                      "Revenue",
+                      "ገቢ",
                     )}
                   </th>
                 </tr>
@@ -1436,11 +1242,11 @@ export default function DailyReportPage() {
                   <tr>
                     <td
                       colSpan={4}
-                      className="px-4 py-10 text-center text-xs text-slate-400"
+                      className="px-4 py-10 text-center text-xs text-coffee-400"
                     >
                       {t(
-                        'No product sales recorded today.',
-                        'ዛሬ ምንም የምርት ሽያጭ አልተመዘገበም።',
+                        "No product sales recorded today.",
+                        "ዛሬ ምንም የምርት ሽያጭ አልተመዘገበም።",
                       )}
                     </td>
                   </tr>
@@ -1452,24 +1258,24 @@ export default function DailyReportPage() {
                           product.id ??
                           `${product.name}-${index}`
                         }
-                        className="border-t border-slate-100 hover:bg-slate-50/70"
+                        className="border-t border-cream-200 transition hover:bg-cream-50"
                       >
 
-                        <td className="px-4 py-3 text-xs text-slate-400 font-mono">
+                        <td className="px-4 py-3 font-mono text-xs text-coffee-400">
                           {index + 1}
                         </td>
 
                         <td className="px-4 py-3">
-                          <p className="font-bold text-[#2B1E1A]">
+                          <p className="font-bold text-coffee-700">
                             {product.name ||
                               t(
-                                'Unknown Product',
-                                'ያልታወቀ ምርት',
+                                "Unknown Product",
+                                "ያልታወቀ ምርት",
                               )}
                           </p>
                         </td>
 
-                        <td className="px-4 py-3 text-right font-mono font-bold text-[#5A3E38]">
+                        <td className="px-4 py-3 text-right font-mono font-bold text-coffee-500">
                           {formatNumber(
                             numberValue(
                               product.quantity,
@@ -1477,7 +1283,7 @@ export default function DailyReportPage() {
                           )}
                         </td>
 
-                        <td className="px-4 py-3 text-right font-mono font-black text-emerald-700">
+                        <td className="px-4 py-3 text-right font-mono font-black text-berbere-600">
                           {formatMoney(
                             numberValue(
                               product.revenue,
@@ -1497,23 +1303,23 @@ export default function DailyReportPage() {
             CATEGORY REPORT
         ====================================================== */}
 
-        <section className="bg-white rounded-2xl border border-[#2B1E1A]/10 shadow-sm overflow-hidden">
+        <section className="overflow-hidden rounded-2xl border border-coffee-700/10 bg-white shadow-sm">
 
-          <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
-            <BarChart3 className="w-4 h-4 text-[#8B2635]" />
+          <div className="flex items-center gap-2 border-b border-cream-200 px-4 py-3">
+            <BarChart3 className="h-4 w-4 text-berbere-500" />
 
             <div>
-              <h2 className="text-sm font-black text-[#2B1E1A]">
+              <h2 className="text-sm font-black text-coffee-700">
                 {t(
-                  'Sales by Category',
-                  'ሽያጭ በምድብ',
+                  "Sales by Category",
+                  "ሽያጭ በምድብ",
                 )}
               </h2>
 
-              <p className="text-[10px] text-slate-400">
+              <p className="text-[10px] text-coffee-400">
                 {t(
-                  'Which category generated the most sales',
-                  'የትኛው ምድብ ብዙ ሽያጭ እንዳመጣ',
+                  "Which category generated the most sales",
+                  "የትኛው ምድብ ብዙ ሽያጭ እንዳመጣ",
                 )}
               </p>
             </div>
@@ -1522,10 +1328,10 @@ export default function DailyReportPage() {
           <div className="p-4">
 
             {categoryReport.length === 0 ? (
-              <div className="py-8 text-center text-xs text-slate-400">
+              <div className="py-8 text-center text-xs text-coffee-400">
                 {t(
-                  'No category data available.',
-                  'የምድብ መረጃ የለም።',
+                  "No category data available.",
+                  "የምድብ መረጃ የለም።",
                 )}
               </div>
             ) : (
@@ -1536,19 +1342,18 @@ export default function DailyReportPage() {
                     const revenue =
                       numberValue(
                         category.revenue,
-                      )
+                      );
 
                     const quantity =
                       numberValue(
                         category.quantity,
-                      )
+                      );
 
                     const percentage =
                       salesTotal > 0
-                        ? (revenue /
-                            salesTotal) *
+                        ? (revenue / salesTotal) *
                           100
-                        : 0
+                        : 0;
 
                     return (
                       <div
@@ -1558,34 +1363,32 @@ export default function DailyReportPage() {
                         }
                       >
 
-                        <div className="flex items-center justify-between mb-1">
+                        <div className="mb-1 flex items-center justify-between">
 
                           <div>
-                            <p className="text-xs font-black text-[#2B1E1A]">
-                              {
-                                category.name
-                              }
+                            <p className="text-xs font-black text-coffee-700">
+                              {category.name}
                             </p>
 
-                            <p className="text-[9px] text-slate-400">
+                            <p className="text-[9px] text-coffee-400">
                               {formatNumber(
                                 quantity,
-                              )}{' '}
+                              )}{" "}
                               {t(
-                                'items',
-                                'እቃዎች',
+                                "items",
+                                "እቃዎች",
                               )}
                             </p>
                           </div>
 
                           <div className="text-right">
-                            <p className="text-xs font-black font-mono text-emerald-700">
+                            <p className="font-mono text-xs font-black text-berbere-600">
                               {formatMoney(
                                 revenue,
                               )}
                             </p>
 
-                            <p className="text-[9px] text-slate-400">
+                            <p className="text-[9px] text-coffee-400">
                               {Math.round(
                                 percentage,
                               )}
@@ -1594,9 +1397,9 @@ export default function DailyReportPage() {
                           </div>
                         </div>
 
-                        <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                        <div className="h-2 overflow-hidden rounded-full bg-cream-200">
                           <div
-                            className="h-full bg-[#8B2635] rounded-full"
+                            className="h-full rounded-full bg-berbere-500"
                             style={{
                               width: `${Math.min(
                                 percentage,
@@ -1606,7 +1409,7 @@ export default function DailyReportPage() {
                           />
                         </div>
                       </div>
-                    )
+                    );
                   },
                 )}
               </div>
@@ -1618,134 +1421,122 @@ export default function DailyReportPage() {
             SHIFT & CASH
         ====================================================== */}
 
-        <section className="bg-white rounded-2xl border border-[#2B1E1A]/10 shadow-sm overflow-hidden">
+        <section className="overflow-hidden rounded-2xl border border-coffee-700/10 bg-white shadow-sm">
 
-          <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-[#8B2635]" />
+          <div className="flex items-center gap-2 border-b border-cream-200 px-4 py-3">
+            <CheckCircle2 className="h-4 w-4 text-berbere-500" />
 
             <div>
-              <h2 className="text-sm font-black text-[#2B1E1A]">
+              <h2 className="text-sm font-black text-coffee-700">
                 {t(
-                  'Shift & Cash Check',
-                  'የፈረቃና የካሽ ማረጋገጫ',
+                  "Shift & Cash Check",
+                  "የፈረቃና የካሽ ማረጋገጫ",
                 )}
               </h2>
 
-              <p className="text-[10px] text-slate-400">
+              <p className="text-[10px] text-coffee-400">
                 {t(
-                  'Expected cash compared with counted cash',
-                  'መኖር ያለበት ካሽ ከተቆጠረው ካሽ ጋር',
+                  "Expected cash compared with counted cash",
+                  "መኖር ያለበት ካሽ ከተቆጠረው ካሽ ጋር",
                 )}
               </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-100">
+          <div className="grid grid-cols-1 divide-y divide-cream-200 sm:grid-cols-4 sm:divide-x sm:divide-y-0">
 
             <div className="p-4">
-              <p className="text-[9px] font-bold text-slate-400">
+              <p className="text-[9px] font-bold text-coffee-400">
                 {t(
-                  'Opening Cash',
-                  'የመነሻ ካሽ',
+                  "Opening Cash",
+                  "የመነሻ ካሽ",
                 )}
               </p>
 
-              <p className="mt-1 font-mono text-sm font-black text-[#2B1E1A]">
-                {formatMoney(
-                  openingCash,
-                )}
+              <p className="mt-1 font-mono text-sm font-black text-coffee-700">
+                {formatMoney(openingCash)}
               </p>
             </div>
 
             <div className="p-4">
-              <p className="text-[9px] font-bold text-slate-400">
+              <p className="text-[9px] font-bold text-coffee-400">
                 {t(
-                  'Cash Sales',
-                  'የካሽ ሽያጭ',
+                  "Cash Sales",
+                  "የካሽ ሽያጭ",
                 )}
               </p>
 
-              <p className="mt-1 font-mono text-sm font-black text-[#2B1E1A]">
-                {formatMoney(
-                  cashSales,
-                )}
+              <p className="mt-1 font-mono text-sm font-black text-coffee-700">
+                {formatMoney(cashSales)}
               </p>
             </div>
 
             <div className="p-4">
-              <p className="text-[9px] font-bold text-slate-400">
+              <p className="text-[9px] font-bold text-coffee-400">
                 {t(
-                  'Expected Cash',
-                  'መኖር ያለበት ካሽ',
+                  "Expected Cash",
+                  "መኖር ያለበት ካሽ",
                 )}
               </p>
 
-              <p className="mt-1 font-mono text-sm font-black text-[#8B2635]">
-                {formatMoney(
-                  expectedCash,
-                )}
+              <p className="mt-1 font-mono text-sm font-black text-berbere-500">
+                {formatMoney(expectedCash)}
               </p>
             </div>
 
             <div className="p-4">
-              <p className="text-[9px] font-bold text-slate-400">
+              <p className="text-[9px] font-bold text-coffee-400">
                 {t(
-                  'Actual Cash',
-                  'ትክክለኛ ካሽ',
+                  "Actual Cash",
+                  "ትክክለኛ ካሽ",
                 )}
               </p>
 
-              <p className="mt-1 font-mono text-sm font-black text-[#2B1E1A]">
+              <p className="mt-1 font-mono text-sm font-black text-coffee-700">
                 {actualCash == null
-                  ? '—'
-                  : formatMoney(
-                      actualCash,
-                    )}
+                  ? "—"
+                  : formatMoney(actualCash)}
               </p>
             </div>
           </div>
 
-          <div className="px-4 py-3 border-t border-slate-100 bg-[#F7F4EB]/50 flex items-center justify-between">
+          <div className="flex items-center justify-between border-t border-cream-200 bg-cream-100/60 px-4 py-3">
 
-            <span className="text-xs font-black">
+            <span className="text-xs font-black text-coffee-700">
               {t(
-                'Difference',
-                'ልዩነት',
+                "Difference",
+                "ልዩነት",
               )}
             </span>
 
             {cashDifference == null ? (
-              <span className="text-[10px] text-slate-400 font-bold">
+              <span className="text-[10px] font-bold text-coffee-400">
                 {t(
-                  'Cash has not been counted yet',
-                  'ካሽ ገና አልተቆጠረም',
+                  "Cash has not been counted yet",
+                  "ካሽ ገና አልተቆጠረም",
                 )}
               </span>
             ) : cashDifference === 0 ? (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-[10px] font-black text-emerald-700">
+              <span className="inline-flex items-center gap-1.5 rounded-lg border border-berbere-200 bg-berbere-50 px-2.5 py-1 text-[10px] font-black text-berbere-600">
 
-                <CheckCircle2 className="w-3.5 h-3.5" />
+                <CheckCircle2 className="h-3.5 w-3.5" />
 
                 {t(
-                  'Balanced',
-                  'ተመጣጣኝ',
+                  "Balanced",
+                  "ተመጣጣኝ",
                 )}
               </span>
             ) : (
               <span
                 className={`font-mono text-xs font-black ${
                   cashDifference < 0
-                    ? 'text-rose-600'
-                    : 'text-amber-600'
+                    ? "text-gold-700"
+                    : "text-berbere-600"
                 }`}
               >
-                {cashDifference > 0
-                  ? '+'
-                  : ''}
+                {cashDifference > 0 ? "+" : ""}
 
-                {formatMoney(
-                  cashDifference,
-                )}
+                {formatMoney(cashDifference)}
               </span>
             )}
           </div>
@@ -1755,30 +1546,30 @@ export default function DailyReportPage() {
             INVENTORY ALERT
         ====================================================== */}
 
-        <section className="bg-white rounded-2xl border border-[#2B1E1A]/10 shadow-sm overflow-hidden">
+        <section className="overflow-hidden rounded-2xl border border-coffee-700/10 bg-white shadow-sm">
 
-          <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
+          <div className="flex items-center gap-2 border-b border-cream-200 px-4 py-3">
 
-            <Package className="w-4 h-4 text-[#8B2635]" />
+            <Package className="h-4 w-4 text-berbere-500" />
 
             <div className="flex-1">
-              <h2 className="text-sm font-black text-[#2B1E1A]">
+              <h2 className="text-sm font-black text-coffee-700">
                 {t(
-                  'Inventory Alert',
-                  'የክምችት ማስጠንቀቂያ',
+                  "Inventory Alert",
+                  "የክምችት ማስጠንቀቂያ",
                 )}
               </h2>
 
-              <p className="text-[10px] text-slate-400">
+              <p className="text-[10px] text-coffee-400">
                 {t(
-                  'Products approaching or below their minimum stock',
-                  'ዝቅተኛ ክምችት ላይ ያሉ ምርቶች',
+                  "Products approaching or below their minimum stock",
+                  "ዝቅተኛ ክምችት ላይ ያሉ ምርቶች",
                 )}
               </p>
             </div>
 
             {lowStockCount > 0 && (
-              <AlertTriangle className="w-4 h-4 text-amber-500" />
+              <AlertTriangle className="h-4 w-4 text-gold-500" />
             )}
           </div>
 
@@ -1786,27 +1577,27 @@ export default function DailyReportPage() {
 
             <table className="w-full min-w-[460px] text-sm">
 
-              <thead className="bg-slate-50">
+              <thead className="bg-cream-50">
                 <tr>
 
-                  <th className="px-4 py-2.5 text-left text-[9px] uppercase tracking-wider text-slate-400 font-black">
+                  <th className="px-4 py-2.5 text-left text-[9px] font-black uppercase tracking-wider text-coffee-400">
                     {t(
-                      'Product',
-                      'ምርት',
+                      "Product",
+                      "ምርት",
                     )}
                   </th>
 
-                  <th className="px-4 py-2.5 text-right text-[9px] uppercase tracking-wider text-slate-400 font-black">
+                  <th className="px-4 py-2.5 text-right text-[9px] font-black uppercase tracking-wider text-coffee-400">
                     {t(
-                      'Current',
-                      'አሁን',
+                      "Current",
+                      "አሁን",
                     )}
                   </th>
 
-                  <th className="px-4 py-2.5 text-right text-[9px] uppercase tracking-wider text-slate-400 font-black">
+                  <th className="px-4 py-2.5 text-right text-[9px] font-black uppercase tracking-wider text-coffee-400">
                     {t(
-                      'Minimum',
-                      'ዝቅተኛ',
+                      "Minimum",
+                      "ዝቅተኛ",
                     )}
                   </th>
                 </tr>
@@ -1820,10 +1611,10 @@ export default function DailyReportPage() {
                       colSpan={3}
                       className="px-4 py-8 text-center"
                     >
-                      <span className="text-xs font-bold text-emerald-700">
+                      <span className="text-xs font-bold text-berbere-600">
                         {t(
-                          'Inventory levels look healthy.',
-                          'የክምችት መጠን ጥሩ ነው።',
+                          "Inventory levels look healthy.",
+                          "የክምችት መጠን ጥሩ ነው።",
                         )}
                       </span>
                     </td>
@@ -1838,53 +1629,46 @@ export default function DailyReportPage() {
                         /*
                          * LowStockSummary fields:
                          *
-                         * quantity  -> current stock
+                         * quantity   -> current stock
                          * alertLevel -> minimum/reorder level
                          */
 
-                        const stock =
-                          numberValue(
-                            product.quantity,
-                          )
+                        const stock = numberValue(
+                          product.quantity,
+                        );
 
                         const threshold =
                           numberValue(
                             product.alertLevel,
-                          )
+                          );
 
                         return (
                           <tr
-                            key={
-                              product.id
-                            }
-                            className="border-t border-slate-100"
+                            key={product.id}
+                            className="border-t border-cream-200"
                           >
 
-                            <td className="px-4 py-3 font-bold text-[#2B1E1A]">
-                              {
-                                product.name
-                              }
+                            <td className="px-4 py-3 font-bold text-coffee-700">
+                              {product.name}
                             </td>
 
                             <td
                               className={`px-4 py-3 text-right font-mono font-black ${
                                 stock <= 0
-                                  ? 'text-rose-600'
-                                  : 'text-amber-600'
+                                  ? "text-gold-700"
+                                  : "text-berbere-600"
                               }`}
                             >
-                              {formatNumber(
-                                stock,
-                              )}
+                              {formatNumber(stock)}
                             </td>
 
-                            <td className="px-4 py-3 text-right font-mono text-slate-500">
+                            <td className="px-4 py-3 text-right font-mono text-coffee-500">
                               {formatNumber(
                                 threshold,
                               )}
                             </td>
                           </tr>
-                        )
+                        );
                       },
                     )
                 )}
@@ -1894,30 +1678,28 @@ export default function DailyReportPage() {
 
           {(lowStockCount > 0 ||
             outOfStockCount > 0) && (
-            <div className="px-4 py-3 border-t border-slate-100 bg-amber-50/50 flex flex-wrap gap-3 text-[10px] font-bold">
+            <div className="flex flex-wrap gap-3 border-t border-cream-200 bg-gold-50/60 px-4 py-3 text-[10px] font-bold">
 
               {lowStockCount > 0 && (
-                <span className="text-amber-700">
-                  {formatNumber(
-                    lowStockCount,
-                  )}{' '}
+                <span className="text-gold-700">
+                  {formatNumber(lowStockCount)}{" "}
 
                   {t(
-                    'low stock',
-                    'ዝቅተኛ ክምችት',
+                    "low stock",
+                    "ዝቅተኛ ክምችት",
                   )}
                 </span>
               )}
 
               {outOfStockCount > 0 && (
-                <span className="text-rose-600">
+                <span className="text-berbere-600">
                   {formatNumber(
                     outOfStockCount,
-                  )}{' '}
+                  )}{" "}
 
                   {t(
-                    'out of stock',
-                    'ከክምችት ውጭ',
+                    "out of stock",
+                    "ከክምችት ውጭ",
                   )}
                 </span>
               )}
@@ -1931,29 +1713,27 @@ export default function DailyReportPage() {
 
         <footer className="px-4 pt-1 text-center">
 
-          <p className="text-[10px] leading-relaxed text-slate-400">
+          <p className="text-[10px] leading-relaxed text-coffee-400">
             {t(
-              'Remote synced records are used as the primary source. Local records are included only when their transaction ID does not already exist remotely, preventing duplicate sales after synchronization.',
-              'Remote የተመሳሰሉ መረጃዎች ዋና የሪፖርት ምንጭ ናቸው። Local መረጃ የሚጨመረው የግብይቱ ID remote ላይ ከሌለ ብቻ ነው፣ ይህም ከsync በኋላ ድግግሞሽን ይከላከላል።',
+              "Remote synced records are used as the primary source. Local records are included only when their transaction ID does not already exist remotely, preventing duplicate sales after synchronization.",
+              "Remote የተመሳሰሉ መረጃዎች ዋና የሪፖርት ምንጭ ናቸው። Local መረጃ የሚጨመረው የግብይቱ ID remote ላይ ከሌለ ብቻ ነው፣ ይህም ከsync በኋላ ድግግሞሽን ይከላከላል።",
             )}
           </p>
 
-          <p className="mt-1 text-[9px] text-slate-300">
-            Liyu POS •{' '}
+          <p className="mt-1 text-[9px] text-coffee-300">
+            Liyu POS •{" "}
             {remoteAvailable
               ? t(
-                  'Remote + Offline',
-                  'Remote + Offline',
+                  "Remote + Offline",
+                  "Remote + Offline",
                 )
               : t(
-                  'Offline mode',
-                  'Offline ሁኔታ',
+                  "Offline mode",
+                  "Offline ሁኔታ",
                 )}
           </p>
         </footer>
       </div>
     </main>
-  )
+  );
 }
-
-

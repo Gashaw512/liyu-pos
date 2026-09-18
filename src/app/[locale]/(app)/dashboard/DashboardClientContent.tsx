@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 import {
@@ -84,7 +84,6 @@ export default function DashboardClientContent({
   businessName,
 
   initialProductCount,
-  initialCategoryCount,
 
   categoryBreakdown,
   lowStockAlerts,
@@ -111,7 +110,6 @@ export default function DashboardClientContent({
   openShiftCount,
 }: DashboardClientProps) {
   const router = useRouter()
-
   const isAm = locale === 'am'
 
   const [isVoicePlaying, setIsVoicePlaying] = useState(false)
@@ -140,37 +138,28 @@ export default function DashboardClientContent({
 
   const totalProducts = initialProductCount
 
-  const totalCategories = initialCategoryCount
+  const totalItemsSold =
+    categoryBreakdown.reduce(
+      (total, item) =>
+        total + item.itemsSold,
+      0,
+    )
 
-  const totalItemsSold = useMemo(
-    () =>
-      categoryBreakdown.reduce(
-        (total, item) => total + item.itemsSold,
-        0,
-      ),
-    [categoryBreakdown],
-  )
+  const outOfStockCount =
+    lowStockAlerts.filter(
+      item => item.stock <= 0,
+    ).length
 
-  const outOfStockCount = useMemo(
-    () =>
-      lowStockAlerts.filter(
-        item => item.stock <= 0,
-      ).length,
-    [lowStockAlerts],
-  )
-
-  const lowStockCount = useMemo(
-    () =>
-      lowStockAlerts.filter(
-        item => item.stock > 0,
-      ).length,
-    [lowStockAlerts],
-  )
+  const lowStockCount =
+    lowStockAlerts.filter(
+      item => item.stock > 0,
+    ).length
 
   const grossMargin =
     periodRevenue > 0
       ? (
-          (periodGrossProfit / periodRevenue) *
+          (periodGrossProfit /
+            periodRevenue) *
           100
         ).toFixed(1)
       : '0.0'
@@ -178,7 +167,8 @@ export default function DashboardClientContent({
   const netMargin =
     periodRevenue > 0
       ? (
-          (periodNetProfit / periodRevenue) *
+          (periodNetProfit /
+            periodRevenue) *
           100
         ).toFixed(1)
       : '0.0'
@@ -208,16 +198,23 @@ export default function DashboardClientContent({
     router.push(`/${locale}${path}`)
   }
 
-  const goToSales = () => goTo('/sales')
+  const goToSales = () =>
+    goTo('/sales')
 
-  const goToInventory = () => goTo('/inventory')
+  const goToInventory = () =>
+    goTo('/inventory')
 
-  const goToShifts = () => goTo('/shifts')
-  const goToCloseDay = () =>goTo('/dashboard/close-day')
+  const goToShifts = () =>
+    goTo('/shifts')
 
-  const goToReports = () => goTo('/reports')
+  const goToCloseDay = () =>
+    goTo('/dashboard/close-day')
 
-  const goToExpenses = () => goTo('/dashboard/expenses')
+  const goToReports = () =>
+    goTo('/reports')
+
+  const goToExpenses = () =>
+    goTo('/dashboard/expenses')
 
   /* ============================================================
      VOICE BRIEFING
@@ -356,16 +353,7 @@ export default function DashboardClientContent({
      ============================================================ */
 
   return (
-    <div
-      className="
-        mx-auto
-        w-full
-        max-w-6xl
-        space-y-5
-        px-2
-        pb-8
-      "
-    >
+    <div className="mx-auto w-full max-w-6xl space-y-4 px-2 pb-8">
       {/* ======================================================
           HEADER
          ====================================================== */}
@@ -405,62 +393,23 @@ export default function DashboardClientContent({
          ====================================================== */}
 
       {isOwnerOrManager ? (
-        <div className="space-y-5">
-
-          {/* ==================================================
-              OWNER ACTIONS
-             ================================================== */}
+        <div className="space-y-4">
+          {/* OWNER ACTIONS */}
 
           <OwnerActionHeader
             locale={locale}
           />
 
-          {/* ==================================================
-              TODAY OVERVIEW
-             ================================================== */}
+          {/* BUSINESS OVERVIEW */}
 
-          <section
-            className="
-              overflow-hidden
-              rounded-2xl
-              border
-              border-coffee-100
-              bg-white
-              shadow-sm
-            "
-          >
-            <div
-              className="
-                flex
-                items-center
-                justify-between
-                border-b
-                border-coffee-100
-                px-4
-                py-3
-              "
-            >
+          <section className="overflow-hidden rounded-2xl border border-coffee-100 bg-white shadow-sm">
+            <div className="flex items-center justify-between border-b border-coffee-100 px-4 py-3">
               <div>
-                <p
-                  className="
-                    text-[10px]
-                    font-black
-                    uppercase
-                    tracking-[0.14em]
-                    text-coffee-400
-                  "
-                >
+                <p className="text-[10px] font-black uppercase tracking-[0.14em] text-coffee-400">
                   {periodLabel}
                 </p>
 
-                <h2
-                  className="
-                    mt-0.5
-                    text-sm
-                    font-black
-                    text-coffee-900
-                  "
-                >
+                <h2 className="mt-0.5 text-sm font-black text-coffee-900">
                   {t(
                     'Business Overview',
                     'የንግድ አጠቃላይ እይታ',
@@ -468,266 +417,100 @@ export default function DashboardClientContent({
                 </h2>
               </div>
 
-              <TrendingUp
-                className="
-                  h-5
-                  w-5
-                  text-coffee-400
-                "
-              />
+              <TrendingUp className="h-5 w-5 text-coffee-400" />
             </div>
 
-            <div
-              className="
-                grid
-                grid-cols-2
-                divide-x
-                divide-y
-                divide-coffee-100
-                sm:grid-cols-4
-                sm:divide-y-0
-              "
-            >
-              {/* REVENUE */}
-
+            <div className="grid grid-cols-2 divide-x divide-y divide-coffee-100 sm:grid-cols-4 sm:divide-y-0">
               <div className="p-4">
-                <p
-                  className="
-                    text-[10px]
-                    font-bold
-                    text-coffee-400
-                  "
-                >
-                  {t(
-                    'Revenue',
-                    'ገቢ',
-                  )}
+                <p className="text-[10px] font-bold text-coffee-400">
+                  {t('Revenue', 'ገቢ')}
                 </p>
 
-                <p
-                  className="
-                    mt-1
-                    text-lg
-                    font-black
-                    text-coffee-900
-                  "
-                >
+                <p className="mt-1 text-lg font-black text-coffee-900">
                   {formatMoney(
                     periodRevenue,
                   )}
                 </p>
 
-                <p
-                  className="
-                    text-[10px]
-                    text-coffee-400
-                  "
-                >
+                <p className="text-[10px] text-coffee-400">
                   ETB
                 </p>
               </div>
 
-              {/* GROSS PROFIT */}
-
               <div className="p-4">
-                <p
-                  className="
-                    text-[10px]
-                    font-bold
-                    text-coffee-400
-                  "
-                >
+                <p className="text-[10px] font-bold text-coffee-400">
                   {t(
                     'Gross Profit',
                     'ጠቅላላ ትርፍ',
                   )}
                 </p>
 
-                <p
-                  className="
-                    mt-1
-                    text-lg
-                    font-black
-                    text-green-700
-                  "
-                >
+                <p className="mt-1 text-lg font-black text-berbere-600">
                   {formatMoney(
                     periodGrossProfit,
                   )}
                 </p>
 
-                <p
-                  className="
-                    text-[10px]
-                    text-coffee-400
-                  "
-                >
+                <p className="text-[10px] text-coffee-400">
                   ETB
                 </p>
               </div>
 
-              {/* EXPENSES */}
-
               <div className="p-4">
-                <p
-                  className="
-                    text-[10px]
-                    font-bold
-                    text-coffee-400
-                  "
-                >
-                  {t(
-                    'Expenses',
-                    'ወጪ',
-                  )}
+                <p className="text-[10px] font-bold text-coffee-400">
+                  {t('Expenses', 'ወጪ')}
                 </p>
 
-                <p
-                  className="
-                    mt-1
-                    text-lg
-                    font-black
-                    text-red-600
-                  "
-                >
+                <p className="mt-1 text-lg font-black text-berbere-600">
                   {formatMoney(
                     periodExpenses,
                   )}
                 </p>
 
-                <p
-                  className="
-                    text-[10px]
-                    text-coffee-400
-                  "
-                >
+                <p className="text-[10px] text-coffee-400">
                   ETB
                 </p>
               </div>
 
-              {/* NET PROFIT */}
-
-              <div
-                className="
-                  bg-green-50
-                  p-4
-                "
-              >
-                <p
-                  className="
-                    text-[10px]
-                    font-black
-                    text-green-700
-                  "
-                >
+              <div className="bg-cream-100 p-4">
+                <p className="text-[10px] font-black text-berbere-600">
                   {t(
                     'Net Profit',
                     'የተጣራ ትርፍ',
                   )}
                 </p>
 
-                <p
-                  className="
-                    mt-1
-                    text-lg
-                    font-black
-                    text-green-800
-                  "
-                >
+                <p className="mt-1 text-lg font-black text-coffee-900">
                   {formatMoney(
                     periodNetProfit,
                   )}
                 </p>
 
-                <p
-                  className="
-                    text-[10px]
-                    text-green-600
-                  "
-                >
+                <p className="text-[10px] text-coffee-500">
                   ETB
                 </p>
               </div>
             </div>
           </section>
 
-          {/* ==================================================
-              SALES + PROFIT
-             ================================================== */}
+          {/* SALES + PROFIT */}
 
-          <div
-            className="
-              grid
-              gap-4
-              lg:grid-cols-2
-            "
-          >
+          <div className="grid gap-4 lg:grid-cols-2">
             {/* SALES */}
 
-            <section
-              className="
-                rounded-2xl
-                border
-                border-coffee-100
-                bg-white
-                p-5
-                shadow-sm
-              "
-            >
-              <div
-                className="
-                  flex
-                  items-center
-                  justify-between
-                "
-              >
-                <div
-                  className="
-                    flex
-                    items-center
-                    gap-3
-                  "
-                >
-                  <div
-                    className="
-                      flex
-                      h-9
-                      w-9
-                      items-center
-                      justify-center
-                      rounded-xl
-                      bg-berbere-50
-                    "
-                  >
-                    <ShoppingCart
-                      className="
-                        h-4
-                        w-4
-                        text-berbere-600
-                      "
-                    />
+            <section className="rounded-2xl border border-coffee-100 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-berbere-50">
+                    <ShoppingCart className="h-4 w-4 text-berbere-600" />
                   </div>
 
                   <div>
-                    <h3
-                      className="
-                        text-sm
-                        font-black
-                        text-coffee-900
-                      "
-                    >
-                      {t(
-                        'Sales',
-                        'ሽያጭ',
-                      )}
+                    <h3 className="text-sm font-black text-coffee-900">
+                      {t('Sales', 'ሽያጭ')}
                     </h3>
 
-                    <p
-                      className="
-                        text-[10px]
-                        text-coffee-400
-                      "
-                    >
+                    <p className="text-[10px] text-coffee-400">
                       {formatNumber(
                         periodTransactionCount,
                       )}{' '}
@@ -742,156 +525,57 @@ export default function DashboardClientContent({
                 <button
                   type="button"
                   onClick={goToSales}
-                  className="
-                    text-[11px]
-                    font-black
-                    text-berbere-600
-                    hover:underline
-                  "
+                  className="text-[11px] font-black text-berbere-600 hover:underline"
                 >
-                  {t(
-                    'View',
-                    'ይመልከቱ',
-                  )}
+                  {t('View', 'ይመልከቱ')}
                 </button>
               </div>
 
-              <div
-                className="
-                  mt-5
-                  grid
-                  grid-cols-3
-                  gap-2
-                "
-              >
-                <div
-                  className="
-                    rounded-xl
-                    bg-coffee-50
-                    p-3
-                  "
-                >
-                  <p
-                    className="
-                      text-[9px]
-                      font-bold
-                      text-coffee-400
-                    "
-                  >
-                    {t(
-                      'Average',
-                      'አማካይ',
-                    )}
+              <div className="mt-5 grid grid-cols-3 gap-2">
+                <div className="rounded-xl bg-coffee-50 p-3">
+                  <p className="text-[9px] font-bold text-coffee-400">
+                    {t('Average', 'አማካይ')}
                   </p>
 
-                  <p
-                    className="
-                      mt-1
-                      text-sm
-                      font-black
-                      text-coffee-900
-                    "
-                  >
+                  <p className="mt-1 text-sm font-black text-coffee-900">
                     {formatMoney(
                       averageTicketSize,
                     )}
                   </p>
 
-                  <p
-                    className="
-                      text-[9px]
-                      text-coffee-400
-                    "
-                  >
+                  <p className="text-[9px] text-coffee-400">
                     ETB
                   </p>
                 </div>
 
-                <div
-                  className="
-                    rounded-xl
-                    bg-coffee-50
-                    p-3
-                  "
-                >
-                  <p
-                    className="
-                      text-[9px]
-                      font-bold
-                      text-coffee-400
-                    "
-                  >
-                    {t(
-                      'Items',
-                      'እቃዎች',
-                    )}
+                <div className="rounded-xl bg-coffee-50 p-3">
+                  <p className="text-[9px] font-bold text-coffee-400">
+                    {t('Items', 'እቃዎች')}
                   </p>
 
-                  <p
-                    className="
-                      mt-1
-                      text-sm
-                      font-black
-                      text-coffee-900
-                    "
-                  >
+                  <p className="mt-1 text-sm font-black text-coffee-900">
                     {formatNumber(
                       totalItemsSold,
                     )}
                   </p>
 
-                  <p
-                    className="
-                      text-[9px]
-                      text-coffee-400
-                    "
-                  >
-                    {t(
-                      'sold',
-                      'ተሽጧል',
-                    )}
+                  <p className="text-[9px] text-coffee-400">
+                    {t('sold', 'ተሽጧል')}
                   </p>
                 </div>
 
-                <div
-                  className="
-                    rounded-xl
-                    bg-berbere-50
-                    p-3
-                  "
-                >
-                  <p
-                    className="
-                      text-[9px]
-                      font-bold
-                      text-berbere-600
-                    "
-                  >
-                    {t(
-                      'Revenue',
-                      'ገቢ',
-                    )}
+                <div className="rounded-xl bg-berbere-50 p-3">
+                  <p className="text-[9px] font-bold text-berbere-600">
+                    {t('Revenue', 'ገቢ')}
                   </p>
 
-                  <p
-                    className="
-                      mt-1
-                      text-sm
-                      font-black
-                      text-coffee-900
-                    "
-                  >
+                  <p className="mt-1 text-sm font-black text-coffee-900">
                     {formatMoney(
                       periodRevenue,
                     )}
                   </p>
 
-                  <p
-                    className="
-                      text-[9px]
-                      text-coffee-400
-                    "
-                  >
+                  <p className="text-[9px] text-coffee-400">
                     ETB
                   </p>
                 </div>
@@ -900,101 +584,36 @@ export default function DashboardClientContent({
 
             {/* PROFIT */}
 
-            <section
-              className="
-                rounded-2xl
-                border
-                border-green-100
-                bg-white
-                p-5
-                shadow-sm
-              "
-            >
-              <div
-                className="
-                  flex
-                  items-center
-                  gap-3
-                "
-              >
-                <div
-                  className="
-                    flex
-                    h-9
-                    w-9
-                    items-center
-                    justify-center
-                    rounded-xl
-                    bg-green-50
-                  "
-                >
-                  <CircleDollarSign
-                    className="
-                      h-4
-                      w-4
-                      text-green-600
-                    "
-                  />
+            <section className="rounded-2xl border border-coffee-100 bg-white p-5 shadow-sm">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-berbere-50">
+                  <CircleDollarSign className="h-4 w-4 text-berbere-600" />
                 </div>
 
                 <div>
-                  <h3
-                    className="
-                      text-sm
-                      font-black
-                      text-coffee-900
-                    "
-                  >
+                  <h3 className="text-sm font-black text-coffee-900">
                     {t(
                       'Profit Snapshot',
                       'የትርፍ ማጠቃለያ',
                     )}
                   </h3>
 
-                  <p
-                    className="
-                      text-[10px]
-                      text-coffee-400
-                    "
-                  >
+                  <p className="text-[10px] text-coffee-400">
                     {periodLabel}
                   </p>
                 </div>
               </div>
 
-              <div
-                className="
-                  mt-5
-                  space-y-3
-                "
-              >
-                <div
-                  className="
-                    flex
-                    items-center
-                    justify-between
-                  "
-                >
-                  <span
-                    className="
-                      text-xs
-                      font-semibold
-                      text-coffee-500
-                    "
-                  >
+              <div className="mt-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-coffee-500">
                     {t(
                       'Gross Profit',
                       'ጠቅላላ ትርፍ',
                     )}
                   </span>
 
-                  <span
-                    className="
-                      text-sm
-                      font-black
-                      text-green-700
-                    "
-                  >
+                  <span className="text-sm font-black text-berbere-600">
                     {formatMoney(
                       periodGrossProfit,
                     )}{' '}
@@ -1002,33 +621,12 @@ export default function DashboardClientContent({
                   </span>
                 </div>
 
-                <div
-                  className="
-                    flex
-                    items-center
-                    justify-between
-                  "
-                >
-                  <span
-                    className="
-                      text-xs
-                      font-semibold
-                      text-coffee-500
-                    "
-                  >
-                    {t(
-                      'Expenses',
-                      'ወጪ',
-                    )}
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-coffee-500">
+                    {t('Expenses', 'ወጪ')}
                   </span>
 
-                  <span
-                    className="
-                      text-sm
-                      font-black
-                      text-red-600
-                    "
-                  >
+                  <span className="text-sm font-black text-berbere-600">
                     -
                     {formatMoney(
                       periodExpenses,
@@ -1037,37 +635,15 @@ export default function DashboardClientContent({
                   </span>
                 </div>
 
-                <div
-                  className="
-                    flex
-                    items-center
-                    justify-between
-                    rounded-xl
-                    bg-green-50
-                    px-3
-                    py-3
-                  "
-                >
-                  <span
-                    className="
-                      text-xs
-                      font-black
-                      text-green-700
-                    "
-                  >
+                <div className="flex items-center justify-between rounded-xl bg-cream-100 px-3 py-3">
+                  <span className="text-xs font-black text-berbere-600">
                     {t(
                       'Net Profit',
                       'የተጣራ ትርፍ',
                     )}
                   </span>
 
-                  <span
-                    className="
-                      text-base
-                      font-black
-                      text-green-800
-                    "
-                  >
+                  <span className="text-base font-black text-coffee-900">
                     {formatMoney(
                       periodNetProfit,
                     )}{' '}
@@ -1078,83 +654,24 @@ export default function DashboardClientContent({
             </section>
           </div>
 
-          {/* ==================================================
-              STOCK + ATTENTION
-             ================================================== */}
+          {/* STOCK + ATTENTION */}
 
-          <div
-            className="
-              grid
-              gap-4
-              lg:grid-cols-2
-            "
-          >
+          <div className="grid gap-4 lg:grid-cols-2">
             {/* STOCK */}
 
-            <section
-              className="
-                rounded-2xl
-                border
-                border-coffee-100
-                bg-white
-                p-5
-                shadow-sm
-              "
-            >
-              <div
-                className="
-                  flex
-                  items-center
-                  justify-between
-                "
-              >
-                <div
-                  className="
-                    flex
-                    items-center
-                    gap-3
-                  "
-                >
-                  <div
-                    className="
-                      flex
-                      h-9
-                      w-9
-                      items-center
-                      justify-center
-                      rounded-xl
-                      bg-cream-100
-                    "
-                  >
-                    <Boxes
-                      className="
-                        h-4
-                        w-4
-                        text-coffee-700
-                      "
-                    />
+            <section className="rounded-2xl border border-coffee-100 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-cream-100">
+                    <Boxes className="h-4 w-4 text-coffee-700" />
                   </div>
 
                   <div>
-                    <h3
-                      className="
-                        text-sm
-                        font-black
-                        text-coffee-900
-                      "
-                    >
-                      {t(
-                        'Stock',
-                        'ክምችት',
-                      )}
+                    <h3 className="text-sm font-black text-coffee-900">
+                      {t('Stock', 'ክምችት')}
                     </h3>
 
-                    <p
-                      className="
-                        text-[10px]
-                        text-coffee-400
-                      "
-                    >
+                    <p className="text-[10px] text-coffee-400">
                       {t(
                         'Current inventory',
                         'የአሁኑ ክምችት',
@@ -1166,124 +683,43 @@ export default function DashboardClientContent({
                 <button
                   type="button"
                   onClick={goToInventory}
-                  className="
-                    text-[11px]
-                    font-black
-                    text-berbere-600
-                    hover:underline
-                  "
+                  className="text-[11px] font-black text-berbere-600 hover:underline"
                 >
-                  {t(
-                    'View',
-                    'ይመልከቱ',
-                  )}
+                  {t('View', 'ይመልከቱ')}
                 </button>
               </div>
 
-              <div
-                className="
-                  mt-5
-                  grid
-                  grid-cols-3
-                  gap-2
-                "
-              >
-                <div
-                  className="
-                    rounded-xl
-                    bg-coffee-50
-                    p-3
-                  "
-                >
-                  <p
-                    className="
-                      text-[9px]
-                      font-bold
-                      text-coffee-400
-                    "
-                  >
-                    {t(
-                      'Products',
-                      'እቃዎች',
-                    )}
+              <div className="mt-5 grid grid-cols-3 gap-2">
+                <div className="rounded-xl bg-coffee-50 p-3">
+                  <p className="text-[9px] font-bold text-coffee-400">
+                    {t('Products', 'እቃዎች')}
                   </p>
 
-                  <p
-                    className="
-                      mt-1
-                      text-xl
-                      font-black
-                      text-coffee-900
-                    "
-                  >
+                  <p className="mt-1 text-xl font-black text-coffee-900">
                     {formatNumber(
                       totalProducts,
                     )}
                   </p>
                 </div>
 
-                <div
-                  className="
-                    rounded-xl
-                    bg-red-50
-                    p-3
-                  "
-                >
-                  <p
-                    className="
-                      text-[9px]
-                      font-bold
-                      text-red-500
-                    "
-                  >
-                    {t(
-                      'Out',
-                      'አልቋል',
-                    )}
+                <div className="rounded-xl bg-berbere-50 p-3">
+                  <p className="text-[9px] font-bold text-berbere-600">
+                    {t('Out', 'አልቋል')}
                   </p>
 
-                  <p
-                    className="
-                      mt-1
-                      text-xl
-                      font-black
-                      text-red-700
-                    "
-                  >
+                  <p className="mt-1 text-xl font-black text-coffee-900">
                     {formatNumber(
                       outOfStockCount,
                     )}
                   </p>
                 </div>
 
-                <div
-                  className="
-                    rounded-xl
-                    bg-yellow-50
-                    p-3
-                  "
-                >
-                  <p
-                    className="
-                      text-[9px]
-                      font-bold
-                      text-yellow-600
-                    "
-                  >
-                    {t(
-                      'Low',
-                      'ዝቅተኛ',
-                    )}
+                <div className="rounded-xl bg-gold-50 p-3">
+                  <p className="text-[9px] font-bold text-gold-600">
+                    {t('Low', 'ዝቅተኛ')}
                   </p>
 
-                  <p
-                    className="
-                      mt-1
-                      text-xl
-                      font-black
-                      text-yellow-700
-                    "
-                  >
+                  <p className="mt-1 text-xl font-black text-coffee-900">
                     {formatNumber(
                       lowStockCount,
                     )}
@@ -1294,63 +730,21 @@ export default function DashboardClientContent({
 
             {/* ATTENTION */}
 
-            <section
-              className="
-                rounded-2xl
-                border
-                border-coffee-100
-                bg-white
-                p-5
-                shadow-sm
-              "
-            >
-              <div
-                className="
-                  flex
-                  items-center
-                  gap-3
-                "
-              >
-                <div
-                  className="
-                    flex
-                    h-9
-                    w-9
-                    items-center
-                    justify-center
-                    rounded-xl
-                    bg-yellow-50
-                  "
-                >
-                  <TriangleAlert
-                    className="
-                      h-4
-                      w-4
-                      text-yellow-600
-                    "
-                  />
+            <section className="rounded-2xl border border-coffee-100 bg-white p-5 shadow-sm">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gold-50">
+                  <TriangleAlert className="h-4 w-4 text-gold-600" />
                 </div>
 
                 <div>
-                  <h3
-                    className="
-                      text-sm
-                      font-black
-                      text-coffee-900
-                    "
-                  >
+                  <h3 className="text-sm font-black text-coffee-900">
                     {t(
                       'Needs Attention',
                       'ትኩረት የሚፈልጉ',
                     )}
                   </h3>
 
-                  <p
-                    className="
-                      text-[10px]
-                      text-coffee-400
-                    "
-                  >
+                  <p className="text-[10px] text-coffee-400">
                     {t(
                       'Important things to review',
                       'መመርመር የሚያስፈልጉ',
@@ -1359,52 +753,17 @@ export default function DashboardClientContent({
                 </div>
               </div>
 
-              <div
-                className="
-                  mt-5
-                  space-y-2
-                "
-              >
+              <div className="mt-5 space-y-2">
                 {lowStockAlerts.length > 0 ? (
                   <button
                     type="button"
                     onClick={goToInventory}
-                    className="
-                      flex
-                      w-full
-                      items-center
-                      justify-between
-                      rounded-xl
-                      bg-yellow-50
-                      px-3
-                      py-3
-                      text-left
-                      transition
-                      hover:bg-yellow-100
-                    "
+                    className="flex w-full items-center justify-between rounded-xl bg-gold-50 px-3 py-3 text-left transition hover:bg-gold-100"
                   >
-                    <div
-                      className="
-                        flex
-                        items-center
-                        gap-3
-                      "
-                    >
-                      <TriangleAlert
-                        className="
-                          h-4
-                          w-4
-                          text-yellow-600
-                        "
-                      />
+                    <div className="flex items-center gap-3">
+                      <TriangleAlert className="h-4 w-4 text-gold-600" />
 
-                      <span
-                        className="
-                          text-xs
-                          font-bold
-                          text-yellow-800
-                        "
-                      >
+                      <span className="text-xs font-bold text-coffee-800">
                         {formatNumber(
                           lowStockAlerts.length,
                         )}{' '}
@@ -1415,41 +774,13 @@ export default function DashboardClientContent({
                       </span>
                     </div>
 
-                    <ArrowRight
-                      className="
-                        h-4
-                        w-4
-                        text-yellow-600
-                      "
-                    />
+                    <ArrowRight className="h-4 w-4 text-gold-600" />
                   </button>
                 ) : (
-                  <div
-                    className="
-                      flex
-                      items-center
-                      gap-3
-                      rounded-xl
-                      bg-green-50
-                      px-3
-                      py-3
-                    "
-                  >
-                    <CheckCircle2
-                      className="
-                        h-4
-                        w-4
-                        text-green-600
-                      "
-                    />
+                  <div className="flex items-center gap-3 rounded-xl bg-cream-100 px-3 py-3">
+                    <CheckCircle2 className="h-4 w-4 text-berbere-600" />
 
-                    <span
-                      className="
-                        text-xs
-                        font-bold
-                        text-green-800
-                      "
-                    >
+                    <span className="text-xs font-bold text-coffee-800">
                       {t(
                         'Stock levels look healthy',
                         'የእቃ ክምችት ጥሩ ነው',
@@ -1459,42 +790,11 @@ export default function DashboardClientContent({
                 )}
 
                 {pendingSyncCount > 0 ? (
-                  <button
-                    type="button"
-                    className="
-                      flex
-                      w-full
-                      items-center
-                      justify-between
-                      rounded-xl
-                      bg-blue-50
-                      px-3
-                      py-3
-                      text-left
-                    "
-                  >
-                    <div
-                      className="
-                        flex
-                        items-center
-                        gap-3
-                      "
-                    >
-                      <RefreshCw
-                        className="
-                          h-4
-                          w-4
-                          text-blue-600
-                        "
-                      />
+                  <div className="flex w-full items-center justify-between rounded-xl bg-cream-100 px-3 py-3 text-left">
+                    <div className="flex items-center gap-3">
+                      <RefreshCw className="h-4 w-4 text-coffee-700" />
 
-                      <span
-                        className="
-                          text-xs
-                          font-bold
-                          text-blue-800
-                        "
-                      >
+                      <span className="text-xs font-bold text-coffee-800">
                         {formatNumber(
                           pendingSyncCount,
                         )}{' '}
@@ -1505,41 +805,13 @@ export default function DashboardClientContent({
                       </span>
                     </div>
 
-                    <ArrowRight
-                      className="
-                        h-4
-                        w-4
-                        text-blue-500
-                      "
-                    />
-                  </button>
+                    <ArrowRight className="h-4 w-4 text-coffee-400" />
+                  </div>
                 ) : (
-                  <div
-                    className="
-                      flex
-                      items-center
-                      gap-3
-                      rounded-xl
-                      bg-green-50
-                      px-3
-                      py-3
-                    "
-                  >
-                    <CheckCircle2
-                      className="
-                        h-4
-                        w-4
-                        text-green-600
-                      "
-                    />
+                  <div className="flex items-center gap-3 rounded-xl bg-cream-100 px-3 py-3">
+                    <CheckCircle2 className="h-4 w-4 text-berbere-600" />
 
-                    <span
-                      className="
-                        text-xs
-                        font-bold
-                        text-green-800
-                      "
-                    >
+                    <span className="text-xs font-bold text-coffee-800">
                       {t(
                         'Everything is synced',
                         'ሁሉም መረጃ ተመሳስሏል',
@@ -1551,9 +823,7 @@ export default function DashboardClientContent({
             </section>
           </div>
 
-          {/* ==================================================
-              LOW STOCK TABLE
-             ================================================== */}
+          {/* LOW STOCK TABLE */}
 
           {lowStockAlerts.length > 0 && (
             <LowStockWarningsTable
@@ -1562,9 +832,7 @@ export default function DashboardClientContent({
             />
           )}
 
-          {/* ==================================================
-              CATEGORY PERFORMANCE
-             ================================================== */}
+          {/* CATEGORY PERFORMANCE */}
 
           {categoryBreakdown.length > 0 && (
             <CategoryPerformanceTable
@@ -1575,83 +843,36 @@ export default function DashboardClientContent({
             />
           )}
 
-          {/* ==================================================
-              OPERATIONS
-             ================================================== */}
+          {/* OPERATIONS */}
 
-          <section
-            className="
-              rounded-2xl
-              border
-              border-coffee-100
-              bg-white
-              p-5
-              shadow-sm
-            "
-          >
-            <div
-              className="
-                flex
-                items-center
-                justify-between
-              "
-            >
-              <div
-                className="
-                  flex
-                  items-center
-                  gap-3
-                "
-              >
+          <section className="rounded-2xl border border-coffee-100 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
                 <div
-                  className={`
-                    flex
-                    h-9
-                    w-9
-                    items-center
-                    justify-center
-                    rounded-xl
-                    ${
-                      hasActiveShift
-                        ? 'bg-green-50'
-                        : 'bg-gray-100'
-                    }
-                  `}
+                  className={`flex h-9 w-9 items-center justify-center rounded-xl ${
+                    hasActiveShift
+                      ? 'bg-cream-100'
+                      : 'bg-coffee-50'
+                  }`}
                 >
                   <Wallet
-                    className={`
-                      h-4
-                      w-4
-                      ${
-                        hasActiveShift
-                          ? 'text-green-600'
-                          : 'text-gray-500'
-                      }
-                    `}
+                    className={`h-4 w-4 ${
+                      hasActiveShift
+                        ? 'text-berbere-600'
+                        : 'text-coffee-500'
+                    }`}
                   />
                 </div>
 
                 <div>
-                  <h3
-                    className="
-                      text-sm
-                      font-black
-                      text-coffee-900
-                    "
-                  >
+                  <h3 className="text-sm font-black text-coffee-900">
                     {t(
                       'Operations',
                       'የስራ እንቅስቃሴ',
                     )}
                   </h3>
 
-                  <p
-                    className="
-                      text-[10px]
-                      font-medium
-                      text-coffee-400
-                    "
-                  >
+                  <p className="text-[10px] font-medium text-coffee-400">
                     {hasActiveShift
                       ? t(
                           'Business is currently active',
@@ -1668,71 +889,28 @@ export default function DashboardClientContent({
               <button
                 type="button"
                 onClick={goToShifts}
-                className="
-                  flex
-                  items-center
-                  gap-1
-                  text-[11px]
-                  font-black
-                  text-berbere-600
-                  hover:underline
-                "
+                className="flex items-center gap-1 text-[11px] font-black text-berbere-600 hover:underline"
               >
                 {t(
                   'View Shifts',
                   'ፈረቃዎችን ይመልከቱ',
                 )}
 
-                <ArrowRight
-                  className="
-                    h-3.5
-                    w-3.5
-                  "
-                />
+                <ArrowRight className="h-3.5 w-3.5" />
               </button>
             </div>
 
-            <div
-              className="
-                mt-4
-                flex
-                items-center
-                justify-between
-                rounded-xl
-                border
-                border-coffee-100
-                bg-coffee-50
-                px-4
-                py-3
-              "
-            >
-              <div
-                className="
-                  flex
-                  items-center
-                  gap-3
-                "
-              >
+            <div className="mt-4 flex items-center justify-between rounded-xl border border-coffee-100 bg-coffee-50 px-4 py-3">
+              <div className="flex items-center gap-3">
                 <span
-                  className={`
-                    h-2.5
-                    w-2.5
-                    rounded-full
-                    ${
-                      hasActiveShift
-                        ? 'bg-green-500'
-                        : 'bg-gray-400'
-                    }
-                  `}
+                  className={`h-2.5 w-2.5 rounded-full ${
+                    hasActiveShift
+                      ? 'bg-berbere-500'
+                      : 'bg-coffee-300'
+                  }`}
                 />
 
-                <span
-                  className="
-                    text-sm
-                    font-black
-                    text-coffee-900
-                  "
-                >
+                <span className="text-sm font-black text-coffee-900">
                   {hasActiveShift
                     ? `${formatNumber(
                         openShiftCount,
@@ -1754,84 +932,28 @@ export default function DashboardClientContent({
                 </span>
               </div>
 
-              <ArrowRight
-                className="
-                  h-4
-                  w-4
-                  text-coffee-300
-                "
-              />
+              <ArrowRight className="h-4 w-4 text-coffee-300" />
             </div>
           </section>
 
-          {/* ==================================================
-              FINANCIAL DETAILS
-             ================================================== */}
+          {/* FINANCIAL DETAILS */}
 
-          <section
-            className="
-              rounded-2xl
-              border
-              border-coffee-100
-              bg-white
-              p-5
-              shadow-sm
-            "
-          >
-            <div
-              className="
-                flex
-                items-center
-                justify-between
-              "
-            >
-              <div
-                className="
-                  flex
-                  items-center
-                  gap-3
-                "
-              >
-                <div
-                  className="
-                    flex
-                    h-9
-                    w-9
-                    items-center
-                    justify-center
-                    rounded-xl
-                    bg-coffee-50
-                  "
-                >
-                  <BarChart3
-                    className="
-                      h-4
-                      w-4
-                      text-coffee-700
-                    "
-                  />
+          <section className="rounded-2xl border border-coffee-100 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-coffee-50">
+                  <BarChart3 className="h-4 w-4 text-coffee-700" />
                 </div>
 
                 <div>
-                  <h3
-                    className="
-                      text-sm
-                      font-black
-                      text-coffee-900
-                    "
-                  >
+                  <h3 className="text-sm font-black text-coffee-900">
                     {t(
                       'Financial Details',
                       'የፋይናንስ ዝርዝሮች',
                     )}
                   </h3>
 
-                  <p
-                    className="
-                      text-[10px]
-                      text-coffee-400
-                    "
-                  >
+                  <p className="text-[10px] text-coffee-400">
                     {periodLabel}
                   </p>
                 </div>
@@ -1840,12 +962,7 @@ export default function DashboardClientContent({
               <button
                 type="button"
                 onClick={goToReports}
-                className="
-                  text-[11px]
-                  font-black
-                  text-berbere-600
-                  hover:underline
-                "
+                className="text-[11px] font-black text-berbere-600 hover:underline"
               >
                 {t(
                   'Reports',
@@ -1854,43 +971,13 @@ export default function DashboardClientContent({
               </button>
             </div>
 
-            <div
-              className="
-                mt-4
-                grid
-                grid-cols-2
-                gap-2
-                sm:grid-cols-4
-              "
-            >
-              <div
-                className="
-                  rounded-xl
-                  bg-coffee-50
-                  p-3
-                "
-              >
-                <p
-                  className="
-                    text-[9px]
-                    font-bold
-                    text-coffee-400
-                  "
-                >
-                  {t(
-                    'Discounts',
-                    'ቅናሽ',
-                  )}
+            <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <div className="rounded-xl bg-coffee-50 p-3">
+                <p className="text-[9px] font-bold text-coffee-400">
+                  {t('Discounts', 'ቅናሽ')}
                 </p>
 
-                <p
-                  className="
-                    mt-1
-                    text-sm
-                    font-black
-                    text-coffee-900
-                  "
-                >
+                <p className="mt-1 text-sm font-black text-coffee-900">
                   {formatMoney(
                     periodDiscounts,
                   )}{' '}
@@ -1898,34 +985,12 @@ export default function DashboardClientContent({
                 </p>
               </div>
 
-              <div
-                className="
-                  rounded-xl
-                  bg-coffee-50
-                  p-3
-                "
-              >
-                <p
-                  className="
-                    text-[9px]
-                    font-bold
-                    text-coffee-400
-                  "
-                >
-                  {t(
-                    'Tax',
-                    'ታክስ',
-                  )}
+              <div className="rounded-xl bg-coffee-50 p-3">
+                <p className="text-[9px] font-bold text-coffee-400">
+                  {t('Tax', 'ታክስ')}
                 </p>
 
-                <p
-                  className="
-                    mt-1
-                    text-sm
-                    font-black
-                    text-coffee-900
-                  "
-                >
+                <p className="mt-1 text-sm font-black text-coffee-900">
                   {formatMoney(
                     periodTax,
                   )}{' '}
@@ -1933,66 +998,28 @@ export default function DashboardClientContent({
                 </p>
               </div>
 
-              <div
-                className="
-                  rounded-xl
-                  bg-green-50
-                  p-3
-                "
-              >
-                <p
-                  className="
-                    text-[9px]
-                    font-bold
-                    text-green-600
-                  "
-                >
+              <div className="rounded-xl bg-cream-100 p-3">
+                <p className="text-[9px] font-bold text-berbere-600">
                   {t(
                     'Gross Margin',
                     'ጠቅላላ ማርጂን',
                   )}
                 </p>
 
-                <p
-                  className="
-                    mt-1
-                    text-sm
-                    font-black
-                    text-green-800
-                  "
-                >
+                <p className="mt-1 text-sm font-black text-coffee-900">
                   {grossMargin}%
                 </p>
               </div>
 
-              <div
-                className="
-                  rounded-xl
-                  bg-green-50
-                  p-3
-                "
-              >
-                <p
-                  className="
-                    text-[9px]
-                    font-bold
-                    text-green-600
-                  "
-                >
+              <div className="rounded-xl bg-cream-100 p-3">
+                <p className="text-[9px] font-bold text-berbere-600">
                   {t(
                     'Net Margin',
                     'የተጣራ ማርጂን',
                   )}
                 </p>
 
-                <p
-                  className="
-                    mt-1
-                    text-sm
-                    font-black
-                    text-green-800
-                  "
-                >
+                <p className="mt-1 text-sm font-black text-coffee-900">
                   {netMargin}%
                 </p>
               </div>
@@ -2005,22 +1032,8 @@ export default function DashboardClientContent({
            ====================================================== */
 
         <div className="space-y-3">
-          <div
-            className="
-              rounded-xl
-              border
-              border-cream-200
-              bg-cream-50
-              p-3
-            "
-          >
-            <p
-              className="
-                text-xs
-                font-bold
-                text-coffee-800
-              "
-            >
+          <div className="rounded-xl border border-cream-200 bg-cream-50 p-3">
+            <p className="text-xs font-bold text-coffee-800">
               {t(
                 'Service Terminal Ready',
                 'ፈጣን የአገልግሎት መስኮት ገባሪ ነው',
@@ -2031,70 +1044,22 @@ export default function DashboardClientContent({
           <button
             type="button"
             onClick={goToSales}
-            className="
-              flex
-              w-full
-              items-center
-              justify-between
-              rounded-2xl
-              border
-              border-coffee-800
-              bg-coffee-800
-              p-5
-              text-left
-              text-cream-50
-              shadow-sm
-              transition
-              active:scale-[0.98]
-              hover:bg-coffee-700
-            "
+            className="flex w-full items-center justify-between rounded-2xl border border-coffee-800 bg-coffee-800 p-5 text-left text-cream-50 shadow-sm transition active:scale-[0.98] hover:bg-coffee-700"
           >
-            <div
-              className="
-                flex
-                items-center
-                gap-4
-              "
-            >
-              <div
-                className="
-                  flex
-                  h-11
-                  w-11
-                  items-center
-                  justify-center
-                  rounded-xl
-                  bg-berbere-500
-                "
-              >
-                <ShoppingCart
-                  className="
-                    h-5
-                    w-5
-                  "
-                />
+            <div className="flex items-center gap-4">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-berbere-500">
+                <ShoppingCart className="h-5 w-5" />
               </div>
 
               <div>
-                <h3
-                  className="
-                    text-sm
-                    font-black
-                  "
-                >
+                <h3 className="text-sm font-black">
                   {t(
                     'Open Point of Sale',
                     'አዲስ መሸጫ ክፈት',
                   )}
                 </h3>
 
-                <p
-                  className="
-                    mt-0.5
-                    text-xs
-                    text-cream-300
-                  "
-                >
+                <p className="mt-0.5 text-xs text-cream-300">
                   {t(
                     'Process customer sales and receipts',
                     'የደንበኛ ሽያጭ እና ደረሰኝ ይመዝግቡ',
@@ -2103,14 +1068,7 @@ export default function DashboardClientContent({
               </div>
             </div>
 
-            <ArrowRight
-              className="
-                h-5
-                w-5
-                shrink-0
-                text-cream-300
-              "
-            />
+            <ArrowRight className="h-5 w-5 shrink-0 text-cream-300" />
           </button>
         </div>
       )}

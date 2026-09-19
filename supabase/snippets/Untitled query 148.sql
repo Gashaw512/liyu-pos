@@ -8,3 +8,4 @@ JOIN pg_class tbl ON trig.tgrelid = tbl.oid
 JOIN pg_proc proc ON trig.tgfoid = proc.oid
 WHERE tbl.relnamespace = 'public'::regnamespace -- Change 'public' to 'auth' if looking for auth triggers
   AND trig.tgisinternal = false;
+  

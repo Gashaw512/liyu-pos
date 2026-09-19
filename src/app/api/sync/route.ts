@@ -3,24 +3,29 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
-// ============================================================
-// TYPES
-// ============================================================
+export const dynamic = 'force-dynamic'
 
-interface SyncContext {
-  mainBranchId: string | null
-  activeBusinessId: string | null
-  operatorUserId: string
-}
+/* ============================================================
+   TYPES
+============================================================ */
+
+type TransactionType =
+  | 'sale'
+  | 'inventory_count'
+  | 'inventory_receive'
 
 interface SyncTransaction {
   id: string
-  type:
-    | 'sale'
-    | 'inventory_count'
-    | 'inventory_receive'
+  type: TransactionType
   timestamp: number | string
-  payload: any
+  payload: Record<string, unknown>
+}
+
+interface SyncContext {
+  mainBranchId: string | null
+  activeBusinessId: string
+  operatorUserId: string
+  operatorRole: string | null
 }
 
 interface InventoryChange {
@@ -30,18 +35,78 @@ interface InventoryChange {
   movementId: string | null
 }
 
-// ============================================================
-// SALE PROCESSING LOCK
-// ============================================================
-//
-// This prevents the same sale from being processed concurrently
-// by multiple requests handled by the same Next.js server instance.
-//
-// The database movement check below remains the persistent
-// idempotency check.
-//
-// No database changes are required.
-//
+interface SaleRecord {
+  id: string
+  offline_id: string
+  branch_id: string
+  business_id: string
+  cashier_id: string
+  shift_id: string | null
+  receipt_number: string
+  subtotal: number
+  discount_amount: number
+  tax_amount: number
+  tip_amount: number
+  total_amount: number
+  table_name: string | null
+  status: string
+  is_offline_sync: boolean
+  created_at: string
+}
+
+interface SaleItemRecord {
+  sale_id: string
+  product_id: string
+  product_name: string
+  quantity: number
+  unit_price: number
+  cost_price: number
+}
+
+interface PaymentRecord {
+  sale_id: string
+  business_id: string
+  amount: number
+  method: string
+  status: string
+  created_at: string
+}
+
+interface SaleReferences {
+  branchId: string
+  businessId: string
+  cashierId: string
+  shiftId: string | null
+}
+
+interface SyncError {
+  id: string
+  message: string
+}
+
+type SupabaseClient = Awaited<
+  ReturnType<typeof createClient>
+>
+
+/* ============================================================
+   CONSTANTS
+============================================================ */
+
+const MAX_SYNC_TRANSACTIONS = 200
+
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+/* ============================================================
+   SALE PROCESSING LOCK
+============================================================ */
+
+/*
+ * Protects against the same sale being processed concurrently
+ * inside the same Next.js server instance.
+ *
+ * Database idempotency checks remain the persistent protection.
+ */
 
 const processingSales = new Map<
   string,
@@ -50,21 +115,17 @@ const processingSales = new Map<
 
 async function withSaleLock<T>(
   saleId: string,
-  operation: () => Promise<T>
+  operation: () => Promise<T>,
 ): Promise<T> {
   const existingLock =
     processingSales.get(saleId)
 
   if (existingLock) {
-    console.log(
-      `[SYNC] Sale ${saleId} is already being processed. Waiting for existing request.`
-    )
-
     try {
       await existingLock
     } catch {
-      // The previous request failed.
-      // This request is allowed to retry.
+      // Previous request failed.
+      // Current request may retry.
     }
 
     return operation()
@@ -83,16 +144,12 @@ async function withSaleLock<T>(
       (resolve, reject) => {
         resolveLock = resolve
         rejectLock = reject
-      }
+      },
     )
 
   processingSales.set(
     saleId,
-    lockPromise
-  )
-
-  console.log(
-    `[SYNC] Acquired sale lock: ${saleId}`
+    lockPromise,
   )
 
   try {
@@ -109,35 +166,31 @@ async function withSaleLock<T>(
     ) {
       processingSales.delete(saleId)
     }
-
-    console.log(
-      `[SYNC] Released sale lock: ${saleId}`
-    )
   }
 }
 
-// ============================================================
-// HELPERS
-// ============================================================
-
-const UUID_REGEX =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+/* ============================================================
+   GENERIC HELPERS
+============================================================ */
 
 function toValidUuid(
-  id: string | null | undefined,
-  fallback: string | null = null
+  value: unknown,
+  fallback: string | null = null,
 ): string | null {
-  if (!id) {
+  if (
+    typeof value !== 'string' ||
+    !value.trim()
+  ) {
     return fallback
   }
 
-  return UUID_REGEX.test(id)
-    ? id
+  return UUID_REGEX.test(value)
+    ? value
     : fallback
 }
 
 function toNumber(
-  value: unknown
+  value: unknown,
 ): number {
   const number = Number(value)
 
@@ -146,183 +199,382 @@ function toNumber(
     : 0
 }
 
-function normalizeTimestamp(
-  timestamp: string | number
+function toStringValue(
+  value: unknown,
+  fallback = '',
 ): string {
-  const date = new Date(timestamp)
+  return typeof value === 'string'
+    ? value
+    : fallback
+}
 
-  if (Number.isNaN(date.getTime())) {
+function toNullableString(
+  value: unknown,
+): string | null {
+  return typeof value === 'string'
+    ? value
+    : null
+}
+
+function normalizeTimestamp(
+  timestamp: number | string,
+): string {
+  const date =
+    new Date(timestamp)
+
+  if (
+    Number.isNaN(
+      date.getTime(),
+    )
+  ) {
     return new Date().toISOString()
   }
 
   return date.toISOString()
 }
 
-// ============================================================
-// RESOLVE SYSTEM CONTEXT
-// ============================================================
+function getErrorMessage(
+  error: unknown,
+): string {
+  if (
+    error &&
+    typeof error === 'object' &&
+    'message' in error &&
+    typeof error.message === 'string'
+  ) {
+    return error.message
+  }
+
+  if (error instanceof Error) {
+    return error.message
+  }
+
+  return 'Unknown synchronization error.'
+}
+
+function asRecord(
+  value: unknown,
+): Record<string, unknown> {
+  if (
+    value &&
+    typeof value === 'object' &&
+    !Array.isArray(value)
+  ) {
+    return value as Record<
+      string,
+      unknown
+    >
+  }
+
+  return {}
+}
+
+/* ============================================================
+   NORMALIZE TRANSACTIONS
+============================================================ */
+
+function normalizeTransactions(
+  value: unknown,
+): SyncTransaction[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value
+    .filter(
+      (
+        item,
+      ): item is Record<
+        string,
+        unknown
+      > =>
+        Boolean(
+          item &&
+          typeof item === 'object' &&
+          !Array.isArray(item),
+        ),
+    )
+    .map((item) => ({
+      id: toStringValue(
+        item.id,
+      ),
+      type:
+        toStringValue(
+          item.type,
+        ) as TransactionType,
+      timestamp:
+        typeof item.timestamp ===
+          'number' ||
+        typeof item.timestamp ===
+          'string'
+          ? item.timestamp
+          : Date.now(),
+      payload:
+        asRecord(
+          item.payload,
+        ),
+    }))
+}
+
+/* ============================================================
+   RESOLVE AUTHENTICATED CONTEXT
+============================================================ */
 
 async function resolveSyncContext(
-  supabase: any,
-  userId: string
+  supabase: SupabaseClient,
+  userId: string,
 ): Promise<SyncContext> {
-  const [
-    branchResult,
-    businessResult,
-  ] = await Promise.all([
-    supabase
-      .from('branches')
-      .select('id')
-      .eq('is_main', true)
-      .limit(1)
-      .maybeSingle(),
+  const {
+    data: profile,
+    error: profileError,
+  } = await supabase
+    .from('profiles')
+    .select(
+      'business_id, role',
+    )
+    .eq('id', userId)
+    .maybeSingle()
 
-    supabase
-      .from('businesses')
-      .select('id')
-      .eq('is_active', true)
-      .limit(1)
-      .maybeSingle(),
-  ])
+  if (profileError) {
+    throw profileError
+  }
 
-  let businessId =
-    businessResult.data?.id ?? null
+  if (
+    !profile?.business_id
+  ) {
+    throw new Error(
+      'Authenticated user is not associated with a business.',
+    )
+  }
+
+  const businessId =
+    toValidUuid(
+      profile.business_id,
+    )
 
   if (!businessId) {
-    const fallback =
-      await supabase
-        .from('businesses')
-        .select('id')
-        .limit(1)
-        .maybeSingle()
+    throw new Error(
+      'Authenticated business_id is invalid.',
+    )
+  }
 
-    businessId =
-      fallback.data?.id ?? null
+  const {
+    data: branch,
+    error: branchError,
+  } = await supabase
+    .from('branches')
+    .select('id')
+    .eq(
+      'business_id',
+      businessId,
+    )
+    .eq('is_main', true)
+    .limit(1)
+    .maybeSingle()
+
+  if (branchError) {
+    throw branchError
   }
 
   return {
     mainBranchId:
-      branchResult.data?.id ?? null,
+      branch?.id ?? null,
 
     activeBusinessId:
       businessId,
 
     operatorUserId:
       userId,
+
+    operatorRole:
+      typeof profile.role ===
+      'string'
+        ? profile.role
+        : null,
   }
 }
 
-// ============================================================
-// RESOLVE BUSINESS / BRANCH
-// ============================================================
+/* ============================================================
+   RESOLVE BUSINESS / BRANCH
+============================================================ */
 
-function resolveBusinessBranch(
-  payload: any,
-  context: SyncContext
-) {
-  const branchId =
-    payload.branch_id ===
-    'branch_main'
-      ? context.mainBranchId
-      : toValidUuid(
-          payload.branch_id
-        )
-
-  const businessId =
+async function resolveBusinessBranch(
+  supabase: SupabaseClient,
+  payload: Record<string, unknown>,
+  context: SyncContext,
+): Promise<{
+  branchId: string
+  businessId: string
+}> {
+  const requestedBusinessId =
     payload.business_id ===
     'biz_active'
       ? context.activeBusinessId
       : toValidUuid(
-          payload.business_id
+          payload.business_id,
         )
 
-  if (!branchId) {
+  if (!requestedBusinessId) {
     throw new Error(
-      'Unable to resolve branch_id.'
+      'Unable to resolve business_id.',
     )
   }
 
-  if (!businessId) {
+  /*
+   * Never allow a client payload to
+   * select another tenant.
+   */
+  if (
+    requestedBusinessId !==
+    context.activeBusinessId
+  ) {
     throw new Error(
-      'Unable to resolve business_id.'
+      'Business access denied.',
+    )
+  }
+
+  const requestedBranchId =
+    payload.branch_id ===
+    'branch_main'
+      ? context.mainBranchId
+      : toValidUuid(
+          payload.branch_id,
+        )
+
+  if (!requestedBranchId) {
+    throw new Error(
+      'Unable to resolve branch_id.',
+    )
+  }
+
+  /*
+   * Confirm the branch belongs to
+   * the authenticated business.
+   */
+  const {
+    data: branch,
+    error,
+  } = await supabase
+    .from('branches')
+    .select('id')
+    .eq(
+      'id',
+      requestedBranchId,
+    )
+    .eq(
+      'business_id',
+      context.activeBusinessId,
+    )
+    .maybeSingle()
+
+  if (error) {
+    throw error
+  }
+
+  if (!branch) {
+    throw new Error(
+      'Branch access denied.',
     )
   }
 
   return {
-    branchId,
-    businessId,
+    branchId: branch.id,
+    businessId:
+      context.activeBusinessId,
   }
 }
 
-// ============================================================
-// RESOLVE SALE REFERENCES
-// ============================================================
+/* ============================================================
+   RESOLVE SALE REFERENCES
+============================================================ */
 
-function resolveSaleReferences(
-  payload: any,
-  context: SyncContext
-) {
+async function resolveSaleReferences(
+  supabase: SupabaseClient,
+  payload: Record<string, unknown>,
+  context: SyncContext,
+): Promise<SaleReferences> {
   const {
     branchId,
     businessId,
   } =
-    resolveBusinessBranch(
+    await resolveBusinessBranch(
+      supabase,
       payload,
-      context
+      context,
     )
 
-  const cashierId =
-    toValidUuid(
-      payload.cashier_id,
+  const suppliedCashierId =
+    payload.cashier_id
+      ? toValidUuid(
+          payload.cashier_id,
+        )
+      : null
+
+  if (
+    suppliedCashierId &&
+    suppliedCashierId !==
       context.operatorUserId
+  ) {
+    throw new Error(
+      'Cashier identity does not match the authenticated user.',
     )
+  }
 
   const shiftId =
     toValidUuid(
-      payload.shift_id
+      payload.shift_id,
     )
 
   return {
     branchId,
     businessId,
-    cashierId,
+    cashierId:
+      context.operatorUserId,
     shiftId,
   }
 }
 
-// ============================================================
-// BUILD SALE
-// ============================================================
+/* ============================================================
+   BUILD SALE
+============================================================ */
 
-function buildSaleRecord(
-  payload: any,
+async function buildSaleRecord(
+  supabase: SupabaseClient,
+  payload: Record<string, unknown>,
   context: SyncContext,
-  timestamp: string
-) {
+  timestamp: string,
+): Promise<SaleRecord> {
   const {
     branchId,
     businessId,
     cashierId,
     shiftId,
   } =
-    resolveSaleReferences(
+    await resolveSaleReferences(
+      supabase,
       payload,
-      context
+      context,
     )
 
-  if (!payload.id) {
+  const saleId =
+    toStringValue(
+      payload.id,
+    )
+
+  if (!saleId) {
     throw new Error(
-      'Sale id is required.'
+      'Sale id is required.',
     )
   }
 
   return {
-    id:
-      payload.id,
+    id: saleId,
 
     offline_id:
-      payload.offline_id ??
-      payload.id,
+      toStringValue(
+        payload.offline_id,
+        saleId,
+      ),
 
     branch_id:
       branchId,
@@ -337,208 +589,218 @@ function buildSaleRecord(
       shiftId,
 
     receipt_number:
-      payload.receipt_number ??
-      `REC-${Date.now()
-        .toString()
-        .slice(-6)}`,
+      toStringValue(
+        payload.receipt_number,
+        `REC-${Date.now()
+          .toString()
+          .slice(-6)}`,
+      ),
 
     subtotal:
       toNumber(
-        payload.subtotal
+        payload.subtotal,
       ),
 
     discount_amount:
       toNumber(
-        payload.discount_amount
+        payload.discount_amount,
       ),
 
     tax_amount:
       toNumber(
-        payload.tax_amount
+        payload.tax_amount,
       ),
 
     tip_amount:
       toNumber(
-        payload.tip_amount
+        payload.tip_amount,
       ),
 
     total_amount:
       toNumber(
-        payload.total_amount
+        payload.total_amount,
       ),
 
     table_name:
-      payload.table_number ??
-      null,
+      toNullableString(
+        payload.table_number,
+      ),
 
     status:
-      payload.status ??
-      'completed',
+      toStringValue(
+        payload.status,
+        'completed',
+      ),
 
-    is_offline_sync:
-      true,
+    is_offline_sync: true,
 
     created_at:
       timestamp,
   }
 }
 
-// ============================================================
-// BUILD SALE ITEMS
-// ============================================================
+/* ============================================================
+   BUILD SALE ITEMS
+============================================================ */
 
 function buildSaleItems(
-  items: any[],
-  saleId: string
-) {
-  if (!Array.isArray(items)) {
+  value: unknown,
+  saleId: string,
+): SaleItemRecord[] {
+  if (!Array.isArray(value)) {
     return []
   }
 
-  return items
+  return value
+    .map(asRecord)
     .filter(
-      item =>
-        item?.product_id &&
+      (item) =>
+        Boolean(
+          toValidUuid(
+            item.product_id,
+          ),
+        ) &&
         toNumber(
-          item.quantity
-        ) > 0
+          item.quantity,
+        ) > 0,
     )
-    .map(item => ({
-      sale_id:
-        saleId,
+    .map((item) => ({
+      sale_id: saleId,
 
       product_id:
-        item.product_id,
+        toStringValue(
+          item.product_id,
+        ),
 
       product_name:
-        item.product_name ??
-        'Item',
+        toStringValue(
+          item.product_name,
+          'Item',
+        ),
 
       quantity:
         toNumber(
-          item.quantity
+          item.quantity,
         ),
 
       unit_price:
         toNumber(
-          item.unit_price
+          item.unit_price,
         ),
 
       cost_price:
         toNumber(
-          item.cost_price
+          item.cost_price,
         ),
     }))
 }
 
-// ============================================================
-// BUILD PAYMENTS
-// ============================================================
+/* ============================================================
+   BUILD PAYMENTS
+============================================================ */
 
 function buildPayments(
-  payments: any[],
+  value: unknown,
   saleId: string,
   businessId: string,
-  timestamp: string
-) {
-  if (!Array.isArray(payments)) {
+  timestamp: string,
+): PaymentRecord[] {
+  if (!Array.isArray(value)) {
     return []
   }
 
-  return payments
+  return value
+    .map(asRecord)
     .filter(
-      payment =>
+      (payment) =>
         toNumber(
-          payment.amount
-        ) > 0
+          payment.amount,
+        ) > 0,
     )
-    .map(payment => ({
-      sale_id:
-        saleId,
+    .map((payment) => ({
+      sale_id: saleId,
 
       business_id:
         businessId,
 
       amount:
         toNumber(
-          payment.amount
+          payment.amount,
         ),
 
       method:
-        payment.method ??
-        'cash',
+        toStringValue(
+          payment.method,
+          'cash',
+        ),
 
-      status:
-        'completed',
+      status: 'completed',
 
       created_at:
         timestamp,
     }))
 }
 
-// ============================================================
-// CHECK SALE INVENTORY MOVEMENT
-// ============================================================
+/* ============================================================
+   CHECK SALE INVENTORY MOVEMENT
+============================================================ */
 
 async function hasSaleInventoryMovement(
-  supabase: any,
-  saleId: string
+  supabase: SupabaseClient,
+  saleId: string,
+  businessId: string,
+  branchId: string,
 ): Promise<boolean> {
   const {
     data,
     error,
-  } =
-    await supabase
-      .from(
-        'inventory_movements'
-      )
-      .select('id')
-      .eq(
-        'reference_id',
-        saleId
-      )
-      .eq(
-        'reference_type',
-        'sale'
-      )
-      .limit(1)
+  } = await supabase
+    .from('inventory_movements')
+    .select('id')
+    .eq(
+      'business_id',
+      businessId,
+    )
+    .eq(
+      'branch_id',
+      branchId,
+    )
+    .eq(
+      'reference_id',
+      saleId,
+    )
+    .eq(
+      'reference_type',
+      'sale',
+    )
+    .limit(1)
 
   if (error) {
     throw error
   }
 
   return Boolean(
-    data?.length
+    data?.length,
   )
 }
 
-// ============================================================
-// ROLLBACK SALE INVENTORY CHANGES
-// ============================================================
-//
-// If inventory was changed but a later operation failed,
-// restore the quantities changed by this particular request
-// and remove movement records created by this request.
-//
-// This is application-level compensation because we are not
-// using a database transaction.
-//
+/* ============================================================
+   ROLLBACK SALE INVENTORY
+============================================================ */
 
 async function rollbackSaleInventory(
-  supabase: any,
-  changes: InventoryChange[]
-) {
+  supabase: SupabaseClient,
+  changes: InventoryChange[],
+): Promise<void> {
   if (
     changes.length === 0
   ) {
     return
   }
 
-  console.warn(
-    '[SYNC] Rolling back sale inventory changes:',
-    changes
-  )
-
+  /*
+   * Roll back in reverse order.
+   */
   for (
     const change of [
       ...changes,
@@ -547,25 +809,24 @@ async function rollbackSaleInventory(
     try {
       const {
         error: restoreError,
-      } =
-        await supabase
-          .from('inventory')
-          .update({
-            quantity:
-              change.previousQuantity,
+      } = await supabase
+        .from('inventory')
+        .update({
+          quantity:
+            change.previousQuantity,
 
-            updated_at:
-              new Date().toISOString(),
-          })
-          .eq(
-            'id',
-            change.inventoryId
-          )
+          updated_at:
+            new Date().toISOString(),
+        })
+        .eq(
+          'id',
+          change.inventoryId,
+        )
 
       if (restoreError) {
         console.error(
           '[SYNC] Failed to restore inventory:',
-          restoreError
+          restoreError,
         )
       }
 
@@ -578,12 +839,12 @@ async function rollbackSaleInventory(
         } =
           await supabase
             .from(
-              'inventory_movements'
+              'inventory_movements',
             )
             .delete()
             .eq(
               'id',
-              change.movementId
+              change.movementId,
             )
 
         if (
@@ -591,70 +852,57 @@ async function rollbackSaleInventory(
         ) {
           console.error(
             '[SYNC] Failed to remove rollback movement:',
-            movementDeleteError
+            movementDeleteError,
           )
         }
       }
     } catch (error) {
       console.error(
         '[SYNC] Inventory rollback error:',
-        error
+        error,
       )
     }
   }
 }
 
-// ============================================================
-// INVENTORY DEDUCTION FOR SALE
-// ============================================================
+/* ============================================================
+   INVENTORY DEDUCTION FOR SALE
+============================================================ */
 
 async function deductInventoryForSale(
-  supabase: any,
-  sale: any,
-  items: any[],
+  supabase: SupabaseClient,
+  sale: SaleRecord,
+  items: SaleItemRecord[],
   timestamp: string,
-  userId: string
-) {
+  userId: string,
+): Promise<InventoryChange[]> {
   const changes: InventoryChange[] =
     []
 
   try {
-    // ==========================================================
-    // FINAL IDEMPOTENCY CHECK
-    // ==========================================================
-    //
-    // Never start an inventory deduction if this sale already
-    // has a sale movement.
-    //
-
+    /*
+     * Final idempotency check.
+     */
     const alreadyProcessed =
       await hasSaleInventoryMovement(
         supabase,
-        sale.id
+        sale.id,
+        sale.business_id,
+        sale.branch_id,
       )
 
-    console.log(
-      `[SYNC] Inventory deduction check for sale ${sale.id}: alreadyProcessed=${alreadyProcessed}`
-    )
-
-    if (alreadyProcessed) {
-      console.log(
-        `[SYNC] Sale ${sale.id} already has an inventory movement. Skipping deduction.`
-      )
-
+    if (
+      alreadyProcessed
+    ) {
       return []
     }
-
-    // ==========================================================
-    // PROCESS SALE ITEMS
-    // ==========================================================
 
     for (
       const item of items
     ) {
       const quantitySold =
         toNumber(
-          item.quantity
+          item.quantity,
         )
 
       if (
@@ -664,57 +912,46 @@ async function deductInventoryForSale(
         continue
       }
 
-      // --------------------------------------------------------
-      // CHECK AGAIN BEFORE EACH ITEM
-      // --------------------------------------------------------
-      //
-      // This is intentionally repeated.
-      // If another request completed this sale while this
-      // request was preparing the item, stop immediately.
-      //
-
+      /*
+       * Re-check before every item.
+       */
       const movementExists =
         await hasSaleInventoryMovement(
           supabase,
-          sale.id
+          sale.id,
+          sale.business_id,
+          sale.branch_id,
         )
 
       if (movementExists) {
-        console.log(
-          `[SYNC] Sale ${sale.id} became processed before product ${item.product_id} deduction. Stopping.`
-        )
-
         return changes
       }
 
-      // --------------------------------------------------------
-      // FIND INVENTORY
-      // --------------------------------------------------------
-
+      /*
+       * Load tenant-scoped inventory.
+       */
       const {
         data: inventory,
         error:
           inventoryError,
-      } =
-        await supabase
-          .from('inventory')
-          .select(`
-            id,
-            quantity
-          `)
-          .eq(
-            'business_id',
-            sale.business_id
-          )
-          .eq(
-            'branch_id',
-            sale.branch_id
-          )
-          .eq(
-            'product_id',
-            item.product_id
-          )
-          .maybeSingle()
+      } = await supabase
+        .from('inventory')
+        .select(
+          'id, quantity',
+        )
+        .eq(
+          'business_id',
+          sale.business_id,
+        )
+        .eq(
+          'branch_id',
+          sale.branch_id,
+        )
+        .eq(
+          'product_id',
+          item.product_id,
+        )
+        .maybeSingle()
 
       if (inventoryError) {
         throw inventoryError
@@ -722,56 +959,52 @@ async function deductInventoryForSale(
 
       if (!inventory) {
         throw new Error(
-          `Inventory record not found for product ${item.product_id}`
+          `Inventory record not found for product ${item.product_id}.`,
         )
       }
 
-      // --------------------------------------------------------
-      // CALCULATE
-      // --------------------------------------------------------
-
       const currentQuantity =
         toNumber(
-          inventory.quantity
+          inventory.quantity,
         )
 
       const newQuantity =
         currentQuantity -
         quantitySold
 
-      console.log(
-        `[SYNC] Sale ${sale.id} inventory change: product=${item.product_id}, current=${currentQuantity}, sold=${quantitySold}, new=${newQuantity}`
-      )
-
-      // --------------------------------------------------------
-      // UPDATE INVENTORY
-      // --------------------------------------------------------
-
+      /*
+       * Keep the existing behavior:
+       * allow the inventory calculation to
+       * proceed exactly as before.
+       */
       const {
         error:
           updateError,
-      } =
-        await supabase
-          .from('inventory')
-          .update({
-            quantity:
-              newQuantity,
+      } = await supabase
+        .from('inventory')
+        .update({
+          quantity:
+            newQuantity,
 
-            updated_at:
-              timestamp,
-          })
-          .eq(
-            'id',
-            inventory.id
-          )
+          updated_at:
+            timestamp,
+        })
+        .eq(
+          'id',
+          inventory.id,
+        )
+        .eq(
+          'business_id',
+          sale.business_id,
+        )
+        .eq(
+          'branch_id',
+          sale.branch_id,
+        )
 
       if (updateError) {
         throw updateError
       }
-
-      // --------------------------------------------------------
-      // TRACK CHANGE FOR COMPENSATING ROLLBACK
-      // --------------------------------------------------------
 
       const change: InventoryChange =
         {
@@ -781,8 +1014,7 @@ async function deductInventoryForSale(
           previousQuantity:
             currentQuantity,
 
-          newQuantity:
-            newQuantity,
+          newQuantity,
 
           movementId:
             null,
@@ -790,58 +1022,55 @@ async function deductInventoryForSale(
 
       changes.push(change)
 
-      // --------------------------------------------------------
-      // INSERT INVENTORY MOVEMENT
-      // --------------------------------------------------------
-
+      /*
+       * Record inventory movement.
+       */
       const {
-        data:
-          movement,
+        data: movement,
         error:
           movementError,
-      } =
-        await supabase
-          .from(
-            'inventory_movements'
-          )
-          .insert({
-            business_id:
-              sale.business_id,
+      } = await supabase
+        .from(
+          'inventory_movements',
+        )
+        .insert({
+          business_id:
+            sale.business_id,
 
-            branch_id:
-              sale.branch_id,
+          branch_id:
+            sale.branch_id,
 
-            product_id:
-              item.product_id,
+          product_id:
+            item.product_id,
 
-            user_id:
-              userId,
+          user_id:
+            userId,
 
-            movement_type:
-              'sale',
+          movement_type:
+            'sale',
 
-            quantity:
-              -quantitySold,
+          quantity:
+            -quantitySold,
 
-            unit_cost:
-              toNumber(
-                item.cost_price
-              ),
+          unit_cost:
+            toNumber(
+              item.cost_price,
+            ),
 
-            reference_id:
-              sale.id,
+          reference_id:
+            sale.id,
 
-            reference_type:
-              'sale',
+          reference_type:
+            'sale',
 
-            notes:
-              `Sale ${sale.receipt_number}`,
+          notes:
+            `Sale ${sale.receipt_number}`,
 
-            created_at:
-              timestamp,
-          })
-          .select('id')
-          .maybeSingle()
+          created_at:
+            timestamp,
+        })
+        .select('id')
+        .maybeSingle()
 
       if (movementError) {
         throw movementError
@@ -850,94 +1079,74 @@ async function deductInventoryForSale(
       if (movement?.id) {
         change.movementId =
           movement.id
-
-        console.log(
-          `[SYNC] Sale ${sale.id} movement created: movementId=${movement.id}, product=${item.product_id}, quantity=${-quantitySold}`
-        )
       }
     }
-
-    console.log(
-      `[SYNC] Sale ${sale.id} inventory deduction completed for ${changes.length} item(s).`
-    )
 
     return changes
   } catch (error) {
     await rollbackSaleInventory(
       supabase,
-      changes
+      changes,
     )
 
     throw error
   }
 }
 
-// ============================================================
-// SYNC SALE
-// ============================================================
+/* ============================================================
+   SYNC SALE
+============================================================ */
 
 async function syncSale(
-  supabase: any,
+  supabase: SupabaseClient,
   tx: SyncTransaction,
-  context: SyncContext
-) {
+  context: SyncContext,
+): Promise<string> {
   const payload =
     tx.payload
 
   const timestamp =
     normalizeTimestamp(
-      tx.timestamp
+      tx.timestamp,
     )
 
+  /*
+   * IMPORTANT:
+   * buildSaleRecord is async because
+   * tenant/branch validation is async.
+   */
   const sale =
-    buildSaleRecord(
+    await buildSaleRecord(
+      supabase,
       payload,
       context,
-      timestamp
+      timestamp,
     )
 
   return withSaleLock(
     sale.id,
     async () => {
-      // ======================================================
-      // FIRST IDEMPOTENCY CHECK
-      // ======================================================
-      //
-      // If the inventory movement already exists, the server
-      // has already applied this sale.
-      //
-      // IMPORTANT:
-      // We return success without touching inventory again.
-      //
-
+      /*
+       * First idempotency check.
+       */
       const alreadyProcessed =
         await hasSaleInventoryMovement(
           supabase,
-          sale.id
+          sale.id,
+          sale.business_id,
+          sale.branch_id,
         )
-
-      console.log(
-        `[SYNC] Sale ${sale.id} initial inventory movement check: ${alreadyProcessed}`
-      )
 
       if (
         alreadyProcessed
       ) {
-        console.log(
-          `[SYNC] Sale ${sale.id} already processed. Skipping inventory deduction.`
-        )
-
         return sale.id
       }
-
-      // ======================================================
-      // BUILD ITEMS / PAYMENTS
-      // ======================================================
 
       const items =
         buildSaleItems(
           payload.items,
-          sale.id
+          sale.id,
         )
 
       const payments =
@@ -945,76 +1154,73 @@ async function syncSale(
           payload.payments,
           sale.id,
           sale.business_id,
-          timestamp
+          timestamp,
         )
 
       if (
         items.length === 0
       ) {
         throw new Error(
-          `Sale ${sale.id} contains no valid sale items.`
+          `Sale ${sale.id} contains no valid sale items.`,
         )
       }
 
-      // ======================================================
-      // SALE
-      // ======================================================
-
+      /*
+       * Check whether sale already exists.
+       */
       const {
         data: existingSale,
         error:
           existingSaleError,
-      } =
-        await supabase
-          .from('sales')
-          .select('id')
-          .eq(
-            'id',
-            sale.id
-          )
-          .maybeSingle()
+      } = await supabase
+        .from('sales')
+        .select('id')
+        .eq(
+          'id',
+          sale.id,
+        )
+        .eq(
+          'business_id',
+          sale.business_id,
+        )
+        .maybeSingle()
 
-      if (existingSaleError) {
+      if (
+        existingSaleError
+      ) {
         throw existingSaleError
       }
 
       if (!existingSale) {
         const {
-          error:
-            saleError,
-        } =
-          await supabase
-            .from('sales')
-            .insert(sale)
+          error: saleError,
+        } = await supabase
+          .from('sales')
+          .insert(sale)
 
         if (saleError) {
           throw saleError
         }
       }
 
-      // ======================================================
-      // SALE ITEMS
-      // ======================================================
-
+      /*
+       * Sale items.
+       */
       if (
         items.length > 0
       ) {
         const {
-          data:
-            existingItems,
+          data: existingItems,
           error:
             existingItemsError,
-        } =
-          await supabase
-            .from(
-              'sale_items'
-            )
-            .select('id')
-            .eq(
-              'sale_id',
-              sale.id
-            )
-            .limit(1)
+        } = await supabase
+          .from('sale_items')
+          .select('id')
+          .eq(
+            'sale_id',
+            sale.id,
+          )
+          .limit(1)
 
         if (
           existingItemsError
@@ -1026,14 +1232,10 @@ async function syncSale(
           !existingItems?.length
         ) {
           const {
-            error:
-              itemsError,
-          } =
-            await supabase
-              .from(
-                'sale_items'
-              )
-              .insert(items)
+            error: itemsError,
+          } = await supabase
+            .from('sale_items')
+            .insert(items)
 
           if (itemsError) {
             throw itemsError
@@ -1041,10 +1243,9 @@ async function syncSale(
         }
       }
 
-      // ======================================================
-      // PAYMENTS
-      // ======================================================
-
+      /*
+       * Payments.
+       */
       if (
         payments.length > 0
       ) {
@@ -1053,19 +1254,14 @@ async function syncSale(
             existingPayments,
           error:
             existingPaymentsError,
-        } =
-          await supabase
-            .from(
-              'payments'
-            )
-            .select(
-              'sale_id'
-            )
-            .eq(
-              'sale_id',
-              sale.id
-            )
-            .limit(1)
+        } = await supabase
+          .from('payments')
+          .select('sale_id')
+          .eq(
+            'sale_id',
+            sale.id,
+          )
+          .limit(1)
 
         if (
           existingPaymentsError
@@ -1079,14 +1275,11 @@ async function syncSale(
           const {
             error:
               paymentsError,
-          } =
-            await supabase
-              .from(
-                'payments'
-              )
-              .insert(
-                payments
-              )
+          } = await supabase
+            .from('payments')
+            .insert(
+              payments,
+            )
 
           if (paymentsError) {
             throw paymentsError
@@ -1094,118 +1287,104 @@ async function syncSale(
         }
       }
 
-      // ======================================================
-      // SECOND IDEMPOTENCY CHECK
-      // ======================================================
-      //
-      // We check again immediately before changing inventory.
-      // This protects us if something else completed this sale
-      // while the sale records were being prepared.
-      //
-
+      /*
+       * Second idempotency check.
+       */
       const processedBeforeDeduction =
         await hasSaleInventoryMovement(
           supabase,
-          sale.id
+          sale.id,
+          sale.business_id,
+          sale.branch_id,
         )
-
-      console.log(
-        `[SYNC] Sale ${sale.id} pre-deduction movement check: ${processedBeforeDeduction}`
-      )
 
       if (
         processedBeforeDeduction
       ) {
-        console.log(
-          `[SYNC] Sale ${sale.id} was processed before inventory deduction. Skipping.`
-        )
-
         return sale.id
       }
 
-      // ======================================================
-      // DEDUCT SERVER INVENTORY
-      // ======================================================
-      //
-      // This is NOT a second deduction from IndexedDB.
-      //
-      // IndexedDB was already updated locally.
-      // This updates the authoritative Supabase inventory.
-      //
-
+      /*
+       * Authoritative server inventory update.
+       */
       await deductInventoryForSale(
         supabase,
         sale,
         items,
         timestamp,
-        context.operatorUserId
+        context.operatorUserId,
       )
 
-      // ======================================================
-      // FINAL VERIFICATION
-      // ======================================================
-
+      /*
+       * Final verification.
+       */
       const processedAfterDeduction =
         await hasSaleInventoryMovement(
           supabase,
-          sale.id
+          sale.id,
+          sale.business_id,
+          sale.branch_id,
         )
-
-      console.log(
-        `[SYNC] Sale ${sale.id} final inventory movement check: ${processedAfterDeduction}`
-      )
 
       if (
         !processedAfterDeduction
       ) {
         throw new Error(
-          `Sale ${sale.id} inventory movement could not be confirmed.`
+          `Sale ${sale.id} inventory movement could not be confirmed.`,
         )
       }
 
-      console.log(
-        `[SYNC] Sale ${sale.id} synchronized successfully.`
-      )
-
       return sale.id
-    }
+    },
   )
 }
 
-// ============================================================
-// SYNC INVENTORY COUNT
-// ============================================================
+/* ============================================================
+   SYNC INVENTORY COUNT
+============================================================ */
 
 async function syncInventoryCount(
-  supabase: any,
+  supabase: SupabaseClient,
   tx: SyncTransaction,
-  context: SyncContext
-) {
+  context: SyncContext,
+): Promise<string> {
   const payload =
     tx.payload
 
   const timestamp =
     normalizeTimestamp(
-      tx.timestamp
+      tx.timestamp,
     )
 
   const {
     branchId,
     businessId,
   } =
-    resolveBusinessBranch(
+    await resolveBusinessBranch(
+      supabase,
       payload,
-      context
+      context,
     )
+
+  const productId =
+    toValidUuid(
+      payload.product_id,
+    )
+
+  if (!productId) {
+    throw new Error(
+      'Invalid product_id for inventory count.',
+    )
+  }
 
   const systemQuantity =
     toNumber(
-      payload.system_quantity
+      payload.system_quantity,
     )
 
   const countedQuantity =
     toNumber(
-      payload.counted_quantity
+      payload.counted_quantity,
     )
 
   const variance =
@@ -1213,33 +1392,45 @@ async function syncInventoryCount(
     systemQuantity
 
   const referenceId =
-    payload.id ??
-    tx.id
+    toStringValue(
+      payload.id,
+      tx.id,
+    )
 
-  // ==========================================================
-  // IDEMPOTENCY
-  // ==========================================================
-
+  /*
+   * Idempotency is tenant scoped.
+   */
   const {
     data:
       existingMovement,
     error:
       existingMovementError,
-  } =
-    await supabase
-      .from(
-        'inventory_movements'
-      )
-      .select('id')
-      .eq(
-        'reference_id',
-        referenceId
-      )
-      .eq(
-        'reference_type',
-        'inventory_count'
-      )
-      .limit(1)
+  } = await supabase
+    .from(
+      'inventory_movements',
+    )
+    .select('id')
+    .eq(
+      'business_id',
+      businessId,
+    )
+    .eq(
+      'branch_id',
+      branchId,
+    )
+    .eq(
+      'product_id',
+      productId,
+    )
+    .eq(
+      'reference_id',
+      referenceId,
+    )
+    .eq(
+      'reference_type',
+      'inventory_count',
+    )
+    .limit(1)
 
   if (
     existingMovementError
@@ -1253,19 +1444,65 @@ async function syncInventoryCount(
     return tx.id
   }
 
-  // ==========================================================
-  // MOVEMENT
-  // ==========================================================
-
+  /*
+   * Movement.
+   */
   const {
     error:
       movementError,
-  } =
-    await supabase
-      .from(
-        'inventory_movements'
-      )
-      .insert({
+  } = await supabase
+    .from(
+      'inventory_movements',
+    )
+    .insert({
+      branch_id:
+        branchId,
+
+      business_id:
+        businessId,
+
+      product_id:
+        productId,
+
+      user_id:
+        context.operatorUserId,
+
+      quantity:
+        variance,
+
+      movement_type:
+        'adjustment',
+
+      reference_id:
+        referenceId,
+
+      reference_type:
+        'inventory_count',
+
+      notes:
+        toStringValue(
+          payload.notes,
+          'Mobile inventory reconciliation',
+        ),
+
+      created_at:
+        timestamp,
+    })
+
+  if (movementError) {
+    throw movementError
+  }
+
+  /*
+   * Inventory snapshot.
+   */
+  const {
+    error:
+      inventoryError,
+  } = await supabase
+    .from('inventory')
+    .upsert(
+      {
         branch_id:
           branchId,
 
@@ -1273,67 +1510,19 @@ async function syncInventoryCount(
           businessId,
 
         product_id:
-          payload.product_id,
-
-        user_id:
-          context.operatorUserId,
+          productId,
 
         quantity:
-          variance,
+          countedQuantity,
 
-        movement_type:
-          'adjustment',
-
-        reference_id:
-          referenceId,
-
-        reference_type:
-          'inventory_count',
-
-        notes:
-          payload.notes ??
-          'Mobile inventory reconciliation',
-
-        created_at:
+        updated_at:
           timestamp,
-      })
-
-  if (movementError) {
-    throw movementError
-  }
-
-  // ==========================================================
-  // INVENTORY
-  // ==========================================================
-
-  const {
-    error:
-      inventoryError,
-  } =
-    await supabase
-      .from('inventory')
-      .upsert(
-        {
-          branch_id:
-            branchId,
-
-          business_id:
-            businessId,
-
-          product_id:
-            payload.product_id,
-
-          quantity:
-            countedQuantity,
-
-          updated_at:
-            timestamp,
-        },
-        {
-          onConflict:
-            'branch_id,product_id',
-        }
-      )
+      },
+      {
+        onConflict:
+          'branch_id,product_id',
+      },
+    )
 
   if (inventoryError) {
     throw inventoryError
@@ -1342,58 +1531,59 @@ async function syncInventoryCount(
   return tx.id
 }
 
-// ============================================================
-// SYNC STOCK RECEIVE
-// ============================================================
+/* ============================================================
+   SYNC STOCK RECEIVE
+============================================================ */
 
 async function syncStockReceive(
-  supabase: any,
+  supabase: SupabaseClient,
   tx: SyncTransaction,
-  context: SyncContext
-) {
+  context: SyncContext,
+): Promise<string> {
   const payload =
     tx.payload
 
   const timestamp =
     normalizeTimestamp(
-      tx.timestamp
+      tx.timestamp,
     )
 
   const {
     branchId,
     businessId,
   } =
-    resolveBusinessBranch(
+    await resolveBusinessBranch(
+      supabase,
       payload,
-      context
+      context,
     )
 
   const productId =
     toValidUuid(
-      payload.product_id
+      payload.product_id,
     )
 
   if (!productId) {
     throw new Error(
-      'Invalid product_id for stock receive.'
+      'Invalid product_id for stock receive.',
     )
   }
 
   const quantity =
     toNumber(
-      payload.quantity
+      payload.quantity,
     )
 
   const unitCost =
     toNumber(
-      payload.unit_cost
+      payload.unit_cost,
     )
 
   if (
     quantity <= 0
   ) {
     throw new Error(
-      'Stock receive quantity must be greater than zero.'
+      'Stock receive quantity must be greater than zero.',
     )
   }
 
@@ -1401,38 +1591,50 @@ async function syncStockReceive(
     unitCost < 0
   ) {
     throw new Error(
-      'Stock receive unit cost cannot be negative.'
+      'Stock receive unit cost cannot be negative.',
     )
   }
 
   const referenceId =
-    payload.id ??
-    tx.id
+    toStringValue(
+      payload.id,
+      tx.id,
+    )
 
-  // ==========================================================
-  // IDEMPOTENCY
-  // ==========================================================
-
+  /*
+   * Tenant-scoped idempotency.
+   */
   const {
     data:
       existingMovement,
     error:
       existingMovementError,
-  } =
-    await supabase
-      .from(
-        'inventory_movements'
-      )
-      .select('id')
-      .eq(
-        'reference_id',
-        referenceId
-      )
-      .eq(
-        'reference_type',
-        'stock_receive'
-      )
-      .limit(1)
+  } = await supabase
+    .from(
+      'inventory_movements',
+    )
+    .select('id')
+    .eq(
+      'business_id',
+      businessId,
+    )
+    .eq(
+      'branch_id',
+      branchId,
+    )
+    .eq(
+      'product_id',
+      productId,
+    )
+    .eq(
+      'reference_id',
+      referenceId,
+    )
+    .eq(
+      'reference_type',
+      'stock_receive',
+    )
+    .limit(1)
 
   if (
     existingMovementError
@@ -1446,74 +1648,73 @@ async function syncStockReceive(
     return tx.id
   }
 
-  // ==========================================================
-  // FIND INVENTORY
-  // ==========================================================
-
+  /*
+   * Find current inventory.
+   */
   const {
     data: inventory,
     error:
       inventoryError,
-  } =
-    await supabase
-      .from('inventory')
-      .select(`
-        id,
-        quantity
-      `)
-      .eq(
-        'business_id',
-        businessId
-      )
-      .eq(
-        'branch_id',
-        branchId
-      )
-      .eq(
-        'product_id',
-        productId
-      )
-      .maybeSingle()
+  } = await supabase
+    .from('inventory')
+    .select(
+      'id, quantity',
+    )
+    .eq(
+      'business_id',
+      businessId,
+    )
+    .eq(
+      'branch_id',
+      branchId,
+    )
+    .eq(
+      'product_id',
+      productId,
+    )
+    .maybeSingle()
 
   if (inventoryError) {
     throw inventoryError
   }
 
-  // ==========================================================
-  // CALCULATE NEW STOCK
-  // ==========================================================
-
   const currentQuantity =
     toNumber(
-      inventory?.quantity
+      inventory?.quantity,
     )
 
   const newQuantity =
     currentQuantity +
     quantity
 
-  // ==========================================================
-  // UPDATE / CREATE INVENTORY
-  // ==========================================================
-
+  /*
+   * Update/create inventory.
+   */
   if (inventory) {
     const {
       error:
         updateError,
-    } =
-      await supabase
-        .from('inventory')
-        .update({
-          quantity:
-            newQuantity,
+    } = await supabase
+      .from('inventory')
+      .update({
+        quantity:
+          newQuantity,
 
-          updated_at:
-            timestamp,
-        })
-        .eq(
-          'id',
-          inventory.id
-        )
+        updated_at:
+          timestamp,
+      })
+      .eq(
+        'id',
+        inventory.id,
+      )
+      .eq(
+        'business_id',
+        businessId,
+      )
+      .eq(
+        'branch_id',
+        branchId,
+      )
 
     if (updateError) {
       throw updateError
@@ -1522,43 +1723,8 @@ async function syncStockReceive(
     const {
       error:
         insertError,
-    } =
-      await supabase
-        .from('inventory')
-        .insert({
-          business_id:
-            businessId,
-
-          branch_id:
-            branchId,
-
-          product_id:
-            productId,
-
-          quantity:
-            quantity,
-
-          updated_at:
-            timestamp,
-        })
-
-    if (insertError) {
-      throw insertError
-    }
-  }
-
-  // ==========================================================
-  // INVENTORY MOVEMENT
-  // ==========================================================
-
-  const {
-    error:
-      movementError,
-  } =
-    await supabase
-      .from(
-        'inventory_movements'
-      )
+    } = await supabase
+      .from('inventory')
       .insert({
         business_id:
           businessId,
@@ -1569,31 +1735,65 @@ async function syncStockReceive(
         product_id:
           productId,
 
-        user_id:
-          context.operatorUserId,
-
-        movement_type:
-          'purchase',
-
         quantity:
           quantity,
 
-        unit_cost:
-          unitCost,
-
-        reference_id:
-          referenceId,
-
-        reference_type:
-          'stock_receive',
-
-        notes:
-          payload.notes ??
-          'Stock received from inventory screen',
-
-        created_at:
+        updated_at:
           timestamp,
       })
+
+    if (insertError) {
+      throw insertError
+    }
+  }
+
+  /*
+   * Record stock movement.
+   */
+  const {
+    error:
+      movementError,
+  } = await supabase
+    .from(
+      'inventory_movements',
+    )
+    .insert({
+      business_id:
+        businessId,
+
+      branch_id:
+        branchId,
+
+      product_id:
+        productId,
+
+      user_id:
+        context.operatorUserId,
+
+      movement_type:
+        'purchase',
+
+      quantity:
+        quantity,
+
+      unit_cost:
+        unitCost,
+
+      reference_id:
+        referenceId,
+
+      reference_type:
+        'stock_receive',
+
+      notes:
+        toStringValue(
+          payload.notes,
+          'Stock received from inventory screen',
+        ),
+
+      created_at:
+        timestamp,
+    })
 
   if (movementError) {
     throw movementError
@@ -1602,21 +1802,21 @@ async function syncStockReceive(
   return tx.id
 }
 
-// ============================================================
-// PROCESS TRANSACTION
-// ============================================================
+/* ============================================================
+   PROCESS TRANSACTION
+============================================================ */
 
 async function processTransaction(
-  supabase: any,
+  supabase: SupabaseClient,
   tx: SyncTransaction,
-  context: SyncContext
-) {
+  context: SyncContext,
+): Promise<string> {
   if (
     !tx?.id ||
     !tx?.type
   ) {
     throw new Error(
-      'Invalid transaction structure.'
+      'Invalid transaction structure.',
     )
   }
 
@@ -1625,50 +1825,51 @@ async function processTransaction(
       return syncSale(
         supabase,
         tx,
-        context
+        context,
       )
 
     case 'inventory_count':
       return syncInventoryCount(
         supabase,
         tx,
-        context
+        context,
       )
 
     case 'inventory_receive':
       return syncStockReceive(
         supabase,
         tx,
-        context
+        context,
       )
 
     default:
       throw new Error(
-        `Unsupported transaction type: ${tx.type}`
+        `Unsupported transaction type: ${tx.type}`,
       )
   }
 }
 
-// ============================================================
-// POST /api/sync
-// ============================================================
+/* ============================================================
+   POST /api/sync
+============================================================ */
 
 export async function POST(
-  request: Request
+  request: Request,
 ) {
   try {
     const supabase =
       await createClient()
 
-    // ========================================================
-    // AUTH
-    // ========================================================
+    /* ----------------------------------------------------------
+       AUTH
+    ---------------------------------------------------------- */
 
     const {
       data: {
         user,
       },
-      error: authError,
+      error:
+        authError,
     } =
       await supabase.auth.getUser()
 
@@ -1679,71 +1880,197 @@ export async function POST(
       return NextResponse.json(
         {
           success: false,
-
-          error:
-            'Unauthorized',
+          error: 'Unauthorized',
         },
         {
           status: 401,
-        }
+        },
       )
     }
 
-    // ========================================================
-    // BODY
-    // ========================================================
+    /* ----------------------------------------------------------
+       REQUEST BODY
+    ---------------------------------------------------------- */
 
-    const body =
-      await request.json()
+    let body: unknown
+
+    try {
+      body =
+        await request.json()
+    } catch {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            'Invalid JSON request body.',
+        },
+        {
+          status: 400,
+        },
+      )
+    }
+
+    const bodyRecord =
+      asRecord(body)
 
     const transactions =
-      body?.transactions
+      normalizeTransactions(
+        bodyRecord.transactions,
+      )
 
+    /*
+     * The original route accepts an empty
+     * array as a successful no-op.
+     */
     if (
       !Array.isArray(
-        transactions
+        bodyRecord.transactions,
       )
     ) {
       return NextResponse.json(
         {
           success: false,
-
           error:
             'transactions must be an array',
         },
         {
           status: 400,
-        }
+        },
       )
     }
 
     if (
-      transactions.length === 0
+      transactions.length ===
+      0
     ) {
       return NextResponse.json({
         success: true,
-
         syncedIds: [],
-
         failedIds: [],
-
         errors: [],
+        processed: 0,
+        synced: 0,
+        failed: 0,
       })
     }
 
-    // ========================================================
-    // CONTEXT
-    // ========================================================
+    /*
+     * Protect the endpoint from accidentally
+     * receiving an enormous offline queue.
+     */
+    if (
+      transactions.length >
+      MAX_SYNC_TRANSACTIONS
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            `Too many transactions. Maximum is ${MAX_SYNC_TRANSACTIONS} per sync request.`,
+        },
+        {
+          status: 413,
+        },
+      )
+    }
+
+    /*
+     * Validate transaction IDs/types before
+     * touching the database.
+     */
+    const malformed =
+      transactions.find(
+        (tx) =>
+          !tx.id ||
+          !tx.type ||
+          ![
+            'sale',
+            'inventory_count',
+            'inventory_receive',
+          ].includes(
+            tx.type,
+          ),
+      )
+
+    if (malformed) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            'One or more transactions have an invalid structure.',
+        },
+        {
+          status: 400,
+        },
+      )
+    }
+
+    /* ----------------------------------------------------------
+       AUTHENTICATED TENANT CONTEXT
+    ---------------------------------------------------------- */
 
     const context =
       await resolveSyncContext(
         supabase,
-        user.id
+        user.id,
       )
 
-    // ========================================================
-    // PROCESSING ARRAYS
-    // ========================================================
+    /* ----------------------------------------------------------
+       DEDUPLICATE QUEUE IDS
+    ---------------------------------------------------------- */
+
+    const uniqueTransactions =
+      Array.from(
+        new Map(
+          transactions.map(
+            (tx) => [
+              tx.id,
+              tx,
+            ],
+          ),
+        ).values(),
+      )
+
+    /* ----------------------------------------------------------
+       ORDER TRANSACTIONS
+    ---------------------------------------------------------- */
+
+    const orderedTransactions =
+      uniqueTransactions.sort(
+        (a, b) => {
+          const timeA =
+            new Date(
+              a.timestamp,
+            ).getTime()
+
+          const timeB =
+            new Date(
+              b.timestamp,
+            ).getTime()
+
+          const safeA =
+            Number.isFinite(
+              timeA,
+            )
+              ? timeA
+              : 0
+
+          const safeB =
+            Number.isFinite(
+              timeB,
+            )
+              ? timeB
+              : 0
+
+          return (
+            safeA - safeB
+          )
+        },
+      )
+
+    /* ----------------------------------------------------------
+       PROCESSING ARRAYS
+    ---------------------------------------------------------- */
 
     const syncedIds: string[] =
       []
@@ -1751,44 +2078,20 @@ export async function POST(
     const failedIds: string[] =
       []
 
-    const errors: {
-      id: string
-      message: string
-    }[] = []
+    const errors: SyncError[] =
+      []
 
-    // ========================================================
-    // ORDER TRANSACTIONS
-    // ========================================================
+    /* ----------------------------------------------------------
+       PROCESS SEQUENTIALLY
+    ---------------------------------------------------------- */
 
-    const orderedTransactions =
-      [...transactions].sort(
-        (a, b) => {
-          const timeA =
-            new Date(
-              a.timestamp
-            ).getTime()
-
-          const timeB =
-            new Date(
-              b.timestamp
-            ).getTime()
-
-          return (
-            timeA - timeB
-          )
-        }
-      )
-
-    // ========================================================
-    // PROCESS SEQUENTIALLY
-    // ========================================================
-    //
-    // Keeping this sequential is intentional.
-    //
-    // It avoids concurrent processing of transactions within
-    // the same sync request and makes inventory changes
-    // deterministic.
-    //
+    /*
+     * Do NOT change this to Promise.all().
+     *
+     * Offline transactions can modify the same
+     * inventory records. Sequential processing keeps
+     * the existing deterministic behavior.
+     */
 
     for (
       const tx of
@@ -1799,40 +2102,37 @@ export async function POST(
           await processTransaction(
             supabase,
             tx,
-            context
+            context,
           )
 
         syncedIds.push(
-          syncedId
+          syncedId,
         )
-      } catch (
-        error: any
-      ) {
+      } catch (error) {
         const message =
-          error?.message ??
-          'Unknown synchronization error.'
+          getErrorMessage(
+            error,
+          )
 
         console.error(
-          `[SYNC FAILURE] ${tx?.id}:`,
-          error
+          `[SYNC FAILURE] ${tx.id}:`,
+          error,
         )
 
         failedIds.push(
-          tx?.id
+          tx.id,
         )
 
         errors.push({
-          id:
-            tx?.id,
-
+          id: tx.id,
           message,
         })
       }
     }
 
-    // ========================================================
-    // RESPONSE
-    // ========================================================
+    /* ----------------------------------------------------------
+       RESPONSE
+    ---------------------------------------------------------- */
 
     return NextResponse.json({
       success:
@@ -1845,8 +2145,12 @@ export async function POST(
 
       errors,
 
+      /*
+       * Report the actual unique queue
+       * entries processed.
+       */
       processed:
-        transactions.length,
+        orderedTransactions.length,
 
       synced:
         syncedIds.length,
@@ -1854,24 +2158,21 @@ export async function POST(
       failed:
         failedIds.length,
     })
-  } catch (
-    error: any
-  ) {
+  } catch (error) {
     console.error(
       '[SYNC ROUTE CRITICAL ERROR]',
-      error
+      error,
     )
 
     return NextResponse.json(
       {
         success: false,
-
         error:
           'Internal synchronization failure.',
       },
       {
         status: 500,
-      }
+      },
     )
   }
 }

@@ -59,7 +59,7 @@ export const metadata: Metadata = {
 
 // 3. Viewport optimization for mobile devices
 export const viewport: Viewport = {
-  themeColor: '#0070f3',
+  themeColor: '#8B2635', // Updated to your primary Berbere Color token
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1, // Prevents forced zoom behaviors on inputs in mobile POS systems
@@ -69,15 +69,20 @@ export default async function LocaleLayout({ children, params }: LayoutProps) {
   const { locale } = await params;
 
   return (
-    <div 
-      className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen bg-[#F7F4EB]`} 
-      data-locale={locale}
-    >
-      {/* 4. Global Core Content */}
-      {children}
-      
-      {/* 5. Custom Install Banner Trigger */}
-      <PWAInstallPrompt />
-    </div>
+    <html lang={locale}>
+      <head>
+        {/* Forces the browser to explicitly look at the root for the PWA handshake */}
+        <link rel="manifest" href="/manifest.json" />
+      </head>
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen bg-[#F7F4EB]`}>
+        <div data-locale={locale} className="min-h-screen">
+          {/* 4. Global Core Content */}
+          {children}
+        </div>
+        
+        {/* 5. Custom Install Banner Trigger */}
+        <PWAInstallPrompt />
+      </body>
+    </html>
   );
 }

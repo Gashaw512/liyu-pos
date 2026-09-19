@@ -71,7 +71,7 @@ export default function TopBar({
   }
 
   const logout = () => {
-    router.push(`/${locale}/auth/login` as any)
+    router.push(`/${locale}/login` as any)
   }
 
   return (

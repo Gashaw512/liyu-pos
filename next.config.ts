@@ -1,25 +1,28 @@
 import type { NextConfig } from "next";
 import nextPWA from "next-pwa";
 
-// Initialize next-pwa wrapper cleanly with strict type handling
 const withPWA = nextPWA({
   dest: "public",
-  // Keeps local 'npm run dev' fast and free from caching issues,
-  // but compiles perfectly on Vercel deployment builds.
+
+  // Keep development fast and avoid service-worker caching locally.
+  // PWA is enabled automatically for production builds.
   disable: process.env.NODE_ENV === "development",
+
+  // Automatically register the generated service worker.
   register: true,
+
+  // Activate the newest service worker immediately.
   skipWaiting: true,
 });
 
 const nextConfig: NextConfig = {
-  // Enables strictly-typed routing paths across your layout
+  // Keep Next.js typed routes enabled.
   typedRoutes: true,
 
-  // Performance optimization for high-density POS image files
+  // Optimize product/menu images for the POS.
   images: {
     formats: ["image/webp"],
   },
 };
 
-// Export configuration by wrapping it with PWA engine compiler
-export default withPWA(nextConfig as any) as NextConfig;
+export default withPWA(nextConfig);

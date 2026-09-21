@@ -1,23 +1,45 @@
 {
+  "id": "/",
   "name": "Liyu POS",
-  "short_name": "LiyuPOS",
-  "description": "High-performance Cloud Point of Sale System",
-  "start_url": "/",
+  "short_name": "Liyu POS",
+  "description": "Professional point of sale and business management for Ethiopian businesses.",
+  "start_url": "/en/login",
+  "scope": "/",
+  "display_override": [
+    "window-controls-overlay",
+    "standalone"
+  ],
   "display": "standalone",
-  "orientation": "portrait",
+  "orientation": "portrait-primary",
   "background_color": "#F7F4EB",
   "theme_color": "#8B2635",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": [
+    "business",
+    "finance",
+    "productivity"
+  ],
+  "prefer_related_applications": false,
   "icons": [
     {
-      "src": "/icons/icon-192x192.svg",
+      "src": "/icons/icon-192x192.png",
       "sizes": "192x192",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
-      "src": "/icons/icon-512x512.svg",
+      "src": "/icons/icon-512x512.png",
       "sizes": "512x512",
-      "type": "image/svg+xml"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }
+

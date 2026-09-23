@@ -25,7 +25,7 @@ import DashboardPeriodFilter from './DashboardPeriodFilter'
 
 /* ============================================================
    TYPES
-   ============================================================ */
+============================================================ */
 
 interface CategoryPerformance {
   name: string
@@ -76,7 +76,7 @@ interface DashboardClientProps {
 
 /* ============================================================
    COMPONENT
-   ============================================================ */
+============================================================ */
 
 export default function DashboardClientContent({
   locale,
@@ -84,6 +84,7 @@ export default function DashboardClientContent({
   businessName,
 
   initialProductCount,
+  initialCategoryCount: _initialCategoryCount,
 
   categoryBreakdown,
   lowStockAlerts,
@@ -110,33 +111,39 @@ export default function DashboardClientContent({
   openShiftCount,
 }: DashboardClientProps) {
   const router = useRouter()
+
   const isAm = locale === 'am'
 
-  const [isVoicePlaying, setIsVoicePlaying] = useState(false)
+  const [isVoicePlaying, setIsVoicePlaying] =
+    useState(false)
 
-  /* ============================================================
+  /* ==========================================================
      TRANSLATION
-     ============================================================ */
+  ========================================================== */
 
-  const t = (en: string, am: string) =>
-    isAm ? am : en
+  const t = (
+    en: string,
+    am: string,
+  ) => (isAm ? am : en)
 
-  /* ============================================================
+  /* ==========================================================
      BUSINESS STATE
-     ============================================================ */
+  ========================================================== */
 
   const hasActiveShift =
-    initialHasActiveShift || openShiftCount > 0
+    initialHasActiveShift ||
+    openShiftCount > 0
 
   const isOwnerOrManager =
     role === 'owner' ||
     role === 'manager'
 
-  /* ============================================================
+  /* ==========================================================
      DERIVED DATA
-     ============================================================ */
+  ========================================================== */
 
-  const totalProducts = initialProductCount
+  const totalProducts =
+    initialProductCount
 
   const totalItemsSold =
     categoryBreakdown.reduce(
@@ -173,11 +180,13 @@ export default function DashboardClientContent({
         ).toFixed(1)
       : '0.0'
 
-  /* ============================================================
+  /* ==========================================================
      FORMATTING
-     ============================================================ */
+  ========================================================== */
 
-  const formatMoney = (value: number) =>
+  const formatMoney = (
+    value: number,
+  ) =>
     value.toLocaleString(
       isAm ? 'am-ET' : 'en-ET',
       {
@@ -185,17 +194,23 @@ export default function DashboardClientContent({
       },
     )
 
-  const formatNumber = (value: number) =>
+  const formatNumber = (
+    value: number,
+  ) =>
     value.toLocaleString(
       isAm ? 'am-ET' : 'en-ET',
     )
 
-  /* ============================================================
+  /* ==========================================================
      NAVIGATION
-     ============================================================ */
+  ========================================================== */
 
-  const goTo = (path: string) => {
-    router.push(`/${locale}${path}`)
+  const goTo = (
+    path: string,
+  ) => {
+    router.push(
+      `/${locale}${path}`,
+    )
   }
 
   const goToSales = () =>
@@ -216,9 +231,9 @@ export default function DashboardClientContent({
   const goToExpenses = () =>
     goTo('/dashboard/expenses')
 
-  /* ============================================================
+  /* ==========================================================
      VOICE BRIEFING
-     ============================================================ */
+  ========================================================== */
 
   const handleVoiceGuidance = () => {
     if (
@@ -334,9 +349,9 @@ export default function DashboardClientContent({
     )
   }
 
-  /* ============================================================
+  /* ==========================================================
      CLEANUP
-     ============================================================ */
+  ========================================================== */
 
   useEffect(() => {
     return () => {
@@ -348,15 +363,15 @@ export default function DashboardClientContent({
     }
   }, [])
 
-  /* ============================================================
+  /* ==========================================================
      RENDER
-     ============================================================ */
+  ========================================================== */
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-4 px-2 pb-8">
       {/* ======================================================
           HEADER
-         ====================================================== */}
+      ====================================================== */}
 
       <DashboardHeader
         businessName={businessName}
@@ -376,9 +391,15 @@ export default function DashboardClientContent({
             : undefined
         }
         onSalesClick={goToSales}
-        onReceiveStockClick={goToInventory}
-        onExpenseClick={goToExpenses}
-        lowStockCount={lowStockCount}
+        onReceiveStockClick={
+          goToInventory
+        }
+        onExpenseClick={
+          goToExpenses
+        }
+        lowStockCount={
+          lowStockCount
+        }
         rightSlot={
           <DashboardPeriodFilter
             locale={locale}
@@ -390,7 +411,7 @@ export default function DashboardClientContent({
 
       {/* ======================================================
           OWNER / MANAGER
-         ====================================================== */}
+      ====================================================== */}
 
       {isOwnerOrManager ? (
         <div className="space-y-4">
@@ -423,7 +444,10 @@ export default function DashboardClientContent({
             <div className="grid grid-cols-2 divide-x divide-y divide-coffee-100 sm:grid-cols-4 sm:divide-y-0">
               <div className="p-4">
                 <p className="text-[10px] font-bold text-coffee-400">
-                  {t('Revenue', 'ገቢ')}
+                  {t(
+                    'Revenue',
+                    'ገቢ',
+                  )}
                 </p>
 
                 <p className="mt-1 text-lg font-black text-coffee-900">
@@ -458,7 +482,10 @@ export default function DashboardClientContent({
 
               <div className="p-4">
                 <p className="text-[10px] font-bold text-coffee-400">
-                  {t('Expenses', 'ወጪ')}
+                  {t(
+                    'Expenses',
+                    'ወጪ',
+                  )}
                 </p>
 
                 <p className="mt-1 text-lg font-black text-berbere-600">
@@ -507,7 +534,10 @@ export default function DashboardClientContent({
 
                   <div>
                     <h3 className="text-sm font-black text-coffee-900">
-                      {t('Sales', 'ሽያጭ')}
+                      {t(
+                        'Sales',
+                        'ሽያጭ',
+                      )}
                     </h3>
 
                     <p className="text-[10px] text-coffee-400">
@@ -524,17 +554,25 @@ export default function DashboardClientContent({
 
                 <button
                   type="button"
-                  onClick={goToSales}
+                  onClick={
+                    goToSales
+                  }
                   className="text-[11px] font-black text-berbere-600 hover:underline"
                 >
-                  {t('View', 'ይመልከቱ')}
+                  {t(
+                    'View',
+                    'ይመልከቱ',
+                  )}
                 </button>
               </div>
 
               <div className="mt-5 grid grid-cols-3 gap-2">
                 <div className="rounded-xl bg-coffee-50 p-3">
                   <p className="text-[9px] font-bold text-coffee-400">
-                    {t('Average', 'አማካይ')}
+                    {t(
+                      'Average',
+                      'አማካይ',
+                    )}
                   </p>
 
                   <p className="mt-1 text-sm font-black text-coffee-900">
@@ -550,7 +588,10 @@ export default function DashboardClientContent({
 
                 <div className="rounded-xl bg-coffee-50 p-3">
                   <p className="text-[9px] font-bold text-coffee-400">
-                    {t('Items', 'እቃዎች')}
+                    {t(
+                      'Items',
+                      'እቃዎች',
+                    )}
                   </p>
 
                   <p className="mt-1 text-sm font-black text-coffee-900">
@@ -560,13 +601,19 @@ export default function DashboardClientContent({
                   </p>
 
                   <p className="text-[9px] text-coffee-400">
-                    {t('sold', 'ተሽጧል')}
+                    {t(
+                      'sold',
+                      'ተሽጧል',
+                    )}
                   </p>
                 </div>
 
                 <div className="rounded-xl bg-berbere-50 p-3">
                   <p className="text-[9px] font-bold text-berbere-600">
-                    {t('Revenue', 'ገቢ')}
+                    {t(
+                      'Revenue',
+                      'ገቢ',
+                    )}
                   </p>
 
                   <p className="mt-1 text-sm font-black text-coffee-900">
@@ -623,7 +670,10 @@ export default function DashboardClientContent({
 
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-coffee-500">
-                    {t('Expenses', 'ወጪ')}
+                    {t(
+                      'Expenses',
+                      'ወጪ',
+                    )}
                   </span>
 
                   <span className="text-sm font-black text-berbere-600">
@@ -668,7 +718,10 @@ export default function DashboardClientContent({
 
                   <div>
                     <h3 className="text-sm font-black text-coffee-900">
-                      {t('Stock', 'ክምችት')}
+                      {t(
+                        'Stock',
+                        'ክምችት',
+                      )}
                     </h3>
 
                     <p className="text-[10px] text-coffee-400">
@@ -682,17 +735,25 @@ export default function DashboardClientContent({
 
                 <button
                   type="button"
-                  onClick={goToInventory}
+                  onClick={
+                    goToInventory
+                  }
                   className="text-[11px] font-black text-berbere-600 hover:underline"
                 >
-                  {t('View', 'ይመልከቱ')}
+                  {t(
+                    'View',
+                    'ይመልከቱ',
+                  )}
                 </button>
               </div>
 
               <div className="mt-5 grid grid-cols-3 gap-2">
                 <div className="rounded-xl bg-coffee-50 p-3">
                   <p className="text-[9px] font-bold text-coffee-400">
-                    {t('Products', 'እቃዎች')}
+                    {t(
+                      'Products',
+                      'እቃዎች',
+                    )}
                   </p>
 
                   <p className="mt-1 text-xl font-black text-coffee-900">
@@ -704,7 +765,10 @@ export default function DashboardClientContent({
 
                 <div className="rounded-xl bg-berbere-50 p-3">
                   <p className="text-[9px] font-bold text-berbere-600">
-                    {t('Out', 'አልቋል')}
+                    {t(
+                      'Out',
+                      'አልቋል',
+                    )}
                   </p>
 
                   <p className="mt-1 text-xl font-black text-coffee-900">
@@ -716,7 +780,10 @@ export default function DashboardClientContent({
 
                 <div className="rounded-xl bg-gold-50 p-3">
                   <p className="text-[9px] font-bold text-gold-600">
-                    {t('Low', 'ዝቅተኛ')}
+                    {t(
+                      'Low',
+                      'ዝቅተኛ',
+                    )}
                   </p>
 
                   <p className="mt-1 text-xl font-black text-coffee-900">
@@ -754,10 +821,13 @@ export default function DashboardClientContent({
               </div>
 
               <div className="mt-5 space-y-2">
-                {lowStockAlerts.length > 0 ? (
+                {lowStockAlerts.length >
+                0 ? (
                   <button
                     type="button"
-                    onClick={goToInventory}
+                    onClick={
+                      goToInventory
+                    }
                     className="flex w-full items-center justify-between rounded-xl bg-gold-50 px-3 py-3 text-left transition hover:bg-gold-100"
                   >
                     <div className="flex items-center gap-3">
@@ -789,7 +859,8 @@ export default function DashboardClientContent({
                   </div>
                 )}
 
-                {pendingSyncCount > 0 ? (
+                {pendingSyncCount >
+                0 ? (
                   <div className="flex w-full items-center justify-between rounded-xl bg-cream-100 px-3 py-3 text-left">
                     <div className="flex items-center gap-3">
                       <RefreshCw className="h-4 w-4 text-coffee-700" />
@@ -825,16 +896,20 @@ export default function DashboardClientContent({
 
           {/* LOW STOCK TABLE */}
 
-          {lowStockAlerts.length > 0 && (
+          {lowStockAlerts.length >
+            0 && (
             <LowStockWarningsTable
-              lowStockAlerts={lowStockAlerts}
+              lowStockAlerts={
+                lowStockAlerts
+              }
               locale={locale}
             />
           )}
 
           {/* CATEGORY PERFORMANCE */}
 
-          {categoryBreakdown.length > 0 && (
+          {categoryBreakdown.length >
+            0 && (
             <CategoryPerformanceTable
               categoryBreakdown={
                 categoryBreakdown
@@ -888,7 +963,9 @@ export default function DashboardClientContent({
 
               <button
                 type="button"
-                onClick={goToShifts}
+                onClick={
+                  goToShifts
+                }
                 className="flex items-center gap-1 text-[11px] font-black text-berbere-600 hover:underline"
               >
                 {t(
@@ -915,7 +992,8 @@ export default function DashboardClientContent({
                     ? `${formatNumber(
                         openShiftCount,
                       )} ${
-                        openShiftCount === 1
+                        openShiftCount ===
+                        1
                           ? t(
                               'shift open',
                               'ፈረቃ ክፍት ነው',
@@ -961,7 +1039,9 @@ export default function DashboardClientContent({
 
               <button
                 type="button"
-                onClick={goToReports}
+                onClick={
+                  goToReports
+                }
                 className="text-[11px] font-black text-berbere-600 hover:underline"
               >
                 {t(
@@ -974,7 +1054,10 @@ export default function DashboardClientContent({
             <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
               <div className="rounded-xl bg-coffee-50 p-3">
                 <p className="text-[9px] font-bold text-coffee-400">
-                  {t('Discounts', 'ቅናሽ')}
+                  {t(
+                    'Discounts',
+                    'ቅናሽ',
+                  )}
                 </p>
 
                 <p className="mt-1 text-sm font-black text-coffee-900">
@@ -987,7 +1070,10 @@ export default function DashboardClientContent({
 
               <div className="rounded-xl bg-coffee-50 p-3">
                 <p className="text-[9px] font-bold text-coffee-400">
-                  {t('Tax', 'ታክስ')}
+                  {t(
+                    'Tax',
+                    'ታክስ',
+                  )}
                 </p>
 
                 <p className="mt-1 text-sm font-black text-coffee-900">
@@ -1029,7 +1115,7 @@ export default function DashboardClientContent({
       ) : (
         /* ======================================================
            OPERATIONAL STAFF
-           ====================================================== */
+        ====================================================== */
 
         <div className="space-y-3">
           <div className="rounded-xl border border-cream-200 bg-cream-50 p-3">
@@ -1043,7 +1129,9 @@ export default function DashboardClientContent({
 
           <button
             type="button"
-            onClick={goToSales}
+            onClick={
+              goToSales
+            }
             className="flex w-full items-center justify-between rounded-2xl border border-coffee-800 bg-coffee-800 p-5 text-left text-cream-50 shadow-sm transition active:scale-[0.98] hover:bg-coffee-700"
           >
             <div className="flex items-center gap-4">
@@ -1075,3 +1163,5 @@ export default function DashboardClientContent({
     </div>
   )
 }
+
+

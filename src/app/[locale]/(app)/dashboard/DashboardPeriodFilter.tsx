@@ -1,138 +1,124 @@
-'use client'
+"use client";
 
 import {
   useEffect,
   useMemo,
   useRef,
   useState,
-} from 'react'
+} from "react";
 
-import type { Route } from 'next'
+import type { Route } from "next";
 
 import {
   usePathname,
   useRouter,
   useSearchParams,
-} from 'next/navigation'
+} from "next/navigation";
 
 import {
   CalendarDays,
   Check,
   ChevronDown,
-} from 'lucide-react'
+} from "lucide-react";
 
 import {
   CalendarDate,
   EthiopicCalendar,
-  GregorianCalendar,
   parseDate as parseCalendarDate,
   toCalendar,
-} from '@internationalized/date'
+} from "@internationalized/date";
 
-import EthiopianDatePicker from '@/components/dashboard/EthiopianDatePicker'
+import EthiopianDatePicker from "@/components/dashboard/EthiopianDatePicker";
 
 /* ============================================================
    TYPES
-   ============================================================ */
+============================================================ */
 
 interface DashboardPeriodFilterProps {
-  locale: string
-  from: string
-  to: string
+  locale: string;
+  from: string;
+  to: string;
 }
 
 type Preset =
-  | 'today'
-  | 'yesterday'
-  | 'this_week'
-  | 'this_month'
-  | 'last_month'
-  | 'custom'
+  | "today"
+  | "yesterday"
+  | "this_week"
+  | "this_month"
+  | "previous_month"
+  | "custom";
 
-type PickerTarget =
-  | 'from'
-  | 'to'
-  | null
+type PickerTarget = "from" | "to" | null;
 
 /* ============================================================
    CONSTANTS
-   ============================================================ */
+============================================================ */
 
-const TIME_ZONE =
-  'Africa/Addis_Ababa'
+const TIME_ZONE = "Africa/Addis_Ababa";
 
 const ETHIOPIAN_MONTHS_EN = [
-  'Meskerem',
-  'Tikimt',
-  'Hidar',
-  'Tahsas',
-  'Tir',
-  'Yekatit',
-  'Megabit',
-  'Miyazya',
-  'Ginbot',
-  'Sene',
-  'Hamle',
-  'Nehase',
-  'Pagumen',
-]
+  "Meskerem",
+  "Tikimt",
+  "Hidar",
+  "Tahsas",
+  "Tir",
+  "Yekatit",
+  "Megabit",
+  "Miyazya",
+  "Ginbot",
+  "Sene",
+  "Hamle",
+  "Nehase",
+  "Pagumen",
+];
 
 const ETHIOPIAN_MONTHS_AM = [
-  'መስከረም',
-  'ጥቅምት',
-  'ኅዳር',
-  'ታኅሣሥ',
-  'ጥር',
-  'የካቲት',
-  'መጋቢት',
-  'ሚያዝያ',
-  'ግንቦት',
-  'ሰኔ',
-  'ሐምሌ',
-  'ነሐሴ',
-  'ጳጉሜን',
-]
+  "መስከረም",
+  "ጥቅምት",
+  "ኅዳር",
+  "ታኅሣሥ",
+  "ጥር",
+  "የካቲት",
+  "መጋቢት",
+  "ሚያዝያ",
+  "ግንቦት",
+  "ሰኔ",
+  "ሐምሌ",
+  "ነሐሴ",
+  "ጳጉሜን",
+];
 
 /* ============================================================
    DATE HELPERS
-   ============================================================ */
+============================================================ */
 
 function getTodayDate(): string {
-  return new Intl.DateTimeFormat(
-    'en-CA',
-    {
-      timeZone: TIME_ZONE,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    },
-  ).format(new Date())
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 }
 
-function formatDate(
-  date: Date,
-): string {
-  return new Intl.DateTimeFormat(
-    'en-CA',
-    {
-      timeZone: TIME_ZONE,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    },
-  ).format(date)
+function formatDate(date: Date): string {
+  const year = date.getUTCFullYear();
+
+  const month = String(
+    date.getUTCMonth() + 1,
+  ).padStart(2, "0");
+
+  const day = String(
+    date.getUTCDate(),
+  ).padStart(2, "0");
+
+  return [year, month, day].join("-");
 }
 
-function parseDate(
-  dateString: string,
-): Date {
-  const [
-    year,
-    month,
-    day,
-  ] = dateString
-    .split('-')
-    .map(Number)
+function parseDate(dateString: string): Date {
+  const [year, month, day] = dateString
+    .split("-")
+    .map(Number);
 
   return new Date(
     Date.UTC(
@@ -140,650 +126,599 @@ function parseDate(
       month - 1,
       day,
     ),
-  )
+  );
 }
 
 function addDays(
   dateString: string,
   days: number,
 ): string {
-  const date =
-    parseDate(dateString)
+  const date = parseDate(dateString);
 
   date.setUTCDate(
     date.getUTCDate() + days,
-  )
+  );
 
-  return (
-    `${date.getUTCFullYear()}-` +
-    `${String(
-      date.getUTCMonth() + 1,
-    ).padStart(2, '0')}-` +
-    `${String(
-      date.getUTCDate(),
-    ).padStart(2, '0')}`
-  )
+  return formatDate(date);
 }
 
 function startOfWeek(
   dateString: string,
 ): string {
-  const date =
-    parseDate(dateString)
+  const date = parseDate(dateString);
 
-  const day =
-    date.getUTCDay()
+  const day = date.getUTCDay();
 
   const difference =
-    day === 0
-      ? -6
-      : 1 - day
+    day === 0 ? -6 : 1 - day;
 
   date.setUTCDate(
-    date.getUTCDate() +
-      difference,
-  )
+    date.getUTCDate() + difference,
+  );
 
-  return (
-    `${date.getUTCFullYear()}-` +
-    `${String(
-      date.getUTCMonth() + 1,
-    ).padStart(2, '0')}-` +
-    `${String(
-      date.getUTCDate(),
-    ).padStart(2, '0')}`
-  )
+  return formatDate(date);
 }
 
 function startOfMonth(
   dateString: string,
 ): string {
-  const [
+  const [year, month] =
+    dateString.split("-");
+
+  return [
     year,
     month,
-  ] = dateString.split('-')
-
-  return `${year}-${month}-01`
+    "01",
+  ].join("-");
 }
 
 function previousMonthStart(
   dateString: string,
 ): string {
-  const date =
-    parseDate(dateString)
+  const date = parseDate(dateString);
 
   date.setUTCMonth(
     date.getUTCMonth() - 1,
-  )
+  );
 
-  date.setUTCDate(1)
+  date.setUTCDate(1);
 
-  return (
-    `${date.getUTCFullYear()}-` +
-    `${String(
-      date.getUTCMonth() + 1,
-    ).padStart(2, '0')}-01`
-  )
-}
-
-function currentMonthStart(
-  dateString: string,
-): string {
-  return startOfMonth(
-    dateString,
-  )
+  return formatDate(date);
 }
 
 /* ============================================================
-   ETHIOPIAN DATE FORMATTING
-   ============================================================ */
+   ETHIOPIAN DATE
+============================================================ */
 
-/**
- * Converts a Gregorian YYYY-MM-DD string
- * into an Ethiopian CalendarDate.
- *
- * This does NOT use Intl.DateTimeFormat,
- * so server and browser output stays identical.
- */
 function gregorianToEthiopian(
   value: string,
 ): CalendarDate {
   return toCalendar(
     parseCalendarDate(value),
     new EthiopicCalendar(),
-  )
+  );
 }
 
-/**
- * Formats a Gregorian date as a deterministic
- * Ethiopian calendar date.
- *
- * Example:
- *   2026-09-18
- *   -> Nehasе 8, 2019
- *
- * The exact output depends on the locale.
- */
 function formatEthiopianDate(
   dateString: string,
   locale: string,
 ): string {
   const date =
-    gregorianToEthiopian(
-      dateString,
-    )
+    gregorianToEthiopian(dateString);
 
   const months =
-    locale === 'am'
+    locale === "am"
       ? ETHIOPIAN_MONTHS_AM
-      : ETHIOPIAN_MONTHS_EN
+      : ETHIOPIAN_MONTHS_EN;
 
   const month =
     months[date.month - 1] ??
-    String(date.month)
+    String(date.month);
 
-  return `${month} ${date.day}, ${date.year}`
+  return (
+    month +
+    " " +
+    date.day +
+    ", " +
+    date.year
+  );
 }
 
 /* ============================================================
-   DATE VALIDATION
-   ============================================================ */
+   VALIDATION
+============================================================ */
 
 function isValidDate(
   value: string,
 ): boolean {
   if (
-    !/^\d{4}-\d{2}-\d{2}$/.test(
-      value,
-    )
+    !/^\d{4}-\d{2}-\d{2}$/.test(value)
   ) {
-    return false
+    return false;
   }
 
-  const date =
-    parseDate(value)
+  const date = parseDate(value);
 
-  return (
-    formatDate(date) === value
-  )
+  return formatDate(date) === value;
+}
+
+/* ============================================================
+   NORMALIZE DATE
+============================================================ */
+
+function normalizeDate(
+  value: string,
+): string {
+  return value?.slice(0, 10) ?? "";
 }
 
 /* ============================================================
    COMPONENT
-   ============================================================ */
+============================================================ */
 
 export default function DashboardPeriodFilter({
   locale,
   from,
   to,
 }: DashboardPeriodFilterProps) {
-  const router =
-    useRouter()
-
-  const pathname =
-    usePathname()
-
-  const searchParams =
-    useSearchParams()
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   const containerRef =
-    useRef<HTMLDivElement>(null)
+    useRef<HTMLDivElement>(null);
 
-  const isAm =
-    locale === 'am'
+  const isAm = locale === "am";
 
   const [open, setOpen] =
-    useState(false)
+    useState(false);
 
   const [
     pickerTarget,
     setPickerTarget,
-  ] = useState<PickerTarget>(
-    null,
-  )
+  ] = useState<PickerTarget>(null);
 
-  const [
-    customFrom,
-    setCustomFrom,
-  ] = useState(from)
+  const [customFrom, setCustomFrom] =
+    useState(
+      normalizeDate(from),
+    );
 
-  const [
-    customTo,
-    setCustomTo,
-  ] = useState(
-    addDays(to, -1),
-  )
+  const [customTo, setCustomTo] =
+    useState(
+      addDays(
+        normalizeDate(to),
+        -1,
+      ),
+    );
 
   /* ==========================================================
      LABELS
-     ========================================================== */
+  ========================================================== */
 
   const labels = {
     today: isAm
-      ? 'ዛሬ'
-      : 'Today',
+      ? "ዛሬ"
+      : "Today",
 
     yesterday: isAm
-      ? 'ትናንት'
-      : 'Yesterday',
+      ? "ትናንት"
+      : "Yesterday",
 
     this_week: isAm
-      ? 'ይህ ሳምንት'
-      : 'This Week',
+      ? "ይህ ሳምንት"
+      : "This Week",
 
     this_month: isAm
-      ? 'ይህ ወር'
-      : 'This Month',
+      ? "ይህ ወር"
+      : "This Month",
 
-    last_month: isAm
-      ? 'ያለፈው ወር'
-      : 'Last Month',
+    previous_month: isAm
+      ? "ያለፈው ወር"
+      : "Previous Month",
 
     custom: isAm
-      ? 'የተመረጠ ጊዜ'
-      : 'Custom Range',
-  }
+      ? "የተመረጠ"
+      : "Custom",
+  };
 
   /* ==========================================================
-     SYNC INPUTS
-     ========================================================== */
+     SYNC CUSTOM VALUES
+  ========================================================== */
 
   useEffect(() => {
-    setCustomFrom(from)
+    const nextFrom =
+      normalizeDate(from);
 
-    setCustomTo(
-      addDays(to, -1),
-    )
-  }, [from, to])
+    const nextTo =
+      normalizeDate(to);
+
+    if (isValidDate(nextFrom)) {
+      setCustomFrom(nextFrom);
+    }
+
+    if (isValidDate(nextTo)) {
+      setCustomTo(
+        addDays(
+          nextTo,
+          -1,
+        ),
+      );
+    }
+  }, [from, to]);
 
   /* ==========================================================
-     OUTSIDE CLICK + ESCAPE
-     ========================================================== */
+     OUTSIDE CLICK + ESC
+  ========================================================== */
 
   useEffect(() => {
     if (!open) {
-      return
+      return;
     }
 
-    const handlePointerDown =
-      (event: MouseEvent) => {
-        if (
-          containerRef.current &&
-          !containerRef.current.contains(
-            event.target as Node,
-          )
-        ) {
-          setOpen(false)
-          setPickerTarget(null)
-        }
+    const handlePointerDown = (
+      event: MouseEvent,
+    ) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(
+          event.target as Node,
+        )
+      ) {
+        setOpen(false);
+        setPickerTarget(null);
+      }
+    };
+
+    const handleKeyDown = (
+      event: KeyboardEvent,
+    ) => {
+      if (event.key !== "Escape") {
+        return;
       }
 
-    const handleKeyDown =
-      (event: KeyboardEvent) => {
-        if (
-          event.key !== 'Escape'
-        ) {
-          return
-        }
-
-        if (pickerTarget) {
-          setPickerTarget(null)
-          return
-        }
-
-        setOpen(false)
+      if (pickerTarget) {
+        setPickerTarget(null);
+        return;
       }
+
+      setOpen(false);
+    };
 
     document.addEventListener(
-      'mousedown',
+      "mousedown",
       handlePointerDown,
-    )
+    );
 
     document.addEventListener(
-      'keydown',
+      "keydown",
       handleKeyDown,
-    )
+    );
 
     return () => {
       document.removeEventListener(
-        'mousedown',
+        "mousedown",
         handlePointerDown,
-      )
+      );
 
       document.removeEventListener(
-        'keydown',
+        "keydown",
         handleKeyDown,
-      )
-    }
+      );
+    };
   }, [
     open,
     pickerTarget,
-  ])
+  ]);
 
   /* ==========================================================
      CURRENT PRESET
-     ========================================================== */
+
+     `period` is the source of truth.
+
+     Supported:
+       today
+       yesterday
+       this_week
+       this_month
+       previous_month
+       custom
+  ========================================================== */
 
   const currentPreset =
     useMemo<Preset>(() => {
+      const explicitPeriod =
+        searchParams.get("period");
+
+      if (
+        explicitPeriod === "today" ||
+        explicitPeriod === "yesterday" ||
+        explicitPeriod === "this_week" ||
+        explicitPeriod === "this_month" ||
+        explicitPeriod === "previous_month" ||
+        explicitPeriod === "custom"
+      ) {
+        return explicitPeriod;
+      }
+
+      /*
+       * Backward compatibility for URLs that existed before
+       * the `period` parameter was introduced.
+       */
+
+      const currentFrom =
+        normalizeDate(from);
+
+      const currentTo =
+        normalizeDate(to);
+
       const today =
-        getTodayDate()
+        getTodayDate();
 
       const tomorrow =
         addDays(
           today,
           1,
-        )
+        );
 
       const yesterday =
         addDays(
           today,
           -1,
-        )
+        );
 
       const weekStart =
-        startOfWeek(today)
+        startOfWeek(today);
 
       const monthStart =
-        startOfMonth(today)
+        startOfMonth(today);
 
-      const lastMonthStart =
-        previousMonthStart(
-          today,
-        )
+      const previousStart =
+        previousMonthStart(today);
 
       if (
-        from === today &&
-        to === tomorrow
+        currentFrom === today &&
+        currentTo === tomorrow
       ) {
-        return 'today'
+        return "today";
       }
 
       if (
-        from === yesterday &&
-        to === today
+        currentFrom === yesterday &&
+        currentTo === today
       ) {
-        return 'yesterday'
+        return "yesterday";
       }
 
       if (
-        from === weekStart &&
-        to === tomorrow
+        currentFrom === weekStart &&
+        currentTo === tomorrow
       ) {
-        return 'this_week'
+        return "this_week";
       }
 
       if (
-        from === monthStart &&
-        to === tomorrow
+        currentFrom === monthStart &&
+        currentTo === tomorrow
       ) {
-        return 'this_month'
+        return "this_month";
       }
 
       if (
-        from === lastMonthStart &&
-        to === monthStart
+        currentFrom === previousStart &&
+        currentTo === monthStart
       ) {
-        return 'last_month'
+        return "previous_month";
       }
 
-      return 'custom'
+      return "custom";
     }, [
+      searchParams,
       from,
       to,
-    ])
+    ]);
 
   /* ==========================================================
-     DISPLAY RANGE
-     ========================================================== */
+     CUSTOM RANGE SUMMARY
+  ========================================================== */
 
-  const displayRange =
+  const customRangeSummary =
     useMemo(() => {
       if (
-        currentPreset !==
-        'custom'
+        !isValidDate(customFrom) ||
+        !isValidDate(customTo)
       ) {
-        return null
+        return null;
       }
-
-      if (
-        !isValidDate(from) ||
-        !isValidDate(to)
-      ) {
-        return null
-      }
-
-      /*
-       * `to` is exclusive internally.
-       *
-       * Example:
-       *   from = 2026-09-01
-       *   to   = 2026-09-19
-       *
-       * Visible range:
-       *   Sep 1 – Sep 18
-       */
-      const visibleTo =
-        addDays(
-          to,
-          -1,
-        )
 
       return (
-        `${formatEthiopianDate(
-          from,
+        formatEthiopianDate(
+          customFrom,
           locale,
-        )} – ` +
-        `${formatEthiopianDate(
-          visibleTo,
+        ) +
+        " → " +
+        formatEthiopianDate(
+          customTo,
           locale,
-        )}`
-      )
+        )
+      );
     }, [
-      currentPreset,
-      from,
-      to,
+      customFrom,
+      customTo,
       locale,
-    ])
+    ]);
 
   /* ==========================================================
-     CURRENT SELECTION DISPLAY
-     ========================================================== */
+     COMPACT TRIGGER LABEL
+  ========================================================== */
 
-  const selectedPeriodLabel =
-    currentPreset === 'custom'
-      ? displayRange ||
-        labels.custom
-      : labels[currentPreset]
+  const triggerLabel =
+    currentPreset === "custom"
+      ? labels.custom
+      : labels[currentPreset];
 
   /* ==========================================================
      APPLY RANGE
-     ========================================================== */
+  ========================================================== */
 
   const applyRange = (
     nextFrom: string,
     nextTo: string,
+    preset: Preset = "custom",
   ) => {
     if (
       !nextFrom ||
       !nextTo
     ) {
-      return
+      return;
     }
 
     if (
       !isValidDate(nextFrom) ||
       !isValidDate(nextTo)
     ) {
-      return
+      return;
     }
 
-    if (
-      nextFrom >= nextTo
-    ) {
-      return
+    if (nextFrom >= nextTo) {
+      return;
     }
 
     const params =
       new URLSearchParams(
         searchParams.toString(),
-      )
+      );
 
     params.set(
-      'from',
+      "from",
       nextFrom,
-    )
+    );
 
     params.set(
-      'to',
+      "to",
       nextTo,
-    )
+    );
+
+    params.set(
+      "period",
+      preset,
+    );
 
     router.push(
       `${pathname}?${params.toString()}` as Route,
-    )
+    );
 
-    setOpen(false)
-    setPickerTarget(null)
-  }
+    setOpen(false);
+    setPickerTarget(null);
+  };
 
   /* ==========================================================
-     PRESET SELECTION
-     ========================================================== */
+     PRESETS
+  ========================================================== */
 
   const selectPreset = (
     preset: Exclude<
       Preset,
-      'custom'
+      "custom"
     >,
   ) => {
     const today =
-      getTodayDate()
+      getTodayDate();
 
     const tomorrow =
       addDays(
         today,
         1,
-      )
+      );
 
-    if (
-      preset === 'today'
-    ) {
-      applyRange(
-        today,
-        tomorrow,
-      )
-
-      return
-    }
-
-    if (
-      preset === 'yesterday'
-    ) {
-      applyRange(
-        addDays(
+    switch (preset) {
+      case "today":
+        applyRange(
           today,
-          -1,
-        ),
-        today,
-      )
+          tomorrow,
+          "today",
+        );
+        break;
 
-      return
-    }
-
-    if (
-      preset === 'this_week'
-    ) {
-      applyRange(
-        startOfWeek(today),
-        tomorrow,
-      )
-
-      return
-    }
-
-    if (
-      preset === 'this_month'
-    ) {
-      applyRange(
-        startOfMonth(today),
-        tomorrow,
-      )
-
-      return
-    }
-
-    if (
-      preset === 'last_month'
-    ) {
-      applyRange(
-        previousMonthStart(
+      case "yesterday":
+        applyRange(
+          addDays(
+            today,
+            -1,
+          ),
           today,
-        ),
-        currentMonthStart(
-          today,
-        ),
-      )
+          "yesterday",
+        );
+        break;
+
+      case "this_week":
+        applyRange(
+          startOfWeek(today),
+          tomorrow,
+          "this_week",
+        );
+        break;
+
+      case "this_month":
+        applyRange(
+          startOfMonth(today),
+          tomorrow,
+          "this_month",
+        );
+        break;
+
+      case "previous_month":
+        applyRange(
+          previousMonthStart(
+            today,
+          ),
+          startOfMonth(today),
+          "previous_month",
+        );
+        break;
     }
-  }
+  };
 
   /* ==========================================================
-     PICKER CHANGE
-     ========================================================== */
+     DATE PICKER
+  ========================================================== */
 
   const handlePickerChange = (
     value: string,
   ) => {
-    if (
-      !isValidDate(value)
-    ) {
-      return
+    if (!isValidDate(value)) {
+      return;
     }
 
     if (
-      pickerTarget === 'from'
+      pickerTarget === "from"
     ) {
-      setCustomFrom(value)
+      setCustomFrom(value);
 
-      if (
-        value > customTo
-      ) {
-        setCustomTo(value)
+      if (value > customTo) {
+        setCustomTo(value);
       }
 
-      setPickerTarget(null)
+      setPickerTarget(null);
 
-      return
+      return;
     }
 
     if (
-      pickerTarget === 'to'
+      pickerTarget === "to"
     ) {
-      setCustomTo(value)
+      setCustomTo(value);
 
-      if (
-        value < customFrom
-      ) {
-        setCustomFrom(value)
+      if (value < customFrom) {
+        setCustomFrom(value);
       }
 
-      setPickerTarget(null)
+      setPickerTarget(null);
     }
-  }
-
-  /* ==========================================================
-     TRIGGER LABEL
-     ========================================================== */
-
-  const triggerLabel =
-    currentPreset === 'custom'
-      ? displayRange ||
-        labels.custom
-      : labels[currentPreset]
+  };
 
   /* ==========================================================
      RENDER
-     ========================================================== */
+  ========================================================== */
 
   return (
     <div
@@ -791,39 +726,52 @@ export default function DashboardPeriodFilter({
       className="relative"
     >
       {/* ======================================================
-          TRIGGER
-          ====================================================== */}
+          COMPACT TRIGGER
+      ====================================================== */}
 
       <button
         type="button"
         onClick={() => {
           setOpen(
-            value => !value,
-          )
+            (value) => !value,
+          );
 
-          setPickerTarget(null)
+          setPickerTarget(null);
         }}
         aria-haspopup="menu"
         aria-expanded={open}
+        aria-label={
+          isAm
+            ? "ጊዜ፡ " +
+              triggerLabel
+            : "Period: " +
+              triggerLabel
+        }
         className="
           inline-flex
-          h-8
-          max-w-[230px]
+          h-9
+          min-w-[112px]
+          max-w-[150px]
           items-center
+          justify-center
           gap-1.5
           rounded-lg
           border
           border-cream-200
           bg-white
           px-2.5
-          text-[10px]
+          text-[11px]
           font-bold
           text-coffee-700
           shadow-sm
           transition
-          hover:border-coffee-300
+          duration-150
+          hover:border-berbere-300
           hover:bg-cream-50
           active:scale-[0.98]
+          focus:outline-none
+          focus:ring-2
+          focus:ring-berbere-500/20
         "
       >
         <CalendarDays
@@ -851,8 +799,8 @@ export default function DashboardPeriodFilter({
             duration-200
             ${
               open
-                ? 'rotate-180'
-                : ''
+                ? "rotate-180"
+                : ""
             }
           `}
         />
@@ -860,17 +808,22 @@ export default function DashboardPeriodFilter({
 
       {/* ======================================================
           DROPDOWN
-          ====================================================== */}
+      ====================================================== */}
 
       {open && (
         <div
           role="menu"
+          aria-label={
+            isAm
+              ? "የጊዜ ምርጫ"
+              : "Period selection"
+          }
           className="
             absolute
             right-0
             top-full
             z-50
-            mt-1.5
+            mt-2
             w-[270px]
             overflow-visible
             rounded-xl
@@ -878,170 +831,201 @@ export default function DashboardPeriodFilter({
             border-cream-200
             bg-white
             shadow-xl
+            ring-1
+            ring-black/[0.03]
           "
         >
           {/* ==================================================
-              CURRENT SELECTION
-              ================================================== */}
+              CURRENT PERIOD
+          ================================================== */}
 
           <div
             className="
-              flex
-              items-center
-              justify-between
-              gap-2
               border-b
               border-cream-100
               px-3
-              py-2
+              py-2.5
             "
           >
             <div
               className="
                 flex
-                min-w-0
                 items-center
-                gap-2
+                justify-between
+                gap-3
               "
             >
-              <div
-                className="
-                  flex
-                  h-7
-                  w-7
-                  shrink-0
-                  items-center
-                  justify-center
-                  rounded-lg
-                  bg-cream-50
-                  text-berbere-500
-                "
-              >
-                <CalendarDays
-                  className="h-3.5 w-3.5"
-                />
-              </div>
-
               <div className="min-w-0">
                 <p
                   className="
-                    text-[10px]
+                    text-[9px]
                     font-bold
+                    uppercase
+                    tracking-wide
                     text-coffee-400
                   "
                 >
                   {isAm
-                    ? 'የተመረጠው'
-                    : 'Selected'}
+                    ? "የአሁኑ ጊዜ"
+                    : "Current period"}
                 </p>
 
                 <p
                   className="
+                    mt-0.5
                     truncate
                     text-[11px]
-                    font-black
+                    font-bold
                     text-coffee-800
                   "
                 >
-                  {selectedPeriodLabel}
+                  {triggerLabel}
                 </p>
               </div>
+
+              <div
+                className="
+                  shrink-0
+                  rounded-md
+                  bg-cream-50
+                  px-2
+                  py-1
+                  text-[9px]
+                  font-semibold
+                  text-coffee-500
+                "
+              >
+                {isAm
+                  ? "ዳሽቦርድ"
+                  : "Dashboard"}
+              </div>
             </div>
+
+            {currentPreset ===
+              "custom" &&
+              customRangeSummary && (
+                <p
+                  className="
+                    mt-1.5
+                    truncate
+                    text-[9px]
+                    font-medium
+                    text-coffee-500
+                  "
+                >
+                  {customRangeSummary}
+                </p>
+              )}
           </div>
 
           {/* ==================================================
               QUICK PERIODS
-              ================================================== */}
+          ================================================== */}
 
-          <div className="p-1.5">
+          <div className="p-2.5">
             <div
               className="
-                mb-1
                 px-2
-                text-[8px]
+                pb-1.5
+                text-[9px]
                 font-bold
                 uppercase
-                tracking-wider
+                tracking-wide
                 text-coffee-400
               "
             >
               {isAm
-                ? 'ፈጣን ምርጫ'
-                : 'Quick Periods'}
+                ? "ፈጣን ምርጫ"
+                : "Quick periods"}
             </div>
 
             <div className="space-y-0.5">
               {(
                 [
-                  'today',
-                  'yesterday',
-                  'this_week',
-                  'this_month',
-                  'last_month',
+                  "today",
+                  "yesterday",
+                  "this_week",
+                  "this_month",
+                  "previous_month",
                 ] as const
-              ).map(
-                preset => {
-                  const selected =
-                    currentPreset ===
-                    preset
+              ).map((preset) => {
+                const selected =
+                  currentPreset ===
+                  preset;
 
-                  return (
-                    <button
-                      key={preset}
-                      type="button"
-                      role="menuitem"
-                      onClick={() =>
-                        selectPreset(
-                          preset,
-                        )
+                return (
+                  <button
+                    key={preset}
+                    type="button"
+                    role="menuitem"
+                    onClick={() =>
+                      selectPreset(
+                        preset,
+                      )
+                    }
+                    className={`
+                      flex
+                      h-9
+                      w-full
+                      items-center
+                      gap-2
+                      rounded-lg
+                      px-2.5
+                      text-left
+                      text-[11px]
+                      font-semibold
+                      transition
+                      ${
+                        selected
+                          ? `
+                            bg-cream-100
+                            text-berbere-600
+                          `
+                          : `
+                            text-coffee-700
+                            hover:bg-cream-50
+                          `
                       }
+                    `}
+                  >
+                    <CalendarDays
+                      aria-hidden="true"
                       className={`
-                        flex
-                        h-7
-                        w-full
-                        items-center
-                        rounded-lg
-                        px-2.5
-                        text-left
-                        text-[10px]
-                        font-semibold
-                        transition
+                        h-3.5
+                        w-3.5
+                        shrink-0
                         ${
                           selected
-                            ? `
-                              bg-cream-100
-                              text-berbere-600
-                            `
-                            : `
-                              text-coffee-700
-                              hover:bg-cream-50
-                            `
+                            ? "text-berbere-500"
+                            : "text-coffee-400"
                         }
                       `}
-                    >
-                      <span className="flex-1">
-                        {labels[preset]}
-                      </span>
+                    />
 
-                      {selected && (
-                        <Check
-                          className="
-                            h-3.5
-                            w-3.5
-                            text-berbere-500
-                          "
-                        />
-                      )}
-                    </button>
-                  )
-                },
-              )}
+                    <span className="flex-1">
+                      {labels[preset]}
+                    </span>
+
+                    {selected && (
+                      <Check
+                        aria-hidden="true"
+                        className="
+                          h-3.5
+                          w-3.5
+                          shrink-0
+                          text-berbere-500
+                        "
+                      />
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
           {/* ==================================================
               CUSTOM RANGE
-              ================================================== */}
+          ================================================== */}
 
           <div
             className="
@@ -1049,48 +1033,41 @@ export default function DashboardPeriodFilter({
               border-cream-100
               px-3
               pb-3
-              pt-2
+              pt-2.5
             "
           >
-            <div
-              className="
-                mb-1.5
-                text-[8px]
-                font-bold
-                uppercase
-                tracking-wider
-                text-coffee-400
-              "
-            >
-              {isAm
-                ? 'የተመረጠ ጊዜ'
-                : 'Custom Range'}
+            <div className="mb-2">
+              <p
+                className="
+                  text-[9px]
+                  font-bold
+                  uppercase
+                  tracking-wide
+                  text-coffee-400
+                "
+              >
+                {isAm
+                  ? "የተመረጠ ጊዜ"
+                  : "Custom range"}
+              </p>
             </div>
 
-            <div
-              className="
-                grid
-                grid-cols-2
-                gap-2
-              "
-            >
-              {/* ==================================================
-                  FROM
-                  ================================================== */}
+            <div className="grid grid-cols-2 gap-2">
+              {/* FROM */}
 
               <div className="relative">
                 <span
                   className="
                     mb-1
                     block
-                    text-[8px]
+                    text-[9px]
                     font-semibold
                     text-coffee-400
                   "
                 >
                   {isAm
-                    ? 'ከ'
-                    : 'From'}
+                    ? "ከ"
+                    : "From"}
                 </span>
 
                 <button
@@ -1098,17 +1075,17 @@ export default function DashboardPeriodFilter({
                   onClick={() =>
                     setPickerTarget(
                       pickerTarget ===
-                        'from'
+                        "from"
                         ? null
-                        : 'from',
+                        : "from",
                     )
                   }
                   className={`
                     flex
-                    h-8
+                    h-9
                     w-full
                     items-center
-                    gap-1
+                    gap-1.5
                     rounded-lg
                     border
                     px-2
@@ -1118,7 +1095,7 @@ export default function DashboardPeriodFilter({
                     transition
                     ${
                       pickerTarget ===
-                      'from'
+                      "from"
                         ? `
                           border-berbere-400
                           bg-white
@@ -1135,6 +1112,7 @@ export default function DashboardPeriodFilter({
                   `}
                 >
                   <CalendarDays
+                    aria-hidden="true"
                     className="
                       h-3
                       w-3
@@ -1152,22 +1130,18 @@ export default function DashboardPeriodFilter({
                 </button>
 
                 {pickerTarget ===
-                  'from' && (
+                  "from" && (
                   <div
                     className="
                       absolute
                       right-0
-                      top-[58px]
+                      top-[62px]
                       z-[60]
                     "
                   >
                     <EthiopianDatePicker
-                      value={
-                        customFrom
-                      }
-                      locale={
-                        locale
-                      }
+                      value={customFrom}
+                      locale={locale}
                       onChange={
                         handlePickerChange
                       }
@@ -1181,23 +1155,21 @@ export default function DashboardPeriodFilter({
                 )}
               </div>
 
-              {/* ==================================================
-                  TO
-                  ================================================== */}
+              {/* TO */}
 
               <div className="relative">
                 <span
                   className="
                     mb-1
                     block
-                    text-[8px]
+                    text-[9px]
                     font-semibold
                     text-coffee-400
                   "
                 >
                   {isAm
-                    ? 'እስከ'
-                    : 'To'}
+                    ? "እስከ"
+                    : "To"}
                 </span>
 
                 <button
@@ -1205,17 +1177,17 @@ export default function DashboardPeriodFilter({
                   onClick={() =>
                     setPickerTarget(
                       pickerTarget ===
-                        'to'
+                        "to"
                         ? null
-                        : 'to',
+                        : "to",
                     )
                   }
                   className={`
                     flex
-                    h-8
+                    h-9
                     w-full
                     items-center
-                    gap-1
+                    gap-1.5
                     rounded-lg
                     border
                     px-2
@@ -1225,7 +1197,7 @@ export default function DashboardPeriodFilter({
                     transition
                     ${
                       pickerTarget ===
-                      'to'
+                      "to"
                         ? `
                           border-berbere-400
                           bg-white
@@ -1242,6 +1214,7 @@ export default function DashboardPeriodFilter({
                   `}
                 >
                   <CalendarDays
+                    aria-hidden="true"
                     className="
                       h-3
                       w-3
@@ -1259,22 +1232,18 @@ export default function DashboardPeriodFilter({
                 </button>
 
                 {pickerTarget ===
-                  'to' && (
+                  "to" && (
                   <div
                     className="
                       absolute
                       right-0
-                      top-[58px]
+                      top-[62px]
                       z-[60]
                     "
                   >
                     <EthiopianDatePicker
-                      value={
-                        customTo
-                      }
-                      locale={
-                        locale
-                      }
+                      value={customTo}
+                      locale={locale}
                       onChange={
                         handlePickerChange
                       }
@@ -1289,9 +1258,7 @@ export default function DashboardPeriodFilter({
               </div>
             </div>
 
-            {/* ==================================================
-                APPLY
-                ================================================== */}
+            {/* APPLY */}
 
             <button
               type="button"
@@ -1302,6 +1269,7 @@ export default function DashboardPeriodFilter({
                     customTo,
                     1,
                   ),
+                  "custom",
                 )
               }
               disabled={
@@ -1311,31 +1279,33 @@ export default function DashboardPeriodFilter({
                   customTo
               }
               className="
-                mt-2
-                h-8
+                mt-2.5
+                h-9
                 w-full
                 rounded-lg
-                bg-[#1B2B50]
+                bg-berbere-500
                 px-3
-                text-[10px]
+                text-[11px]
                 font-bold
                 text-white
                 shadow-sm
                 transition
-                hover:opacity-95
+                hover:bg-berbere-600
                 active:scale-[0.99]
                 disabled:cursor-not-allowed
                 disabled:opacity-40
+                focus:outline-none
+                focus:ring-2
+                focus:ring-berbere-500/20
               "
             >
               {isAm
-                ? 'ተግብር'
-                : 'Apply'}
+                ? "ተግብር"
+                : "Apply"}
             </button>
           </div>
         </div>
       )}
     </div>
-  )
+  );
 }
-

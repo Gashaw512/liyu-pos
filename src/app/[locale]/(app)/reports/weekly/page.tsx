@@ -1,105 +1,246 @@
+// src/app/[locale]/(app)/reports/weekly/page.tsx
+
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, CalendarDays, BarChart2 } from 'lucide-react'
+import {
+  ArrowLeft,
+  BarChart3,
+  CalendarDays,
+} from 'lucide-react'
+
 import { getDB } from '../../../../../lib/offline/db'
+
+type DayData = {
+  name: string
+  total: number
+}
+
+const DAY_NAMES_EN: Record<string, string> = {
+  Sun: 'Sun',
+  Mon: 'Mon',
+  Tue: 'Tue',
+  Wed: 'Wed',
+  Thu: 'Thu',
+  Fri: 'Fri',
+  Sat: 'Sat',
+}
+
+const DAY_NAMES_AM: Record<string, string> = {
+  Sun: 'እሁድ',
+  Mon: 'ሰኞ',
+  Tue: 'ማክሰ',
+  Wed: 'ረቡዕ',
+  Thu: 'ሐሙስ',
+  Fri: 'አርብ',
+  Sat: 'ቅዳሜ',
+}
 
 export default function WeeklyReportPage() {
   const params = useParams()
   const router = useRouter()
-  const isAm = params.locale === 'am'
-  const locale = params.locale || 'am'
+
+  const locale = String(params.locale ?? 'en')
+  const isAm = locale === 'am'
 
   const [loading, setLoading] = useState(true)
   const [weeklyTotal, setWeeklyTotal] = useState(0)
-  const [daysData, setDaysData] = useState<{name: string, total: number}[]>([])
+  const [daysData, setDaysData] = useState<DayData[]>([])
 
   useEffect(() => {
-    async function loadWeeklyData() {
+    async function loadWeeklyReport() {
       try {
         const db = await getDB()
+
         const history = await db.getAll('completed_sales_history')
         const pending = await db.getAll('pending_sales')
-        const allSales = [...history, ...pending]
 
-        const sevenDaysAgo = new Date()
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+        const sales = [...history, ...pending]
 
-        let sum = 0
-        const weekdayMap: { [key: string]: number } = { Sun: 0, Mon: 0, Tue: 0, Wed: 0, Thu: 0, Fri: 0, Sat: 0 }
+        const from = new Date()
+        from.setDate(from.getDate() - 6)
+        from.setHours(0, 0, 0, 0)
 
-        allSales.forEach((sale: any) => {
-          const saleDate = new Date(sale.createdAt)
-          if (saleDate >= sevenDaysAgo) {
-            const amt = sale.total_amount || sale.amount || 0
-            sum += amt
-            const dayKey = saleDate.toDateString().split(' ')[0] // e.g. "Mon"
-            if (weekdayMap[dayKey] !== undefined) weekdayMap[dayKey] += amt
+        const dayTotals: Record<string, number> = {
+          Sun: 0,
+          Mon: 0,
+          Tue: 0,
+          Wed: 0,
+          Thu: 0,
+          Fri: 0,
+          Sat: 0,
+        }
+
+        let total = 0
+
+        for (const sale of sales as any[]) {
+          const createdAt = new Date(sale.createdAt)
+
+          if (createdAt < from) continue
+
+          const amount = Number(
+            sale.total_amount ?? sale.amount ?? 0
+          )
+
+          if (!Number.isFinite(amount)) continue
+
+          total += amount
+
+          const day = createdAt.toLocaleDateString('en-US', {
+            weekday: 'short',
+          })
+
+          if (day in dayTotals) {
+            dayTotals[day] += amount
           }
-        })
+        }
 
-        const formattedDays = Object.keys(weekdayMap).map(key => ({
-          name: key,
-          total: weekdayMap[key]
-        }))
+        setWeeklyTotal(total)
 
-        setWeeklyTotal(sum)
-        setDaysData(formattedDays)
-      } catch (err) {
-        console.error(err)
+        setDaysData(
+          Object.keys(dayTotals).map((day) => ({
+            name: day,
+            total: dayTotals[day],
+          }))
+        )
+      } catch (error) {
+        console.error('Failed to load weekly report:', error)
       } finally {
         setLoading(false)
       }
     }
-    loadWeeklyData()
+
+    loadWeeklyReport()
   }, [])
 
-  const t = (en: string, am: string) => (isAm ? am : en)
-  const maxDayValue = Math.max(...daysData.map(d => d.total), 1)
+  const formatMoney = (value: number) =>
+    new Intl.NumberFormat(isAm ? 'am-ET' : 'en-ET', {
+      maximumFractionDigits: 2,
+    }).format(value)
 
-  if (loading) return <div className="p-6 text-center font-bold text-[#8B2635]">...</div>
+  const maxDayValue = Math.max(
+    ...daysData.map((day) => day.total),
+    1
+  )
+
+  const dayLabel = (day: string) =>
+    isAm ? DAY_NAMES_AM[day] : DAY_NAMES_EN[day]
+
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-cream-50 px-4 py-8">
+        <div className="mx-auto max-w-3xl text-center">
+          <div className="text-sm font-medium text-berbere-500">
+            {isAm ? 'ሪፖርቱ በመጫን ላይ...' : 'Loading report...'}
+          </div>
+        </div>
+      </main>
+    )
+  }
 
   return (
-    <div className="min-h-screen bg-[#F7F4EB] p-4 font-['DM_Sans',sans-serif] pb-24">
-      <div className="max-w-md mx-auto flex items-center justify-between mb-5">
-        <button onClick={() => router.push(`/${locale}/reports` as any)}
-          className="flex items-center gap-1.5 text-xs font-bold text-[#5a3e38] bg-white px-3 py-2 rounded-xl border border-[#2B1E1A]/10 shadow-sm">
-          <ArrowLeft className="w-3.5 h-3.5 text-[#8B2635]" />
-          {t('Back', 'ተመለስ')}
-        </button>
-        <h1 className="font-['Playfair_Display',serif] font-black text-lg text-[#2B1E1A]">{t('Weekly Analytics', 'የሳምንት ትንተና')}</h1>
-      </div>
+    <main className="min-h-screen bg-cream-50 px-4 py-5 pb-24 sm:px-6">
+      <div className="mx-auto max-w-3xl space-y-5">
 
-      <div className="max-w-md mx-auto space-y-4">
-        {/* Rolling 7 Day Banner Block */}
-        <div className="bg-[#8B2635] text-white p-4 rounded-xl shadow-sm flex items-center justify-between">
-          <div className="space-y-0.5">
-            <span className="text-[10px] font-bold uppercase opacity-75 tracking-wider">{t('7-Day Rolling Volume', 'የ7 ቀናት ጠቅላላ ሽያጭ')}</span>
-            <p className="text-2xl font-black font-mono">{weeklyTotal} ETB</p>
+        {/* Header */}
+        <header className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => router.push(`/${locale}/reports`)}
+            className="flex h-10 w-10 items-center justify-center rounded-xl border border-coffee-100 bg-white text-coffee-600 transition hover:bg-coffee-50"
+            aria-label={isAm ? 'ተመለስ' : 'Back'}
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </button>
+
+          <div>
+            <div className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5 text-berbere-500" />
+
+              <h1 className="text-xl font-bold text-coffee-800">
+                {isAm ? 'የሳምንት ሪፖርት' : 'Weekly Report'}
+              </h1>
+            </div>
+
+            <p className="mt-0.5 text-sm text-coffee-500">
+              {isAm
+                ? 'ያለፉትን 7 ቀናት የሽያጭ አፈጻጸም ይመልከቱ።'
+                : 'Review your sales performance over the last 7 days.'}
+            </p>
           </div>
-          <CalendarDays className="w-8 h-8 text-[#E2A03F] opacity-90" />
-        </div>
+        </header>
 
-        {/* Lightweight Visual Bar Graph Container */}
-        <div className="bg-white p-4 rounded-xl border border-[#2B1E1A]/10 shadow-sm space-y-4">
-          <h3 className="text-xs font-bold text-[#2B1E1A] flex items-center gap-1.5"><BarChart2 className="w-4 h-4 text-[#8B2635]" /> {t('Revenue Scaling Map', 'የገቢ ማነፃፀሪያ ገበታ')}</h3>
-          <div className="space-y-3 pt-1">
+        {/* Total Sales */}
+        <section className="rounded-3xl bg-berbere-500 p-6 text-white shadow-sm">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-white/70">
+                {isAm ? 'የ7 ቀናት ሽያጭ' : '7-Day Sales'}
+              </p>
+
+              <p className="mt-2 text-3xl font-bold tracking-tight">
+                {formatMoney(weeklyTotal)} ETB
+              </p>
+            </div>
+
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10">
+              <CalendarDays className="h-6 w-6 text-gold-400" />
+            </div>
+          </div>
+        </section>
+
+        {/* Daily Sales */}
+        <section className="rounded-2xl border border-coffee-100 bg-white p-5 shadow-sm">
+          <div className="mb-5 flex items-center gap-2">
+            <BarChart3 className="h-5 w-5 text-berbere-500" />
+
+            <h2 className="text-sm font-bold text-coffee-800">
+              {isAm ? 'ዕለታዊ ሽያጭ' : 'Daily Sales'}
+            </h2>
+          </div>
+
+          <div className="space-y-3">
             {daysData.map((day) => {
               const percentage = (day.total / maxDayValue) * 100
+
               return (
-                <div key={day.name} className="flex items-center gap-3 text-xs">
-                  <span className="w-8 font-bold text-[#5a3e38]">{t(day.name, day.name === 'Sun' ? 'እሁድ' : day.name === 'Mon' ? 'ሰኞ' : day.name === 'Tue' ? 'ማክሰ' : day.name === 'Wed' ? 'ረቡዕ' : day.name === 'Thu' ? 'ሐሙስ' : day.name === 'Fri' ? 'አርብ' : 'ቅዳሜ')}</span>
-                  <div className="flex-1 h-5 bg-[#F7F4EB] rounded-md overflow-hidden relative border border-[#2B1E1A]/5">
-                    <div className="h-full bg-[#E2A03F] transition-all duration-500 rounded-r" style={{ width: `${Math.max(percentage, 2)}%` }} />
-                    <span className="absolute right-2 top-1/2 -translate-y-1/2 font-mono text-[10px] font-bold text-[#2B1E1A]">{day.total} ETB</span>
+                <div
+                  key={day.name}
+                  className="flex items-center gap-3"
+                >
+                  <span className="w-12 shrink-0 text-xs font-semibold text-coffee-600">
+                    {dayLabel(day.name)}
+                  </span>
+
+                  <div className="relative h-8 flex-1 overflow-hidden rounded-lg bg-cream-100">
+                    <div
+                      className="absolute inset-y-0 left-0 rounded-lg bg-gold-400 transition-all duration-500"
+                      style={{
+                        width: `${Math.max(
+                          day.total > 0 ? percentage : 0,
+                          day.total > 0 ? 3 : 0
+                        )}%`,
+                      }}
+                    />
+
+                    <span className="absolute inset-y-0 right-3 flex items-center text-xs font-semibold text-coffee-700">
+                      {formatMoney(day.total)} ETB
+                    </span>
                   </div>
                 </div>
               )
             })}
           </div>
-        </div>
+        </section>
+
+        {/* Note */}
+        <p className="px-1 text-xs leading-5 text-coffee-400">
+          {isAm
+            ? 'ይህ ሪፖርት የአሁኑን እና የተመዘገቡ የሽያጭ መረጃዎችን በመጠቀም ይሰራል።'
+            : 'This report uses recorded sales available on this device.'}
+        </p>
       </div>
-    </div>
+    </main>
   )
 }

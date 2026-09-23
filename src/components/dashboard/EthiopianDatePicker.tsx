@@ -1,8 +1,6 @@
-
 'use client'
 
 import {
-  useEffect,
   useMemo,
   useState,
 } from 'react'
@@ -18,10 +16,10 @@ import {
   GregorianCalendar,
   getDayOfWeek,
   getWeeksInMonth,
+  parseDate,
   startOfMonth,
   startOfWeek,
   toCalendar,
-  parseDate,
 } from '@internationalized/date'
 
 /* ============================================================
@@ -36,7 +34,7 @@ interface EthiopianDatePickerProps {
 }
 
 /* ============================================================
-   CALENDAR
+   CALENDARS
    ============================================================ */
 
 const ETHIOPIAN_CALENDAR =
@@ -80,6 +78,10 @@ const MONTH_NAMES_AM = [
   'ነሐሴ',
   'ጳጉሜን',
 ]
+
+/* ============================================================
+   WEEKDAYS
+   ============================================================ */
 
 const WEEKDAYS_EN = [
   'Mon',
@@ -129,13 +131,16 @@ function ethiopianToGregorian(
   return gregorian.toString()
 }
 
-function sameDate(
-  a: CalendarDate,
-  b: CalendarDate,
-): boolean {
-  return (
-    a.compare(b) === 0
-  )
+function getTodayGregorian(): string {
+  return new Intl.DateTimeFormat(
+    'en-CA',
+    {
+      timeZone: 'Africa/Addis_Ababa',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    },
+  ).format(new Date())
 }
 
 /* ============================================================
@@ -160,26 +165,22 @@ export default function EthiopianDatePicker({
       [value],
     )
 
+  /*
+   * The focused month is intentionally independent from
+   * selectedDate.
+   *
+   * This lets the user browse previous/next months without
+   * an effect immediately moving the calendar back.
+   */
   const [
     focusedMonth,
     setFocusedMonth,
   ] = useState<CalendarDate>(
-    startOfMonth(
-      selectedDate,
-    ),
-  )
-
-  /* ==========================================================
-     KEEP CALENDAR IN SYNC
-     ========================================================== */
-
-  useEffect(() => {
-    setFocusedMonth(
+    () =>
       startOfMonth(
         selectedDate,
       ),
-    )
-  }, [selectedDate])
+  )
 
   /* ==========================================================
      MONTH DATA
@@ -194,11 +195,14 @@ export default function EthiopianDatePicker({
           focusedMonth.month - 1
         ]
 
+  const monthStart =
+    startOfMonth(
+      focusedMonth,
+    )
+
   const weekStart =
     startOfWeek(
-      startOfMonth(
-        focusedMonth,
-      ),
+      monthStart,
       'en-ET',
       'mon',
     )
@@ -214,14 +218,21 @@ export default function EthiopianDatePicker({
     weeks * 7
 
   const calendarDays =
-    Array.from(
-      {
-        length: totalCells,
-      },
-      (_, index) =>
-        weekStart.add({
-          days: index,
-        }),
+    useMemo(
+      () =>
+        Array.from(
+          {
+            length: totalCells,
+          },
+          (_, index) =>
+            weekStart.add({
+              days: index,
+            }),
+        ),
+      [
+        weekStart,
+        totalCells,
+      ],
     )
 
   /* ==========================================================
@@ -230,17 +241,19 @@ export default function EthiopianDatePicker({
 
   const previousMonth = () => {
     setFocusedMonth(
-      focusedMonth.subtract({
-        months: 1,
-      }),
+      current =>
+        current.subtract({
+          months: 1,
+        }),
     )
   }
 
   const nextMonth = () => {
     setFocusedMonth(
-      focusedMonth.add({
-        months: 1,
-      }),
+      current =>
+        current.add({
+          months: 1,
+        }),
     )
   }
 
@@ -250,16 +263,7 @@ export default function EthiopianDatePicker({
 
   const goToToday = () => {
     const todayGregorian =
-      new Intl.DateTimeFormat(
-        'en-CA',
-        {
-          timeZone:
-            'Africa/Addis_Ababa',
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-        },
-      ).format(new Date())
+      getTodayGregorian()
 
     const todayEthiopian =
       gregorianToEthiopian(
@@ -336,9 +340,13 @@ export default function EthiopianDatePicker({
             transition
             hover:bg-cream-50
             hover:text-coffee-800
+            focus:outline-none
+            focus:ring-2
+            focus:ring-berbere-500/20
           "
         >
           <ChevronLeft
+            aria-hidden="true"
             className="h-4 w-4"
           />
         </button>
@@ -384,9 +392,13 @@ export default function EthiopianDatePicker({
             transition
             hover:bg-cream-50
             hover:text-coffee-800
+            focus:outline-none
+            focus:ring-2
+            focus:ring-berbere-500/20
           "
         >
           <ChevronRight
+            aria-hidden="true"
             className="h-4 w-4"
           />
         </button>
@@ -404,12 +416,15 @@ export default function EthiopianDatePicker({
           w-full
           rounded-lg
           bg-cream-50
-          py-1
-          text-[9px]
+          py-1.5
+          text-[10px]
           font-bold
           text-berbere-600
           transition
           hover:bg-cream-100
+          focus:outline-none
+          focus:ring-2
+          focus:ring-berbere-500/20
         "
       >
         {isAm
@@ -460,10 +475,9 @@ export default function EthiopianDatePicker({
         {calendarDays.map(
           date => {
             const isSelected =
-              sameDate(
-                date,
+              date.compare(
                 selectedDate,
-              )
+              ) === 0
 
             const isCurrentMonth =
               date.month ===
@@ -490,6 +504,10 @@ export default function EthiopianDatePicker({
                     date,
                   )
                 }
+                aria-label={`${monthName} ${date.day}, ${focusedMonth.year}`}
+                aria-pressed={
+                  isSelected
+                }
                 className={`
                   flex
                   h-7
@@ -499,10 +517,14 @@ export default function EthiopianDatePicker({
                   text-[10px]
                   font-semibold
                   transition
+                  focus:outline-none
+                  focus:ring-2
+                  focus:ring-berbere-500/20
+
                   ${
                     isSelected
                       ? `
-                        bg-[#1B2B50]
+                        bg-berbere-500
                         text-white
                         shadow-sm
                       `
@@ -551,4 +573,3 @@ export default function EthiopianDatePicker({
     </div>
   )
 }
-

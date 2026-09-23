@@ -1,93 +1,213 @@
+// src/app/[locale]/(app)/reports/monthly/page.tsx
+
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Percent, Landmark, ShieldCheck } from 'lucide-react'
+import {
+  ArrowLeft,
+  BarChart3,
+  CalendarDays,
+  ShoppingCart,
+} from 'lucide-react'
+
 import { getDB } from '../../../../../lib/offline/db'
+
+type MonthlySummary = {
+  sales: number
+  orders: number
+}
 
 export default function MonthlyReportPage() {
   const params = useParams()
   const router = useRouter()
-  const isAm = params.locale === 'am'
-  const locale = params.locale || 'am'
+
+  const locale = String(params.locale ?? 'en')
+  const isAm = locale === 'am'
 
   const [loading, setLoading] = useState(true)
-  const [calculations, setCalculations] = useState({ gross: 0, tax: 0, net: 0, orders: 0 })
+  const [summary, setSummary] = useState<MonthlySummary>({
+    sales: 0,
+    orders: 0,
+  })
 
   useEffect(() => {
-    async function compileMonthlyLedger() {
+    async function loadMonthlyReport() {
       try {
         const db = await getDB()
+
         const history = await db.getAll('completed_sales_history')
         const pending = await db.getAll('pending_sales')
-        const allSales = [...history, ...pending]
 
-        const currentMonth = new Date().getMonth()
-        const currentYear = new Date().getFullYear()
+        const sales = [...history, ...pending]
 
-        let grossSum = 0
-        let currentMonthOrders = 0
+        const now = new Date()
+        const month = now.getMonth()
+        const year = now.getFullYear()
 
-        allSales.forEach((sale: any) => {
-          const d = new Date(sale.createdAt)
-          if (d.getMonth() === currentMonth && d.getFullYear() === currentYear) {
-            grossSum += (sale.total_amount || sale.amount || 0)
-            currentMonthOrders++
+        let totalSales = 0
+        let orderCount = 0
+
+        for (const sale of sales as any[]) {
+          const createdAt = new Date(sale.createdAt)
+
+          if (
+            createdAt.getMonth() !== month ||
+            createdAt.getFullYear() !== year
+          ) {
+            continue
           }
+
+          const amount = Number(
+            sale.total_amount ?? sale.amount ?? 0
+          )
+
+          if (!Number.isFinite(amount)) continue
+
+          totalSales += amount
+          orderCount += 1
+        }
+
+        setSummary({
+          sales: totalSales,
+          orders: orderCount,
         })
-
-        // Standard operational accounting approximations (e.g., 15% VAT estimate mapping)
-        const estimatedTax = Math.round(grossSum * 0.15)
-        const netCalculated = grossSum - estimatedTax
-
-        setCalculations({ gross: grossSum, tax: estimatedTax, net: netCalculated, orders: currentMonthOrders })
-      } catch (err) {
-        console.error(err)
+      } catch (error) {
+        console.error('Failed to load monthly report:', error)
       } finally {
         setLoading(false)
       }
     }
-    compileMonthlyLedger()
+
+    loadMonthlyReport()
   }, [])
 
-  const t = (en: string, am: string) => (isAm ? am : en)
+  const formatMoney = (value: number) =>
+    new Intl.NumberFormat(isAm ? 'am-ET' : 'en-ET', {
+      maximumFractionDigits: 2,
+    }).format(value)
 
-  if (loading) return <div className="p-6 text-center font-bold text-[#8B2635]">...</div>
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-cream-50 px-4 py-8">
+        <div className="mx-auto max-w-3xl text-center">
+          <div className="text-sm font-medium text-berbere-500">
+            {isAm ? 'ሪፖርቱ በመጫን ላይ...' : 'Loading report...'}
+          </div>
+        </div>
+      </main>
+    )
+  }
 
   return (
-    <div className="min-h-screen bg-[#F7F4EB] p-4 font-['DM_Sans',sans-serif] pb-24">
-      <div className="max-w-md mx-auto flex items-center justify-between mb-5">
-        <button onClick={() => router.push(`/${locale}/reports` as any)}
-          className="flex items-center gap-1.5 text-xs font-bold text-[#5a3e38] bg-white px-3 py-2 rounded-xl border border-[#2B1E1A]/10 shadow-sm">
-          <ArrowLeft className="w-3.5 h-3.5 text-[#8B2635]" />
-          {t('Back', 'ተመለስ')}
-        </button>
-        <h1 className="font-['Playfair_Display',serif] font-black text-lg text-[#2B1E1A]">{t('Monthly Ledger', 'የወር ማጠቃለያ')}</h1>
-      </div>
+    <main className="min-h-screen bg-cream-50 px-4 py-5 pb-24 sm:px-6">
+      <div className="mx-auto max-w-3xl space-y-5">
 
-      <div className="max-w-md mx-auto space-y-4">
-        {/* Core Financial Cascade Cards Block */}
-        <div className="bg-white rounded-xl border border-[#2B1E1A]/10 shadow-sm divide-y divide-zinc-100 overflow-hidden">
-          <div className="p-4 flex justify-between items-center bg-[#8B2635]/5">
-            <span className="text-xs font-bold text-[#8B2635] flex items-center gap-1.5"><Landmark className="w-4 h-4" /> {t('Gross Volume Recorded', 'ጠቅላላ ወርሃዊ ገቢ')}</span>
-            <span className="font-black font-mono text-base text-[#2B1E1A]">{calculations.gross} ETB</span>
+        {/* Header */}
+        <header className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => router.push(`/${locale}/reports`)}
+            className="flex h-10 w-10 items-center justify-center rounded-xl border border-coffee-100 bg-white text-coffee-600 transition hover:bg-coffee-50"
+            aria-label={isAm ? 'ተመለስ' : 'Back'}
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </button>
+
+          <div>
+            <div className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5 text-berbere-500" />
+
+              <h1 className="text-xl font-bold text-coffee-800">
+                {isAm ? 'የወር ሪፖርት' : 'Monthly Report'}
+              </h1>
+            </div>
+
+            <p className="mt-0.5 text-sm text-coffee-500">
+              {isAm
+                ? 'የዚህን ወር የሽያጭ አፈጻጸም ይመልከቱ።'
+                : 'Review your sales performance for this month.'}
+            </p>
           </div>
-          <div className="p-4 flex justify-between items-center">
-            <span className="text-xs font-medium text-[#5a3e38] flex items-center gap-1.5"><Percent className="w-4 h-4 text-[#9b7b74]" /> {t('Estimated VAT Reserve (15%)', 'የተገመተ አስራ አምስት በመቶ ተእታ')}</span>
-            <span className="font-bold font-mono text-xs text-red-700">-{calculations.tax} ETB</span>
+        </header>
+
+        {/* Main Sales Summary */}
+        <section className="rounded-3xl bg-berbere-500 p-6 text-white shadow-sm">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-white/70">
+                {isAm ? 'የዚህ ወር ሽያጭ' : 'Monthly Sales'}
+              </p>
+
+              <p className="mt-2 text-3xl font-bold tracking-tight">
+                {formatMoney(summary.sales)} ETB
+              </p>
+            </div>
+
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10">
+              <CalendarDays className="h-6 w-6 text-gold-400" />
+            </div>
           </div>
-          <div className="p-4 flex justify-between items-center bg-zinc-50/60">
-            <span className="text-xs font-black text-[#2B1E1A] flex items-center gap-1.5"><ShieldCheck className="w-4 h-4 text-emerald-600" /> {t('Net Clean Balance', 'የተጣራ የተረጋገጠ ሂሳብ')}</span>
-            <span className="font-black font-mono text-base text-emerald-700">{calculations.net} ETB</span>
+        </section>
+
+        {/* Sales Activity */}
+        <section className="grid gap-3 sm:grid-cols-2">
+
+          <div className="rounded-2xl border border-coffee-100 bg-white p-5 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cream-100 text-berbere-500">
+                <ShoppingCart className="h-5 w-5" />
+              </div>
+
+              <div>
+                <p className="text-xs text-coffee-500">
+                  {isAm ? 'የሽያጭ ብዛት' : 'Sales Made'}
+                </p>
+
+                <p className="mt-1 text-xl font-bold text-coffee-800">
+                  {summary.orders.toLocaleString(
+                    isAm ? 'am-ET' : 'en-ET'
+                  )}
+                </p>
+              </div>
+            </div>
           </div>
+
+          <div className="rounded-2xl border border-coffee-100 bg-white p-5 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cream-100 text-berbere-500">
+                <BarChart3 className="h-5 w-5" />
+              </div>
+
+              <div>
+                <p className="text-xs text-coffee-500">
+                  {isAm ? 'አማካይ ሽያጭ' : 'Average Sale'}
+                </p>
+
+                <p className="mt-1 text-xl font-bold text-coffee-800">
+                  {formatMoney(
+                    summary.orders > 0
+                      ? summary.sales / summary.orders
+                      : 0
+                  )}{' '}
+                  ETB
+                </p>
+              </div>
+            </div>
+          </div>
+
+        </section>
+
+        {/* Report Note */}
+        <div className="rounded-2xl border border-coffee-100 bg-white px-5 py-4">
+          <p className="text-xs leading-5 text-coffee-500">
+            {isAm
+              ? 'ይህ ሪፖርት በዚህ መሣሪያ ላይ የተመዘገቡ የዚህ ወር ሽያጮችን ያሳያል።'
+              : 'This report shows recorded sales for the current month available on this device.'}
+          </p>
         </div>
 
-        {/* Operational Volume Footprint */}
-        <div className="bg-white p-4 rounded-xl border border-[#2B1E1A]/10 shadow-sm text-xs flex justify-between items-center">
-          <span className="text-[#5a3e38] font-bold uppercase tracking-wider text-[10px]">{t('Total Invoices Settled This Month', 'በዚህ ወር የተቆረጡ ጠቅላላ ደረሰኞች')}</span>
-          <span className="px-3 py-1 bg-zinc-100 rounded-md font-mono font-bold text-[#2B1E1A]">{calculations.orders}</span>
-        </div>
       </div>
-    </div>
+    </main>
   )
 }

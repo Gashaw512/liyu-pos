@@ -8,7 +8,6 @@ import {
   BarChart3,
   Boxes,
   CheckCircle2,
-  CircleDollarSign,
   RefreshCw,
   ShoppingCart,
   TrendingUp,
@@ -100,8 +99,8 @@ export default function DashboardClientContent({
   periodExpenses,
   periodNetProfit,
 
-  periodDiscounts,
-  periodTax,
+  periodDiscounts: _periodDiscounts,
+  periodTax: _periodTax,
 
   averageTicketSize,
 
@@ -161,24 +160,6 @@ export default function DashboardClientContent({
     lowStockAlerts.filter(
       item => item.stock > 0,
     ).length
-
-  const grossMargin =
-    periodRevenue > 0
-      ? (
-          (periodGrossProfit /
-            periodRevenue) *
-          100
-        ).toFixed(1)
-      : '0.0'
-
-  const netMargin =
-    periodRevenue > 0
-      ? (
-          (periodNetProfit /
-            periodRevenue) *
-          100
-        ).toFixed(1)
-      : '0.0'
 
   /* ==========================================================
      FORMATTING
@@ -260,6 +241,9 @@ export default function DashboardClientContent({
         `${formatNumber(
           periodTransactionCount,
         )} ግብይቶች ተመዝግበዋል። ` +
+        `${formatNumber(
+          totalItemsSold,
+        )} እቃዎች ተሽጠዋል። ` +
         `የተጣራ ትርፍ ${formatMoney(
           periodNetProfit,
         )} ብር ነው። `
@@ -294,6 +278,9 @@ export default function DashboardClientContent({
         `${formatNumber(
           periodTransactionCount,
         )} transactions. ` +
+        `${formatNumber(
+          totalItemsSold,
+        )} items have been sold. ` +
         `Net profit is ` +
         `${formatMoney(
           periodNetProfit,
@@ -415,389 +402,204 @@ export default function DashboardClientContent({
 
       {isOwnerOrManager ? (
         <div className="space-y-4">
-          {/* OWNER ACTIONS */}
+          {/* ==================================================
+              QUICK ACTIONS
+          ================================================== */}
 
           <OwnerActionHeader
             locale={locale}
           />
 
-          {/* BUSINESS OVERVIEW */}
+          {/* ==================================================
+              MAIN BUSINESS SUMMARY
+
+              This is the most important section.
+              Keep only the numbers an owner needs immediately.
+          ================================================== */}
 
           <section className="overflow-hidden rounded-2xl border border-coffee-100 bg-white shadow-sm">
-            <div className="flex items-center justify-between border-b border-coffee-100 px-4 py-3">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.14em] text-coffee-400">
-                  {periodLabel}
-                </p>
+  {/* HEADER */}
 
-                <h2 className="mt-0.5 text-sm font-black text-coffee-900">
-                  {t(
-                    'Business Overview',
-                    'የንግድ አጠቃላይ እይታ',
-                  )}
-                </h2>
-              </div>
+  <div className="flex items-center justify-between border-b border-coffee-100 px-4 py-3">
+    <div>
+      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-coffee-400">
+        {periodLabel}
+      </p>
 
-              <TrendingUp className="h-5 w-5 text-coffee-400" />
-            </div>
+      <h2 className="mt-0.5 text-sm font-black text-coffee-900">
+        {t(
+          'Business Summary',
+          'የንግድ ማጠቃለያ',
+        )}
+      </h2>
+    </div>
 
-            <div className="grid grid-cols-2 divide-x divide-y divide-coffee-100 sm:grid-cols-4 sm:divide-y-0">
-              <div className="p-4">
-                <p className="text-[10px] font-bold text-coffee-400">
-                  {t(
-                    'Revenue',
-                    'ገቢ',
-                  )}
-                </p>
+    <button
+      type="button"
+      onClick={goToReports}
+      className="flex items-center gap-1 text-[11px] font-black text-berbere-600 hover:underline"
+    >
+      {t(
+        'Reports',
+        'ሪፖርቶች',
+      )}
 
-                <p className="mt-1 text-lg font-black text-coffee-900">
-                  {formatMoney(
-                    periodRevenue,
-                  )}
-                </p>
+      <ArrowRight className="h-3.5 w-3.5" />
+    </button>
+  </div>
 
-                <p className="text-[10px] text-coffee-400">
-                  ETB
-                </p>
-              </div>
+  {/* PRIMARY NUMBERS */}
 
-              <div className="p-4">
-                <p className="text-[10px] font-bold text-coffee-400">
-                  {t(
-                    'Gross Profit',
-                    'ጠቅላላ ትርፍ',
-                  )}
-                </p>
+  <div className="grid grid-cols-2 divide-x divide-y divide-coffee-100">
+    {/* SALES */}
 
-                <p className="mt-1 text-lg font-black text-berbere-600">
-                  {formatMoney(
-                    periodGrossProfit,
-                  )}
-                </p>
+    <div className="p-4 sm:p-5">
+      <p className="text-[10px] font-bold text-coffee-400">
+        {t(
+          'Sales',
+          'ሽያጭ',
+        )}
+      </p>
 
-                <p className="text-[10px] text-coffee-400">
-                  ETB
-                </p>
-              </div>
+      <p className="mt-1 text-xl font-black tracking-tight text-coffee-900 sm:text-2xl">
+        {formatMoney(
+          periodRevenue,
+        )}
+      </p>
 
-              <div className="p-4">
-                <p className="text-[10px] font-bold text-coffee-400">
-                  {t(
-                    'Expenses',
-                    'ወጪ',
-                  )}
-                </p>
+      <p className="mt-0.5 text-[10px] text-coffee-400">
+        ETB
+      </p>
+    </div>
 
-                <p className="mt-1 text-lg font-black text-berbere-600">
-                  {formatMoney(
-                    periodExpenses,
-                  )}
-                </p>
+    {/* NET PROFIT */}
 
-                <p className="text-[10px] text-coffee-400">
-                  ETB
-                </p>
-              </div>
+    <div className="bg-cream-100 p-4 sm:p-5">
+      <p className="text-[10px] font-black text-berbere-600">
+        {t(
+          'Net Profit',
+          'የተጣራ ትርፍ',
+        )}
+      </p>
 
-              <div className="bg-cream-100 p-4">
-                <p className="text-[10px] font-black text-berbere-600">
-                  {t(
-                    'Net Profit',
-                    'የተጣራ ትርፍ',
-                  )}
-                </p>
+      <p className="mt-1 text-xl font-black tracking-tight text-coffee-900 sm:text-2xl">
+        {formatMoney(
+          periodNetProfit,
+        )}
+      </p>
 
-                <p className="mt-1 text-lg font-black text-coffee-900">
-                  {formatMoney(
-                    periodNetProfit,
-                  )}
-                </p>
+      <p className="mt-0.5 text-[10px] text-coffee-500">
+        ETB
+      </p>
+    </div>
 
-                <p className="text-[10px] text-coffee-500">
-                  ETB
-                </p>
-              </div>
-            </div>
-          </section>
+    {/* ITEMS SOLD */}
 
-          {/* SALES + PROFIT */}
+    <div className="p-4 sm:p-5">
+      <div className="flex items-center gap-2">
+        <ShoppingCart className="h-3.5 w-3.5 text-berbere-600" />
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            {/* SALES */}
+        <p className="text-[10px] font-bold text-coffee-400">
+          {t(
+            'Items Sold',
+            'የተሸጡ እቃዎች',
+          )}
+        </p>
+      </div>
 
-            <section className="rounded-2xl border border-coffee-100 bg-white p-5 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-berbere-50">
-                    <ShoppingCart className="h-4 w-4 text-berbere-600" />
-                  </div>
+      <p className="mt-1 text-xl font-black tracking-tight text-coffee-900 sm:text-2xl">
+        {formatNumber(
+          totalItemsSold,
+        )}
+      </p>
 
-                  <div>
-                    <h3 className="text-sm font-black text-coffee-900">
-                      {t(
-                        'Sales',
-                        'ሽያጭ',
-                      )}
-                    </h3>
+      <p className="mt-0.5 text-[10px] text-coffee-400">
+        {t(
+          'items',
+          'እቃዎች',
+        )}
+      </p>
+    </div>
 
-                    <p className="text-[10px] text-coffee-400">
-                      {formatNumber(
-                        periodTransactionCount,
-                      )}{' '}
-                      {t(
-                        'transactions',
-                        'ግብይቶች',
-                      )}
-                    </p>
-                  </div>
-                </div>
+    {/* SALES MADE */}
 
-                <button
-                  type="button"
-                  onClick={
-                    goToSales
-                  }
-                  className="text-[11px] font-black text-berbere-600 hover:underline"
-                >
-                  {t(
-                    'View',
-                    'ይመልከቱ',
-                  )}
-                </button>
-              </div>
+    <div className="p-4 sm:p-5">
+      <div className="flex items-center gap-2">
+        <TrendingUp className="h-3.5 w-3.5 text-coffee-600" />
 
-              <div className="mt-5 grid grid-cols-3 gap-2">
-                <div className="rounded-xl bg-coffee-50 p-3">
-                  <p className="text-[9px] font-bold text-coffee-400">
-                    {t(
-                      'Average',
-                      'አማካይ',
-                    )}
-                  </p>
+        <p className="text-[10px] font-bold text-coffee-400">
+          {t(
+            'Sales Made',
+            'የተደረጉ ሽያጮች',
+          )}
+        </p>
+      </div>
 
-                  <p className="mt-1 text-sm font-black text-coffee-900">
-                    {formatMoney(
-                      averageTicketSize,
-                    )}
-                  </p>
+      <p className="mt-1 text-xl font-black tracking-tight text-coffee-900 sm:text-2xl">
+        {formatNumber(
+          periodTransactionCount,
+        )}
+      </p>
 
-                  <p className="text-[9px] text-coffee-400">
-                    ETB
-                  </p>
-                </div>
+      <p className="mt-0.5 text-[10px] text-coffee-400">
+        {t(
+          'sales',
+          'ሽያጮች',
+        )}
+      </p>
+    </div>
+  </div>
 
-                <div className="rounded-xl bg-coffee-50 p-3">
-                  <p className="text-[9px] font-bold text-coffee-400">
-                    {t(
-                      'Items',
-                      'እቃዎች',
-                    )}
-                  </p>
+  {/* SMALL DETAILS */}
 
-                  <p className="mt-1 text-sm font-black text-coffee-900">
-                    {formatNumber(
-                      totalItemsSold,
-                    )}
-                  </p>
+  <div className="grid grid-cols-2 border-t border-coffee-100 bg-coffee-50/50">
+    {/* EXPENSES */}
 
-                  <p className="text-[9px] text-coffee-400">
-                    {t(
-                      'sold',
-                      'ተሽጧል',
-                    )}
-                  </p>
-                </div>
+    <div className="flex items-center justify-between border-r border-coffee-100 px-4 py-3">
+      <span className="text-[10px] font-bold text-coffee-400">
+        {t(
+          'Expenses',
+          'ወጪ',
+        )}
+      </span>
 
-                <div className="rounded-xl bg-berbere-50 p-3">
-                  <p className="text-[9px] font-bold text-berbere-600">
-                    {t(
-                      'Revenue',
-                      'ገቢ',
-                    )}
-                  </p>
+      <span className="text-xs font-black text-coffee-800">
+        {formatMoney(
+          periodExpenses,
+        )}{' '}
+        ETB
+      </span>
+    </div>
 
-                  <p className="mt-1 text-sm font-black text-coffee-900">
-                    {formatMoney(
-                      periodRevenue,
-                    )}
-                  </p>
+    {/* AVERAGE SALE */}
 
-                  <p className="text-[9px] text-coffee-400">
-                    ETB
-                  </p>
-                </div>
-              </div>
-            </section>
+    <div className="flex items-center justify-between px-4 py-3">
+      <span className="text-[10px] font-bold text-coffee-400">
+        {t(
+          'Average Sale',
+          'አማካይ ሽያጭ',
+        )}
+      </span>
 
-            {/* PROFIT */}
+      <span className="text-xs font-black text-coffee-800">
+        {formatMoney(
+          averageTicketSize,
+        )}{' '}
+        ETB
+      </span>
+    </div>
+  </div>
+</section>
 
-            <section className="rounded-2xl border border-coffee-100 bg-white p-5 shadow-sm">
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-berbere-50">
-                  <CircleDollarSign className="h-4 w-4 text-berbere-600" />
-                </div>
+          {/* ==================================================
+              TODAY / ACTIONS
 
-                <div>
-                  <h3 className="text-sm font-black text-coffee-900">
-                    {t(
-                      'Profit Snapshot',
-                      'የትርፍ ማጠቃለያ',
-                    )}
-                  </h3>
+              Instead of separate Operations + Attention cards,
+              give the owner one place to see what needs action.
+          ================================================== */}
 
-                  <p className="text-[10px] text-coffee-400">
-                    {periodLabel}
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-5 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-coffee-500">
-                    {t(
-                      'Gross Profit',
-                      'ጠቅላላ ትርፍ',
-                    )}
-                  </span>
-
-                  <span className="text-sm font-black text-berbere-600">
-                    {formatMoney(
-                      periodGrossProfit,
-                    )}{' '}
-                    ETB
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-coffee-500">
-                    {t(
-                      'Expenses',
-                      'ወጪ',
-                    )}
-                  </span>
-
-                  <span className="text-sm font-black text-berbere-600">
-                    -
-                    {formatMoney(
-                      periodExpenses,
-                    )}{' '}
-                    ETB
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between rounded-xl bg-cream-100 px-3 py-3">
-                  <span className="text-xs font-black text-berbere-600">
-                    {t(
-                      'Net Profit',
-                      'የተጣራ ትርፍ',
-                    )}
-                  </span>
-
-                  <span className="text-base font-black text-coffee-900">
-                    {formatMoney(
-                      periodNetProfit,
-                    )}{' '}
-                    ETB
-                  </span>
-                </div>
-              </div>
-            </section>
-          </div>
-
-          {/* STOCK + ATTENTION */}
-
-          <div className="grid gap-4 lg:grid-cols-2">
-            {/* STOCK */}
-
-            <section className="rounded-2xl border border-coffee-100 bg-white p-5 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-cream-100">
-                    <Boxes className="h-4 w-4 text-coffee-700" />
-                  </div>
-
-                  <div>
-                    <h3 className="text-sm font-black text-coffee-900">
-                      {t(
-                        'Stock',
-                        'ክምችት',
-                      )}
-                    </h3>
-
-                    <p className="text-[10px] text-coffee-400">
-                      {t(
-                        'Current inventory',
-                        'የአሁኑ ክምችት',
-                      )}
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={
-                    goToInventory
-                  }
-                  className="text-[11px] font-black text-berbere-600 hover:underline"
-                >
-                  {t(
-                    'View',
-                    'ይመልከቱ',
-                  )}
-                </button>
-              </div>
-
-              <div className="mt-5 grid grid-cols-3 gap-2">
-                <div className="rounded-xl bg-coffee-50 p-3">
-                  <p className="text-[9px] font-bold text-coffee-400">
-                    {t(
-                      'Products',
-                      'እቃዎች',
-                    )}
-                  </p>
-
-                  <p className="mt-1 text-xl font-black text-coffee-900">
-                    {formatNumber(
-                      totalProducts,
-                    )}
-                  </p>
-                </div>
-
-                <div className="rounded-xl bg-berbere-50 p-3">
-                  <p className="text-[9px] font-bold text-berbere-600">
-                    {t(
-                      'Out',
-                      'አልቋል',
-                    )}
-                  </p>
-
-                  <p className="mt-1 text-xl font-black text-coffee-900">
-                    {formatNumber(
-                      outOfStockCount,
-                    )}
-                  </p>
-                </div>
-
-                <div className="rounded-xl bg-gold-50 p-3">
-                  <p className="text-[9px] font-bold text-gold-600">
-                    {t(
-                      'Low',
-                      'ዝቅተኛ',
-                    )}
-                  </p>
-
-                  <p className="mt-1 text-xl font-black text-coffee-900">
-                    {formatNumber(
-                      lowStockCount,
-                    )}
-                  </p>
-                </div>
-              </div>
-            </section>
-
-            {/* ATTENTION */}
-
-            <section className="rounded-2xl border border-coffee-100 bg-white p-5 shadow-sm">
+          <section className="rounded-2xl border border-coffee-100 bg-white p-4 shadow-sm">
+            <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gold-50">
                   <TriangleAlert className="h-4 w-4 text-gold-600" />
@@ -806,66 +608,85 @@ export default function DashboardClientContent({
                 <div>
                   <h3 className="text-sm font-black text-coffee-900">
                     {t(
-                      'Needs Attention',
+                      'Needs Your Attention',
                       'ትኩረት የሚፈልጉ',
                     )}
                   </h3>
 
                   <p className="text-[10px] text-coffee-400">
                     {t(
-                      'Important things to review',
-                      'መመርመር የሚያስፈልጉ',
+                      'Things to check now',
+                      'አሁን መመርመር የሚገባቸው',
                     )}
                   </p>
                 </div>
               </div>
 
-              <div className="mt-5 space-y-2">
-                {lowStockAlerts.length >
-                0 ? (
-                  <button
-                    type="button"
-                    onClick={
-                      goToInventory
-                    }
-                    className="flex w-full items-center justify-between rounded-xl bg-gold-50 px-3 py-3 text-left transition hover:bg-gold-100"
-                  >
-                    <div className="flex items-center gap-3">
-                      <TriangleAlert className="h-4 w-4 text-gold-600" />
+              {lowStockAlerts.length === 0 &&
+                pendingSyncCount === 0 &&
+                hasActiveShift && (
+                  <CheckCircle2 className="h-5 w-5 text-berbere-600" />
+                )}
+            </div>
 
-                      <span className="text-xs font-bold text-coffee-800">
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              {/* LOW STOCK */}
+
+              {lowStockAlerts.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={
+                    goToInventory
+                  }
+                  className="flex w-full items-center justify-between rounded-xl bg-gold-50 px-3 py-3 text-left transition hover:bg-gold-100"
+                >
+                  <div className="flex items-center gap-3">
+                    <TriangleAlert className="h-4 w-4 shrink-0 text-gold-600" />
+
+                    <div>
+                      <p className="text-xs font-black text-coffee-800">
                         {formatNumber(
                           lowStockAlerts.length,
                         )}{' '}
                         {t(
-                          'products need stock attention',
-                          'እቃዎች የክምችት ትኩረት ይፈልጋሉ',
+                          'items need stock',
+                          'እቃዎች ክምችት ይፈልጋሉ',
                         )}
-                      </span>
+                      </p>
+
+                      <p className="mt-0.5 text-[9px] text-coffee-500">
+                        {t(
+                          'Open inventory',
+                          'ክምችትን ይክፈቱ',
+                        )}
+                      </p>
                     </div>
-
-                    <ArrowRight className="h-4 w-4 text-gold-600" />
-                  </button>
-                ) : (
-                  <div className="flex items-center gap-3 rounded-xl bg-cream-100 px-3 py-3">
-                    <CheckCircle2 className="h-4 w-4 text-berbere-600" />
-
-                    <span className="text-xs font-bold text-coffee-800">
-                      {t(
-                        'Stock levels look healthy',
-                        'የእቃ ክምችት ጥሩ ነው',
-                      )}
-                    </span>
                   </div>
-                )}
 
-                {pendingSyncCount >
-                0 ? (
-                  <div className="flex w-full items-center justify-between rounded-xl bg-cream-100 px-3 py-3 text-left">
-                    <div className="flex items-center gap-3">
-                      <RefreshCw className="h-4 w-4 text-coffee-700" />
+                  <ArrowRight className="h-4 w-4 shrink-0 text-gold-600" />
+                </button>
+              ) : (
+                <div className="flex items-center gap-3 rounded-xl bg-cream-100 px-3 py-3">
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-berbere-600" />
 
-                      <span className="text-xs font-bold text-coffee-800">
+                  <span className="text-xs font-bold text-coffee-800">
+                    {t(
+                      'Stock looks good',
+                      'የእቃ ክምችት ጥሩ ነው',
+                    )}
+                  </span>
+                </div>
+              )}
+
+              {/* SYNC */}
+
+              {pendingSyncCount > 0 ? (
+                <div className="flex items-center justify-between rounded-xl bg-cream-100 px-3 py-3">
+                  <div className="flex items-center gap-3">
+                    <RefreshCw className="h-4 w-4 shrink-0 text-coffee-700" />
+
+                    <div>
+                      <p className="text-xs font-black text-coffee-800">
                         {formatNumber(
                           pendingSyncCount,
                         )}{' '}
@@ -873,31 +694,197 @@ export default function DashboardClientContent({
                           'sales waiting to sync',
                           'ሽያጮች ለማመሳሰል እየጠበቁ ነው',
                         )}
-                      </span>
+                      </p>
+
+                      <p className="mt-0.5 text-[9px] text-coffee-500">
+                        {t(
+                          'Sync when connection is available',
+                          'ግንኙነት ሲኖር ይመሳሰላል',
+                        )}
+                      </p>
                     </div>
-
-                    <ArrowRight className="h-4 w-4 text-coffee-400" />
                   </div>
-                ) : (
-                  <div className="flex items-center gap-3 rounded-xl bg-cream-100 px-3 py-3">
-                    <CheckCircle2 className="h-4 w-4 text-berbere-600" />
 
-                    <span className="text-xs font-bold text-coffee-800">
-                      {t(
-                        'Everything is synced',
-                        'ሁሉም መረጃ ተመሳስሏል',
-                      )}
-                    </span>
+                  <RefreshCw className="h-4 w-4 shrink-0 text-coffee-300" />
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 rounded-xl bg-cream-100 px-3 py-3">
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-berbere-600" />
+
+                  <span className="text-xs font-bold text-coffee-800">
+                    {t(
+                      'Everything is synced',
+                      'ሁሉም መረጃ ተመሳስሏል',
+                    )}
+                  </span>
+                </div>
+              )}
+
+              {/* SHIFT STATUS */}
+
+              <button
+                type="button"
+                onClick={goToShifts}
+                className="flex items-center justify-between rounded-xl border border-coffee-100 bg-coffee-50 px-3 py-3 text-left transition hover:bg-coffee-100 sm:col-span-2"
+              >
+                <div className="flex items-center gap-3">
+                  <Wallet
+                    className={`h-4 w-4 ${
+                      hasActiveShift
+                        ? 'text-berbere-600'
+                        : 'text-coffee-500'
+                    }`}
+                  />
+
+                  <div>
+                    <p className="text-xs font-black text-coffee-800">
+                      {hasActiveShift
+                        ? `${formatNumber(
+                            openShiftCount,
+                          )} ${
+                            openShiftCount ===
+                            1
+                              ? t(
+                                  'shift is open',
+                                  'ፈረቃ ክፍት ነው',
+                                )
+                              : t(
+                                  'shifts are open',
+                                  'ፈረቃዎች ክፍት ናቸው',
+                                )
+                          }`
+                        : t(
+                            'No shift is open',
+                            'ምንም ፈረቃ ክፍት የለም',
+                          )}
+                    </p>
+
+                    <p className="mt-0.5 text-[9px] text-coffee-500">
+                      {hasActiveShift
+                        ? t(
+                            'Business is active',
+                            'ንግዱ እየሰራ ነው',
+                          )
+                        : t(
+                            'Open a shift to start',
+                            'ለመጀመር ፈረቃ ይክፈቱ',
+                          )}
+                    </p>
                   </div>
-                )}
+                </div>
+
+                <ArrowRight className="h-4 w-4 text-coffee-300" />
+              </button>
+            </div>
+          </section>
+
+          {/* ==================================================
+              STOCK SUMMARY
+
+              Simple enough for a non-technical business owner.
+          ================================================== */}
+
+          <section className="rounded-2xl border border-coffee-100 bg-white p-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-cream-100">
+                  <Boxes className="h-4 w-4 text-coffee-700" />
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-black text-coffee-900">
+                    {t(
+                      'Your Stock',
+                      'የእቃ ክምችት',
+                    )}
+                  </h3>
+
+                  <p className="text-[10px] text-coffee-400">
+                    {t(
+                      'What you have in inventory',
+                      'በክምችት ያሉ እቃዎች',
+                    )}
+                  </p>
+                </div>
               </div>
-            </section>
-          </div>
 
-          {/* LOW STOCK TABLE */}
+              <button
+                type="button"
+                onClick={
+                  goToInventory
+                }
+                className="flex items-center gap-1 text-[11px] font-black text-berbere-600 hover:underline"
+              >
+                {t(
+                  'Inventory',
+                  'ክምችት',
+                )}
 
-          {lowStockAlerts.length >
-            0 && (
+                <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              {/* PRODUCTS */}
+
+              <div className="rounded-xl bg-coffee-50 p-3">
+                <p className="text-[9px] font-bold text-coffee-400">
+                  {t(
+                    'Products',
+                    'እቃዎች',
+                  )}
+                </p>
+
+                <p className="mt-1 text-xl font-black text-coffee-900">
+                  {formatNumber(
+                    totalProducts,
+                  )}
+                </p>
+              </div>
+
+              {/* LOW */}
+
+              <div className="rounded-xl bg-gold-50 p-3">
+                <p className="text-[9px] font-bold text-gold-600">
+                  {t(
+                    'Low',
+                    'ዝቅተኛ',
+                  )}
+                </p>
+
+                <p className="mt-1 text-xl font-black text-coffee-900">
+                  {formatNumber(
+                    lowStockCount,
+                  )}
+                </p>
+              </div>
+
+              {/* OUT */}
+
+              <div className="rounded-xl bg-berbere-50 p-3">
+                <p className="text-[9px] font-bold text-berbere-600">
+                  {t(
+                    'Out',
+                    'አልቋል',
+                  )}
+                </p>
+
+                <p className="mt-1 text-xl font-black text-coffee-900">
+                  {formatNumber(
+                    outOfStockCount,
+                  )}
+                </p>
+              </div>
+            </div>
+          </section>
+
+          {/* ==================================================
+              LOW STOCK DETAILS
+
+              Only shown when there is something to fix.
+          ================================================== */}
+
+          {lowStockAlerts.length > 0 && (
             <LowStockWarningsTable
               lowStockAlerts={
                 lowStockAlerts
@@ -906,10 +893,14 @@ export default function DashboardClientContent({
             />
           )}
 
-          {/* CATEGORY PERFORMANCE */}
+          {/* ==================================================
+              CATEGORY PERFORMANCE
 
-          {categoryBreakdown.length >
-            0 && (
+              Useful for owners, but lower priority than sales,
+              profit, stock and actions.
+          ================================================== */}
+
+          {categoryBreakdown.length > 0 && (
             <CategoryPerformanceTable
               categoryBreakdown={
                 categoryBreakdown
@@ -918,199 +909,42 @@ export default function DashboardClientContent({
             />
           )}
 
-          {/* OPERATIONS */}
+          {/* ==================================================
+              SMALL REPORT LINK
 
-          <section className="rounded-2xl border border-coffee-100 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div
-                  className={`flex h-9 w-9 items-center justify-center rounded-xl ${
-                    hasActiveShift
-                      ? 'bg-cream-100'
-                      : 'bg-coffee-50'
-                  }`}
-                >
-                  <Wallet
-                    className={`h-4 w-4 ${
-                      hasActiveShift
-                        ? 'text-berbere-600'
-                        : 'text-coffee-500'
-                    }`}
-                  />
-                </div>
+              Detailed financial information belongs in Reports,
+              not in the main dashboard.
+          ================================================== */}
 
-                <div>
-                  <h3 className="text-sm font-black text-coffee-900">
-                    {t(
-                      'Operations',
-                      'የስራ እንቅስቃሴ',
-                    )}
-                  </h3>
-
-                  <p className="text-[10px] font-medium text-coffee-400">
-                    {hasActiveShift
-                      ? t(
-                          'Business is currently active',
-                          'ንግዱ በአሁኑ ጊዜ እየሰራ ነው',
-                        )
-                      : t(
-                          'No shift is currently open',
-                          'በአሁኑ ጊዜ ፈረቃ ክፍት የለም',
-                        )}
-                  </p>
-                </div>
+          <button
+            type="button"
+            onClick={goToReports}
+            className="flex w-full items-center justify-between rounded-2xl border border-coffee-100 bg-white px-4 py-3 text-left shadow-sm transition hover:bg-coffee-50"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-coffee-50">
+                <BarChart3 className="h-4 w-4 text-coffee-700" />
               </div>
 
-              <button
-                type="button"
-                onClick={
-                  goToShifts
-                }
-                className="flex items-center gap-1 text-[11px] font-black text-berbere-600 hover:underline"
-              >
-                {t(
-                  'View Shifts',
-                  'ፈረቃዎችን ይመልከቱ',
-                )}
-
-                <ArrowRight className="h-3.5 w-3.5" />
-              </button>
-            </div>
-
-            <div className="mt-4 flex items-center justify-between rounded-xl border border-coffee-100 bg-coffee-50 px-4 py-3">
-              <div className="flex items-center gap-3">
-                <span
-                  className={`h-2.5 w-2.5 rounded-full ${
-                    hasActiveShift
-                      ? 'bg-berbere-500'
-                      : 'bg-coffee-300'
-                  }`}
-                />
-
-                <span className="text-sm font-black text-coffee-900">
-                  {hasActiveShift
-                    ? `${formatNumber(
-                        openShiftCount,
-                      )} ${
-                        openShiftCount ===
-                        1
-                          ? t(
-                              'shift open',
-                              'ፈረቃ ክፍት ነው',
-                            )
-                          : t(
-                              'shifts open',
-                              'ፈረቃዎች ክፍት ናቸው',
-                            )
-                      }`
-                    : t(
-                        'No shifts open',
-                        'ምንም ፈረቃ ክፍት የለም',
-                      )}
-                </span>
-              </div>
-
-              <ArrowRight className="h-4 w-4 text-coffee-300" />
-            </div>
-          </section>
-
-          {/* FINANCIAL DETAILS */}
-
-          <section className="rounded-2xl border border-coffee-100 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-coffee-50">
-                  <BarChart3 className="h-4 w-4 text-coffee-700" />
-                </div>
-
-                <div>
-                  <h3 className="text-sm font-black text-coffee-900">
-                    {t(
-                      'Financial Details',
-                      'የፋይናንስ ዝርዝሮች',
-                    )}
-                  </h3>
-
-                  <p className="text-[10px] text-coffee-400">
-                    {periodLabel}
-                  </p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={
-                  goToReports
-                }
-                className="text-[11px] font-black text-berbere-600 hover:underline"
-              >
-                {t(
-                  'Reports',
-                  'ሪፖርቶች',
-                )}
-              </button>
-            </div>
-
-            <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <div className="rounded-xl bg-coffee-50 p-3">
-                <p className="text-[9px] font-bold text-coffee-400">
+              <div>
+                <p className="text-xs font-black text-coffee-900">
                   {t(
-                    'Discounts',
-                    'ቅናሽ',
+                    'More Reports',
+                    'ተጨማሪ ሪፖርቶች',
                   )}
                 </p>
 
-                <p className="mt-1 text-sm font-black text-coffee-900">
-                  {formatMoney(
-                    periodDiscounts,
-                  )}{' '}
-                  ETB
-                </p>
-              </div>
-
-              <div className="rounded-xl bg-coffee-50 p-3">
-                <p className="text-[9px] font-bold text-coffee-400">
+                <p className="text-[10px] text-coffee-400">
                   {t(
-                    'Tax',
-                    'ታክስ',
+                    'See detailed sales and financial information',
+                    'ዝርዝር የሽያጭ እና የፋይናንስ መረጃ ይመልከቱ',
                   )}
-                </p>
-
-                <p className="mt-1 text-sm font-black text-coffee-900">
-                  {formatMoney(
-                    periodTax,
-                  )}{' '}
-                  ETB
-                </p>
-              </div>
-
-              <div className="rounded-xl bg-cream-100 p-3">
-                <p className="text-[9px] font-bold text-berbere-600">
-                  {t(
-                    'Gross Margin',
-                    'ጠቅላላ ማርጂን',
-                  )}
-                </p>
-
-                <p className="mt-1 text-sm font-black text-coffee-900">
-                  {grossMargin}%
-                </p>
-              </div>
-
-              <div className="rounded-xl bg-cream-100 p-3">
-                <p className="text-[9px] font-bold text-berbere-600">
-                  {t(
-                    'Net Margin',
-                    'የተጣራ ማርጂን',
-                  )}
-                </p>
-
-                <p className="mt-1 text-sm font-black text-coffee-900">
-                  {netMargin}%
                 </p>
               </div>
             </div>
-          </section>
+
+            <ArrowRight className="h-4 w-4 text-coffee-300" />
+          </button>
         </div>
       ) : (
         /* ======================================================
@@ -1163,5 +997,3 @@ export default function DashboardClientContent({
     </div>
   )
 }
-
-

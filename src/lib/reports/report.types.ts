@@ -10,6 +10,9 @@ import type {
 export interface ReportDateRange {
   from: Date
   to: Date
+  /** Calendar-date bounds for PostgreSQL DATE columns; `toDate` is exclusive. */
+  fromDate: string
+  toDate: string
   fromISO: string
   toISO: string
 }
@@ -93,6 +96,8 @@ export interface ReportSaleItem {
 
   total?: number | string
   total_amount?: number | string
+
+  cost_total?: number | string
 
   gross_profit?: number | string
 }

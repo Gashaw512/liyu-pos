@@ -1126,23 +1126,6 @@ async function syncSale(
   return withSaleLock(
     sale.id,
     async () => {
-      /*
-       * First idempotency check.
-       */
-      const alreadyProcessed =
-        await hasSaleInventoryMovement(
-          supabase,
-          sale.id,
-          sale.business_id,
-          sale.branch_id,
-        )
-
-      if (
-        alreadyProcessed
-      ) {
-        return sale.id
-      }
-
       const items =
         buildSaleItems(
           payload.items,
@@ -1470,6 +1453,9 @@ async function syncInventoryCount(
       quantity:
         variance,
 
+      balance_after:
+        countedQuantity,
+
       movement_type:
         'adjustment',
 
@@ -1493,41 +1479,8 @@ async function syncInventoryCount(
     throw movementError
   }
 
-  /*
-   * Inventory snapshot.
-   */
-  const {
-    error:
-      inventoryError,
-  } = await supabase
-    .from('inventory')
-    .upsert(
-      {
-        branch_id:
-          branchId,
-
-        business_id:
-          businessId,
-
-        product_id:
-          productId,
-
-        quantity:
-          countedQuantity,
-
-        updated_at:
-          timestamp,
-      },
-      {
-        onConflict:
-          'branch_id,product_id',
-      },
-    )
-
-  if (inventoryError) {
-    throw inventoryError
-  }
-
+  // The inventory movement trigger applies the variance and reconciles FIFO
+  // layers atomically. Do not write the count snapshot a second time here.
   return tx.id
 }
 
@@ -1648,108 +1601,8 @@ async function syncStockReceive(
     return tx.id
   }
 
-  /*
-   * Find current inventory.
-   */
-  const {
-    data: inventory,
-    error:
-      inventoryError,
-  } = await supabase
-    .from('inventory')
-    .select(
-      'id, quantity',
-    )
-    .eq(
-      'business_id',
-      businessId,
-    )
-    .eq(
-      'branch_id',
-      branchId,
-    )
-    .eq(
-      'product_id',
-      productId,
-    )
-    .maybeSingle()
-
-  if (inventoryError) {
-    throw inventoryError
-  }
-
-  const currentQuantity =
-    toNumber(
-      inventory?.quantity,
-    )
-
-  const newQuantity =
-    currentQuantity +
-    quantity
-
-  /*
-   * Update/create inventory.
-   */
-  if (inventory) {
-    const {
-      error:
-        updateError,
-    } = await supabase
-      .from('inventory')
-      .update({
-        quantity:
-          newQuantity,
-
-        updated_at:
-          timestamp,
-      })
-      .eq(
-        'id',
-        inventory.id,
-      )
-      .eq(
-        'business_id',
-        businessId,
-      )
-      .eq(
-        'branch_id',
-        branchId,
-      )
-
-    if (updateError) {
-      throw updateError
-    }
-  } else {
-    const {
-      error:
-        insertError,
-    } = await supabase
-      .from('inventory')
-      .insert({
-        business_id:
-          businessId,
-
-        branch_id:
-          branchId,
-
-        product_id:
-          productId,
-
-        quantity:
-          quantity,
-
-        updated_at:
-          timestamp,
-      })
-
-    if (insertError) {
-      throw insertError
-    }
-  }
-
-  /*
-   * Record stock movement.
-   */
+  // Inserting this movement creates the receipt layer and increments the
+  // inventory balance atomically in PostgreSQL.
   const {
     error:
       movementError,

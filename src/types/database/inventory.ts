@@ -32,6 +32,7 @@ export interface InventoryMovement {
   user_id: string | null; // Profile FK performing action
   movement_type: MovementType; // Strict: 'sale' | 'purchase' | 'adjustment' etc.
   quantity: number; // NUMERIC(10,2)
+  balance_after: number | null;
   unit_cost: number | null; // Optional baseline pricing valuation
   reference_id: string | null; // Optional link to specific source document Container ID
   reference_type: string | null; // E.g., 'purchase_id', 'sale_id'
@@ -74,4 +75,29 @@ export interface PurchaseItem {
    * Calculated automatically inside PostgreSQL. Do not pass during outbound sync writes!
    */
   total_cost: number; 
+}
+
+/** A received inventory batch with its remaining FIFO quantity. */
+export interface InventoryCostLayer {
+  id: string;
+  fifo_sequence: number;
+  business_id: string;
+  branch_id: string;
+  product_id: string;
+  source_movement_id: string | null;
+  received_at: string;
+  quantity_received: number;
+  quantity_remaining: number;
+  unit_cost: number;
+  created_at: string;
+}
+
+/** The batch-level cost portions assigned to a sale item. */
+export interface InventoryCostAllocation {
+  id: string;
+  sale_item_id: string;
+  cost_layer_id: string | null;
+  quantity: number;
+  unit_cost: number;
+  created_at: string;
 }

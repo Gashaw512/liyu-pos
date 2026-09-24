@@ -1,19 +1,63 @@
+import type { Metadata, Viewport } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
+import PWAInstallPrompt from "@/components/PWAInstallPrompt";
 
-// src/app/[locale]/layout.tsx
-import React from 'react'
+const geistSans = Geist({
+  variable: "--font-sans",
+  subsets: ["latin"],
+  display: "swap",
+});
+
+const geistMono = Geist_Mono({
+  variable: "--font-mono",
+  subsets: ["latin"],
+  display: "swap",
+});
 
 interface LayoutProps {
-  children: React.ReactNode
-  params: Promise<{ locale: string }>
+  children: React.ReactNode;
+  params: Promise<{
+    locale: string;
+  }>;
 }
 
-// Nested layouts must NOT duplicate <html> or <body> tags
-export default async function LocaleLayout({ children, params }: LayoutProps) {
-  const { locale } = await params
+export const metadata: Metadata = {
+  title: "Liyu POS",
+  description: "High-performance cloud Point of Sale system.",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Liyu POS",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#8B2635",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+};
+
+export default async function LocaleLayout({
+  children,
+  params,
+}: LayoutProps) {
+  const { locale } = await params;
 
   return (
-    <div className="min-h-screen bg-[#F7F4EB]" data-locale={locale}>
+    <div
+      data-locale={locale}
+      className={`
+        ${geistSans.variable}
+        ${geistMono.variable}
+        min-h-screen
+        antialiased
+      `}
+    >
       {children}
+
+      <PWAInstallPrompt />
     </div>
-  )
+  );
 }

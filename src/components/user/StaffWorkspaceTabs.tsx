@@ -1,276 +1,379 @@
-'use client'
+"use client";
 
-import { useState, useTransition } from "react";
-import { UserPlus, Users, MailQuestion } from "lucide-react";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  MailQuestion,
+  RefreshCw,
+  UserPlus,
+  Users,
+} from "lucide-react";
+
 import InviteStaffWizard from "./InviteStaffWizard";
 import StaffTable from "./StaffTable";
 
-interface TabsProps {
+import type {
+  Profile,
+  StaffInvitation,
+} from "@/types/database/users";
+
+type TabId = "active" | "invite" | "pending";
+
+interface StaffWorkspaceTabsProps {
   locale: string;
-  staffMembers?: any[];    
-  pendingInvites?: any[];   
+  staffMembers?: Profile[];
+  pendingInvites?: StaffInvitation[];
 }
 
 export default function StaffWorkspaceTabs({
   locale,
-  staffMembers = [],     
-  pendingInvites = [],    
-}: TabsProps) {
+  staffMembers = [],
+  pendingInvites = [],
+}: StaffWorkspaceTabsProps) {
+  const router = useRouter();
   const isAm = locale === "am";
 
-  const [activeTab, setActiveTab] = useState<
-    "active" | "invite" | "pending"
-  >("active");
+  const [activeTab, setActiveTab] =
+    useState<TabId>("active");
 
-  const [, startTransition] = useTransition();
+  const [isRefreshing, setIsRefreshing] =
+    useState(false);
 
-  const handleRefresh = () => {
-    startTransition(async () => {});
+  const staffCount = staffMembers.length;
+  const pendingCount = pendingInvites.length;
+
+  const refreshWorkspace = () => {
+    setIsRefreshing(true);
+
+    router.refresh();
+
+    // Keep the loading state short because router.refresh()
+    // does not expose a completion callback.
+    window.setTimeout(() => {
+      setIsRefreshing(false);
+    }, 700);
   };
 
-  const navItems = [
+  const tabs: {
+    id: TabId;
+    label: string;
+    labelAm: string;
+    icon: typeof Users;
+    count?: number;
+  }[] = [
     {
       id: "active",
-      label: isAm ? "ሰራተኞች" : "Staff",
+      label: "Staff",
+      labelAm: "ሰራተኞች",
       icon: Users,
-      count: staffMembers?.length || 0,
+      count: staffCount,
     },
     {
       id: "invite",
-      label: isAm ? "አዲስ ሰራተኛ" : "Add Staff",
+      label: "Add Staff",
+      labelAm: "ሰራተኛ ጨምር",
       icon: UserPlus,
-      count: null,
     },
     {
       id: "pending",
-      label: isAm ? "ግብዣዎች" : "Invitations",
+      label: "Invitations",
+      labelAm: "ግብዣዎች",
       icon: MailQuestion,
-      count: pendingInvites?.length || 0, 
+      count: pendingCount,
     },
   ];
 
   return (
-    <div className="w-full space-y-4">
-
-      {/* Summary Cards */}
-
-      <div className="grid grid-cols-2 gap-3">
-        <div className="bg-white rounded-2xl border border-cream-200 p-4 shadow-sm">
-          <p className="text-[10px] uppercase font-bold text-coffee-500">
-            {isAm ? "ንቁ ሰራተኞች" : "Active Staff"}
-          </p>
-
-          <p className="text-2xl font-black text-coffee-950 mt-1">
-            {staffMembers?.length || 0} 
-          </p>
-        </div>
-
-        <div className="bg-white rounded-2xl border border-cream-200 p-4 shadow-sm">
-          <p className="text-[10px] uppercase font-bold text-coffee-500">
-            {isAm ? "በመጠባበቅ ላይ" : "Pending"}
-          </p>
-
-          <p className="text-2xl font-black text-berbere-600 mt-1">
-            {pendingInvites?.length || 0} 
-          </p>
-        </div>
-      </div>
-
-      {/* Tabs */}
-
-      <div className="grid grid-cols-3 gap-2">
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = activeTab === item.id;
+    <section className="w-full">
+      {/* Workspace navigation */}
+      <div className="mb-4 grid grid-cols-3 gap-2 rounded-2xl border border-cream-300 bg-white p-1.5 shadow-sm">
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          const selected = activeTab === tab.id;
 
           return (
             <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id as any)}
-              className={`
-                rounded-2xl p-3 transition-all duration-150
-                border text-center
-                ${
-                  isActive
-                    ? "bg-berbere-500 border-berbere-500 text-white shadow-md"
-                    : "bg-white border-cream-200 text-coffee-700"
-                }
-              `}
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              aria-selected={selected}
+              className={[
+                "flex min-h-14 items-center justify-center gap-1.5 rounded-xl px-2 py-2.5",
+                "text-xs font-bold transition-colors sm:gap-2 sm:text-sm",
+                selected
+                  ? "bg-berbere-500 text-white shadow-sm"
+                  : "text-coffee-600 hover:bg-cream-100",
+              ].join(" ")}
             >
-              <div className="flex flex-col items-center gap-1">
-                <Icon
-                  className={`h-4 w-4 ${
-                    isActive
-                      ? "text-white"
-                      : "text-coffee-500"
-                  }`}
-                />
+              <Icon className="h-4 w-4 shrink-0" />
 
-                <span className="text-[11px] font-black">
-                  {item.label}
+              <span className="truncate">
+                {isAm ? tab.labelAm : tab.label}
+              </span>
+
+              {tab.count !== undefined && (
+                <span
+                  className={[
+                    "min-w-5 rounded-full px-1.5 py-0.5 text-[10px] font-black",
+                    selected
+                      ? "bg-white/20 text-white"
+                      : "bg-cream-200 text-coffee-700",
+                  ].join(" ")}
+                >
+                  {tab.count}
                 </span>
-
-                {item.count !== null && (
-                  <span
-                    className={`text-[10px] px-2 py-0.5 rounded-full font-black ${
-                      isActive
-                        ? "bg-white/20 text-white"
-                        : "bg-cream-100 text-coffee-700"
-                    }`}
-                  >
-                    {item.count}
-                  </span>
-                )}
-              </div>
+              )}
             </button>
           );
         })}
       </div>
 
-      {/* STAFF LIST */}
-
+      {/* Staff */}
       {activeTab === "active" && (
-        <div className="bg-white rounded-2xl border border-cream-200 p-3 shadow-sm">
+        <div className="overflow-hidden rounded-2xl border border-cream-300 bg-white shadow-sm">
+          <div className="flex items-center justify-between gap-3 border-b border-cream-200 px-4 py-3 sm:px-5">
+            <div className="min-w-0">
+              <h2 className="text-sm font-bold text-coffee-700 sm:text-base">
+                {isAm
+                  ? "የንግድ ሰራተኞች"
+                  : "Business Staff"}
+              </h2>
+
+              <p className="mt-0.5 text-xs text-coffee-500">
+                {isAm
+                  ? "ሰራተኞችን እና ሚናቸውን ያስተዳድሩ"
+                  : "Manage staff members and their roles"}
+              </p>
+            </div>
+
+            <div className="flex shrink-0 items-center gap-1.5">
+              {/* Refresh */}
+              <button
+                type="button"
+                onClick={refreshWorkspace}
+                disabled={isRefreshing}
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-cream-300 bg-white text-coffee-500 transition hover:bg-cream-100 hover:text-coffee-700 disabled:cursor-not-allowed disabled:opacity-60"
+                aria-label={
+                  isAm
+                    ? "የሰራተኞችን ዝርዝር አድስ"
+                    : "Refresh staff list"
+                }
+                title={
+                  isAm
+                    ? "አድስ"
+                    : "Refresh"
+                }
+              >
+                <RefreshCw
+                  className={[
+                    "h-4 w-4",
+                    isRefreshing
+                      ? "animate-spin"
+                      : "",
+                  ].join(" ")}
+                />
+              </button>
+
+              {/* Add */}
+              <button
+                type="button"
+                onClick={() => setActiveTab("invite")}
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-berbere-500 px-3 text-xs font-bold text-white transition-colors hover:bg-berbere-600"
+              >
+                <UserPlus className="h-4 w-4" />
+
+                <span className="hidden sm:inline">
+                  {isAm
+                    ? "ሰራተኛ ጨምር"
+                    : "Add Staff"}
+                </span>
+              </button>
+            </div>
+          </div>
+
           <StaffTable
             users={staffMembers}
             locale={locale}
-            onRefreshList={handleRefresh}
+            onRefreshList={refreshWorkspace}
           />
         </div>
       )}
 
-      {/* ADD STAFF */}
-
+      {/* Add staff */}
       {activeTab === "invite" && (
-        <div className="space-y-4">
+        <div className="overflow-hidden rounded-2xl border border-cream-300 bg-white shadow-sm">
+          <div className="flex items-center justify-between gap-3 border-b border-cream-200 px-4 py-3 sm:px-5">
+            <div className="min-w-0">
+              <h2 className="text-sm font-bold text-coffee-700 sm:text-base">
+                {isAm
+                  ? "አዲስ ሰራተኛ ይጨምሩ"
+                  : "Add a Staff Member"}
+              </h2>
 
-          <InviteStaffWizard locale={locale} />
-
-          <div className="bg-white rounded-2xl border border-cream-200 p-4">
-            <h3 className="font-black text-sm text-coffee-950 mb-3">
-              {isAm ? "የስራ ሚናዎች" : "Staff Roles"}
-            </h3>
-
-            <div className="space-y-2 text-[11px]">
-
-              <div className="bg-cream-50 rounded-xl p-3">
-                👨‍💼 <strong>Manager</strong>
-                <p className="text-coffee-500 mt-1">
-                  {isAm
-                    ? "ንግዱን በየቀኑ ያስተዳድራል"
-                    : "Manages daily business operations"}
-                </p>
-              </div>
-
-              <div className="bg-cream-50 rounded-xl p-3">
-                💰 <strong>Cashier</strong>
-                <p className="text-coffee-500 mt-1">
-                  {isAm
-                    ? "ሽያጭና ክፍያዎች"
-                    : "Handles sales and payments"}
-                </p>
-              </div>
-
-              <div className="bg-cream-50 rounded-xl p-3">
-                🍽️ <strong>Waiter</strong>
-                <p className="text-coffee-500 mt-1">
-                  {isAm
-                    ? "የደንበኛ ትዕዛዞች"
-                    : "Takes customer orders"}
-                </p>
-              </div>
-
-              <div className="bg-cream-50 rounded-xl p-3">
-                👨‍🍳 <strong>Kitchen</strong>
-                <p className="text-coffee-500 mt-1">
-                  {isAm
-                    ? "ምግብ ያዘጋጃል"
-                    : "Prepares food orders"}
-                </p>
-              </div>
-
-              <div className="bg-cream-50 rounded-xl p-3">
-                📦 <strong>Stock Clerk</strong>
-                <p className="text-coffee-500 mt-1">
-                  {isAm
-                    ? "ክምችት ያስተዳድራል"
-                    : "Manages inventory and stock"}
-                </p>
-              </div>
-
+              <p className="mt-0.5 text-xs leading-5 text-coffee-500">
+                {isAm
+                  ? "መረጃውን ያስገቡ እና የስራ ሚና ይመድቡ።"
+                  : "Enter their details and assign a role."}
+              </p>
             </div>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab("active")}
+              className="shrink-0 rounded-lg px-2 py-1 text-xs font-bold text-coffee-500 transition hover:bg-cream-100 hover:text-coffee-700"
+            >
+              {isAm ? "ሰራተኞች" : "Staff"}
+            </button>
+          </div>
+
+          <div className="p-4 sm:p-5">
+            <InviteStaffWizard locale={locale} />
           </div>
         </div>
       )}
 
-      {/* INVITATIONS */}
-
+      {/* Pending invitations */}
       {activeTab === "pending" && (
-        <div className="bg-white rounded-2xl border border-cream-200 shadow-sm overflow-hidden">
-
-          {pendingInvites.length === 0 ? (
-            <div className="text-center py-12 px-4">
-              <div className="text-5xl mb-3">📨</div>
-
-              <h3 className="font-black text-coffee-950">
+        <div className="overflow-hidden rounded-2xl border border-cream-300 bg-white shadow-sm">
+          <div className="flex items-center justify-between gap-3 border-b border-cream-200 px-4 py-3 sm:px-5">
+            <div className="min-w-0">
+              <h2 className="text-sm font-bold text-coffee-700 sm:text-base">
                 {isAm
-                  ? "ምንም ግብዣ የለም"
-                  : "No Pending Invitations"}
-              </h3>
+                  ? "በመጠባበቅ ላይ ያሉ ግብዣዎች"
+                  : "Pending Invitations"}
+              </h2>
 
-              <p className="text-xs text-coffee-500 mt-2">
+              <p className="mt-0.5 text-xs text-coffee-500">
                 {isAm
-                  ? "አዲስ ሰራተኛ ለመጨመር Add Staff ይጠቀሙ"
-                  : "Use Add Staff to invite employees"}
+                  ? "ገና ያልተቀበሉ የሰራተኞች ግብዣዎች"
+                  : "Staff invitations that have not been accepted yet."}
               </p>
             </div>
+
+            <button
+              type="button"
+              onClick={refreshWorkspace}
+              disabled={isRefreshing}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-cream-300 bg-white text-coffee-500 transition hover:bg-cream-100 hover:text-coffee-700 disabled:cursor-not-allowed disabled:opacity-60"
+              aria-label={
+                isAm
+                  ? "ግብዣዎችን አድስ"
+                  : "Refresh invitations"
+              }
+            >
+              <RefreshCw
+                className={[
+                  "h-4 w-4",
+                  isRefreshing
+                    ? "animate-spin"
+                    : "",
+                ].join(" ")}
+              />
+            </button>
+          </div>
+
+          {pendingCount === 0 ? (
+            <div className="px-5 py-12 text-center">
+              <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-cream-100">
+                <MailQuestion className="h-5 w-5 text-coffee-400" />
+              </div>
+
+              <h3 className="mt-3 text-sm font-bold text-coffee-700">
+                {isAm
+                  ? "ምንም የሚጠባበቅ ግብዣ የለም"
+                  : "No pending invitations"}
+              </h3>
+
+              <p className="mx-auto mt-1.5 max-w-sm text-xs leading-5 text-coffee-500">
+                {isAm
+                  ? "አዲስ ሰራተኛ ለመጨመር የሰራተኛ ጨምር ይጫኑ።"
+                  : "Add a staff member to create a new invitation."}
+              </p>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab("invite")}
+                className="mt-4 inline-flex h-9 items-center gap-1.5 rounded-xl bg-berbere-500 px-3.5 text-xs font-bold text-white transition-colors hover:bg-berbere-600"
+              >
+                <UserPlus className="h-4 w-4" />
+
+                {isAm
+                  ? "ሰራተኛ ጨምር"
+                  : "Add Staff"}
+              </button>
+            </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="bg-cream-50 border-b border-cream-100">
-                    <th className="p-3 text-left">
-                      {isAm ? "ስም" : "Name"}
-                    </th>
+            <div className="divide-y divide-cream-200">
+              {pendingInvites.map((invite) => (
+                <div
+                  key={invite.id}
+                  className="flex items-center justify-between gap-3 px-4 py-3 sm:px-5"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold text-coffee-700">
+                      {invite.staff_name || "—"}
+                    </p>
 
-                    <th className="p-3 text-left">
-                      {isAm ? "ሚና" : "Role"}
-                    </th>
+                    <div className="mt-1 flex items-center gap-2">
+                      <span className="text-xs text-coffee-500">
+                        {formatRole(
+                          invite.role_assigned,
+                          isAm
+                        )}
+                      </span>
 
-                    <th className="p-3 text-right">
-                      {isAm ? "ኮድ" : "Code"}
-                    </th>
-                  </tr>
-                </thead>
+                      {invite.phone && (
+                        <>
+                          <span className="text-coffee-300">
+                            ·
+                          </span>
 
-                <tbody>
-                  {pendingInvites.map((inv) => (
-                    <tr
-                      key={inv.id}
-                      className="border-b border-cream-50"
-                    >
-                      <td className="p-3 font-bold">
-                        {inv.staff_name}
-                      </td>
+                          <span className="truncate text-[11px] text-coffee-400">
+                            {invite.phone}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
 
-                      <td className="p-3">
-                        <span className="bg-berbere-50 text-berbere-700 px-2 py-1 rounded-lg text-[10px] font-bold">
-                          {inv.role_assigned}
-                        </span>
-                      </td>
-
-                      <td className="p-3 text-right font-mono font-black">
-                        {inv.code}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                  <div className="shrink-0 rounded-lg border border-gold-200 bg-gold-50 px-2.5 py-1.5">
+                    <span className="font-mono text-xs font-black tracking-wider text-gold-700">
+                      {invite.code || "—"}
+                    </span>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
-
         </div>
       )}
-    </div>
+    </section>
   );
 }
+
+function formatRole(
+  role: string | null | undefined,
+  isAm: boolean
+): string {
+  const roles: Record<string, [string, string]> = {
+    owner: ["Owner", "ባለቤት"],
+    manager: ["Manager", "አስተዳዳሪ"],
+    cashier: ["Cashier", "ገንዘብ ተቀባይ"],
+    inventory_clerk: [
+      "Stock Clerk",
+      "የክምችት ኃላፊ",
+    ],
+    waiter: ["Waiter", "አስተናጋጅ"],
+    barman: ["Barman", "ባርማን"],
+    kitchen: ["Kitchen", "ወጥ ቤት"],
+  };
+
+  const pair = role ? roles[role] : undefined;
+
+  if (!pair) {
+    return role || "—";
+  }
+
+  return isAm ? pair[1] : pair[0];
+}
+

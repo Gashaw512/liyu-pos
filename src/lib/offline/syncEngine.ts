@@ -24,9 +24,13 @@ import { getDB } from './db'
  * 1. Client-side only.
  * 2. Never import Supabase server client here.
  * 3. Never import next/headers here.
- * 4. Server remains source of truth after synchronization.
+ * 4. Server remains the authorization/source-of-truth boundary.
  * 5. Pending records are deleted ONLY after exact confirmation.
  * 6. Failed records remain in IndexedDB for retry.
+ * 7. A catalog pull happens ONLY when outbound work was
+ *    actually synchronized successfully.
+ * 8. Transactions from different businesses are never sent
+ *    together in the same synchronization batch.
  *
  * Supported outbound transactions:
  *
@@ -46,26 +50,39 @@ type SyncTransactionType =
 
 interface SyncTransaction {
   id: string
-
   type: SyncTransactionType
-
   timestamp: number
-
   payload: Record<string, unknown>
 }
 
 interface SyncResponse {
   success?: boolean
-
   syncedIds?: string[]
-
   failedIds?: string[]
-
   errors?: Array<{
     id?: string
     message?: string
     error?: string
   } | string>
+}
+
+/**
+ * Result of outbound synchronization.
+ *
+ * hadWork:
+ *   false = there was nothing waiting to synchronize.
+ *
+ * success:
+ *   true = all transactions that were sent were confirmed.
+ *
+ * This distinction is critical.
+ *
+ * "No work" is NOT the same thing as
+ * "work successfully synchronized".
+ */
+interface OutboundSyncResult {
+  success: boolean
+  hadWork: boolean
 }
 
 /* =========================================================
@@ -79,113 +96,150 @@ export class SyncEngine {
   // PUBLIC ENTRY POINT
   // =========================================================
 
-public async syncAll(): Promise<void> {
-  if (this.isSyncing) {
-    console.log(
-      '[SYNC] Synchronization already running.'
-    )
-
-    return
-  }
-
-  if (
-    typeof window === 'undefined' ||
-    typeof navigator === 'undefined'
-  ) {
-    return
-  }
-
-  if (!navigator.onLine) {
-    console.log(
-      '[SYNC] Device is offline. Skipping sync.'
-    )
-
-    return
-  }
-
-  this.isSyncing = true
-
-  try {
-    console.log(
-      '[SYNC] Starting synchronization...'
-    )
-
-    // ========================================================
-    // 1. PUSH OUTBOUND TRANSACTIONS
-    // ========================================================
-
-    const outboundSuccess =
-      await this.syncOutboundTransactions()
-
-    // ========================================================
-    // 2. NEVER PULL AFTER A FAILED OUTBOUND SYNC
-    // ========================================================
-
-    if (!outboundSuccess) {
-      console.warn(
-        '[SYNC] Outbound synchronization was not fully successful.'
-      )
-
-      console.warn(
-        '[SYNC] Server snapshot will NOT replace local inventory.'
+  public async syncAll(): Promise<void> {
+    if (this.isSyncing) {
+      console.log(
+        '[SYNC] Synchronization already running. Skipping.'
       )
 
       return
     }
 
-    // ========================================================
-    // 3. PULL SERVER SNAPSHOT
-    // ========================================================
+    if (
+      typeof window === 'undefined' ||
+      typeof navigator === 'undefined'
+    ) {
+      return
+    }
 
-    await this.pullLatestProducts()
+    if (!navigator.onLine) {
+      console.log(
+        '[SYNC] Device is offline. Skipping sync.'
+      )
 
-    console.log(
-      '[SYNC] Synchronization finished successfully.'
-    )
-  } catch (error) {
-    console.error(
-      '[SYNC] Synchronization pipeline error:',
-      error
-    )
-  } finally {
-    this.isSyncing = false
+      return
+    }
+
+    this.isSyncing = true
+
+    try {
+      console.log(
+        '[SYNC] Starting synchronization...'
+      )
+
+      // ======================================================
+      // 1. PUSH OUTBOUND TRANSACTIONS
+      // ======================================================
+
+      const outboundResult =
+        await this.syncOutboundTransactions()
+
+      // ======================================================
+      // 2. NOTHING WAS WAITING
+      //
+      // This is the major performance fix.
+      //
+      // Do NOT pull /api/products/templates when the local
+      // queues are already empty.
+      // ======================================================
+
+      if (!outboundResult.hadWork) {
+        console.log(
+          '[SYNC] No outbound work. Catalog pull skipped.'
+        )
+
+        return
+      }
+
+      // ======================================================
+      // 3. OUTBOUND SYNC FAILED
+      //
+      // Never replace local state with a server snapshot
+      // while there are unconfirmed local transactions.
+      // ======================================================
+
+      if (!outboundResult.success) {
+        console.warn(
+          '[SYNC] Outbound synchronization was not fully successful.'
+        )
+
+        console.warn(
+          '[SYNC] Server snapshot will NOT replace local inventory.'
+        )
+
+        return
+      }
+
+      // ======================================================
+      // 4. PULL SERVER SNAPSHOT
+      //
+      // This now happens ONLY after real outbound work was
+      // successfully confirmed by the server.
+      // ======================================================
+
+      await this.pullLatestProducts()
+
+      console.log(
+        '[SYNC] Synchronization finished successfully.'
+      )
+    } catch (error) {
+      console.error(
+        '[SYNC] Synchronization pipeline error:',
+        error
+      )
+    } finally {
+      this.isSyncing = false
+    }
   }
-}
 
   // =========================================================
   // OUTBOUND SYNCHRONIZATION
   // =========================================================
 
-  private async syncOutboundTransactions(): Promise<boolean> {
+  private async syncOutboundTransactions(): Promise<OutboundSyncResult> {
     const db = await getDB()
 
     // =======================================================
     // LOAD PENDING QUEUES
+    //
+    // These reads are independent, so run them concurrently.
     // =======================================================
 
-    const pendingSales =
-      await db.getAll('pending_sales')
+    const [
+      pendingSales,
+      pendingReconciliations,
+      pendingReceipts,
+    ] = await Promise.all([
+      db.getAll('pending_sales'),
+      db.getAll('pending_stock_reconciliations'),
+      db.getAll('pending_stock_receipts'),
+    ])
 
-    const pendingReconciliations =
-      await db.getAll(
-        'pending_stock_reconciliations'
-      )
+    const salesCount =
+      pendingSales.length
 
-    const pendingReceipts =
-      await db.getAll(
-        'pending_stock_receipts'
-      )
+    const reconciliationsCount =
+      pendingReconciliations.length
 
+    const receiptsCount =
+      pendingReceipts.length
+
+    const totalPending =
+      salesCount +
+      reconciliationsCount +
+      receiptsCount
+
+    // Keep logs compact.
+    //
+    // Do not dump complete sales/products/customer payloads
+    // into the browser console.
     console.log(
       '[SYNC] Pending queues:',
       {
-        sales: pendingSales.length,
-
-        reconciliations:
-          pendingReconciliations.length,
-
-        receipts:
-          pendingReceipts.length,
+        sales: salesCount,
+        reconciliations: reconciliationsCount,
+        receipts: receiptsCount,
+        total: totalPending,
       }
     )
 
@@ -193,16 +247,11 @@ public async syncAll(): Promise<void> {
     // NOTHING TO SYNC
     // =======================================================
 
-    if (
-      pendingSales.length === 0 &&
-      pendingReconciliations.length === 0 &&
-      pendingReceipts.length === 0
-    ) {
-      console.log(
-        '[SYNC] No outbound transactions.'
-      )
-
-      return true
+    if (totalPending === 0) {
+      return {
+        success: true,
+        hadWork: false,
+      }
     }
 
     // =======================================================
@@ -226,8 +275,7 @@ public async syncAll(): Promise<void> {
 
       if (!sale.localId) {
         console.error(
-          '[SYNC] Sale has no localId:',
-          sale
+          '[SYNC] Sale missing localId. Keeping it queued.'
         )
 
         continue
@@ -373,8 +421,20 @@ public async syncAll(): Promise<void> {
         )
       ) {
         console.error(
-          '[SYNC] Invalid inventory reconciliation:',
-          record
+          '[SYNC] Invalid inventory reconciliation. Keeping it queued.',
+          {
+            localId:
+              record.localId ?? null,
+
+            productId:
+              record.product_id ?? null,
+
+            businessId:
+              record.business_id ?? null,
+
+            branchId:
+              record.branch_id ?? null,
+          }
         )
 
         continue
@@ -474,7 +534,7 @@ public async syncAll(): Promise<void> {
         Number.isFinite(
           storedTotalCost
         ) &&
-          storedTotalCost >= 0
+        storedTotalCost >= 0
           ? storedTotalCost
           : quantity * unitCost
 
@@ -497,31 +557,24 @@ public async syncAll(): Promise<void> {
         unitCost < 0
       ) {
         console.error(
-          '[SYNC] Invalid stock receipt:',
-          receipt
+          '[SYNC] Invalid stock receipt. Keeping it queued.',
+          {
+            localId:
+              receipt.localId ?? null,
+
+            productId:
+              receipt.product_id ?? null,
+
+            businessId:
+              receipt.business_id ?? null,
+
+            branchId:
+              receipt.branch_id ?? null,
+          }
         )
 
         continue
       }
-
-      console.log(
-        '[SYNC] Preparing stock receipt:',
-        {
-          id:
-            receipt.localId,
-
-          product_id:
-            receipt.product_id,
-
-          quantity,
-
-          unit_cost:
-            unitCost,
-
-          total_cost:
-            totalCost,
-        }
-      )
 
       formattedTransactions.push({
         id:
@@ -596,10 +649,74 @@ public async syncAll(): Promise<void> {
       formattedTransactions.length === 0
     ) {
       console.warn(
-        '[SYNC] No valid transactions generated.'
+        '[SYNC] Pending queues contained no valid transactions.'
       )
 
-      return false
+      /**
+       * There WAS work in IndexedDB, so return:
+       *
+       * hadWork = true
+       * success  = false
+       *
+       * This prevents the engine from downloading a server
+       * snapshot while local records remain unresolved.
+       */
+      return {
+        success: false,
+        hadWork: true,
+      }
+    }
+
+    // =======================================================
+    // MULTI-TENANT SAFETY CHECK
+    // =======================================================
+    //
+    // A single synchronization batch must never contain
+    // transactions belonging to different businesses.
+    //
+    // This is an additional client-side safety layer.
+    //
+    // The real authorization boundary remains /api/sync +
+    // Supabase RLS/server validation.
+    // =======================================================
+
+    const businessIds =
+      this.collectBusinessIds(
+        formattedTransactions
+      )
+
+    if (
+      businessIds.length > 1
+    ) {
+      console.error(
+        '[SYNC] Refusing mixed-business synchronization batch.',
+        {
+          businessCount:
+            businessIds.length,
+        }
+      )
+
+      await this.writeSyncLog(
+        db,
+        'outbound',
+        'failed',
+        'Multiple business contexts detected in one synchronization batch.'
+      )
+
+      await this.markQueueAsFailed(
+        db,
+        pendingSales,
+        pendingReconciliations,
+        pendingReceipts,
+        new Error(
+          'Multiple business contexts detected in one synchronization batch.'
+        )
+      )
+
+      return {
+        success: false,
+        hadWork: true,
+      }
     }
 
     // =======================================================
@@ -614,18 +731,34 @@ public async syncAll(): Promise<void> {
 
     console.log(
       '[SYNC] Transactions prepared:',
-      formattedTransactions.map(
-        transaction => ({
-          id:
-            transaction.id,
+      {
+        total:
+          formattedTransactions.length,
 
-          type:
-            transaction.type,
+        sales:
+          formattedTransactions.filter(
+            transaction =>
+              transaction.type ===
+              'sale'
+          ).length,
 
-          timestamp:
-            transaction.timestamp,
-        })
-      )
+        inventoryCounts:
+          formattedTransactions.filter(
+            transaction =>
+              transaction.type ===
+              'inventory_count'
+          ).length,
+
+        inventoryReceives:
+          formattedTransactions.filter(
+            transaction =>
+              transaction.type ===
+              'inventory_receive'
+          ).length,
+
+        businessId:
+          businessIds[0] ?? null,
+      }
     )
 
     // =======================================================
@@ -676,9 +809,10 @@ public async syncAll(): Promise<void> {
             )
 
         throw new Error(
-          `Server rejected sync: HTTP ${response.status} ${response.statusText}${errorText
-            ? ` - ${errorText}`
-            : ''
+          `Server rejected sync: HTTP ${response.status} ${response.statusText}${
+            errorText
+              ? ` - ${errorText}`
+              : ''
           }`
         )
       }
@@ -728,6 +862,9 @@ public async syncAll(): Promise<void> {
           success:
             result?.success,
 
+          sent:
+            formattedTransactions.length,
+
           synced:
             syncedIds.length,
 
@@ -735,8 +872,11 @@ public async syncAll(): Promise<void> {
             failedIds.length,
 
           errors:
-            result?.errors ??
-            [],
+            Array.isArray(
+              result?.errors
+            )
+              ? result.errors.length
+              : 0,
         }
       )
 
@@ -761,7 +901,10 @@ public async syncAll(): Promise<void> {
       ) {
         console.warn(
           '[SYNC] Some transactions failed:',
-          failedIds
+          {
+            count:
+              failedIds.length,
+          }
         )
 
         await this.markFailedTransactions(
@@ -803,7 +946,10 @@ public async syncAll(): Promise<void> {
       ) {
         console.warn(
           '[SYNC] Transactions missing server confirmation:',
-          missingIds
+          {
+            count:
+              missingIds.length,
+          }
         )
 
         await this.markFailedTransactions(
@@ -833,7 +979,10 @@ public async syncAll(): Promise<void> {
           'Some transactions were not confirmed by the server.'
         )
 
-        return false
+        return {
+          success: false,
+          hadWork: true,
+        }
       }
 
       // =====================================================
@@ -850,7 +999,10 @@ public async syncAll(): Promise<void> {
         `[SYNC] ${syncedIds.length} transactions confirmed by server.`
       )
 
-      return true
+      return {
+        success: true,
+        hadWork: true,
+      }
     } catch (error) {
       console.error(
         '[SYNC] Outbound synchronization failed:',
@@ -872,8 +1024,43 @@ public async syncAll(): Promise<void> {
         error
       )
 
-      return false
+      return {
+        success: false,
+        hadWork: true,
+      }
     }
+  }
+
+  // =========================================================
+  // COLLECT BUSINESS CONTEXTS
+  // =========================================================
+
+  private collectBusinessIds(
+    transactions: SyncTransaction[]
+  ): string[] {
+    const ids = new Set<string>()
+
+    for (
+      const transaction of transactions
+    ) {
+      const businessId =
+        transaction.payload
+          ?.business_id
+
+      if (
+        typeof businessId ===
+          'string' &&
+        businessId.trim()
+      ) {
+        ids.add(
+          businessId
+        )
+      }
+    }
+
+    return Array.from(
+      ids
+    )
   }
 
   // =========================================================
@@ -961,10 +1148,6 @@ public async syncAll(): Promise<void> {
           id
         )
 
-        console.log(
-          `[SYNC] Removed confirmed sale ${id}`
-        )
-
         continue
       }
 
@@ -975,10 +1158,6 @@ public async syncAll(): Promise<void> {
           id
         )
 
-        console.log(
-          `[SYNC] Removed confirmed inventory count ${id}`
-        )
-
         continue
       }
 
@@ -987,10 +1166,6 @@ public async syncAll(): Promise<void> {
       ) {
         await receiptsStore.delete(
           id
-        )
-
-        console.log(
-          `[SYNC] Removed confirmed stock receipt ${id}`
         )
       }
     }
@@ -1358,9 +1533,10 @@ public async syncAll(): Promise<void> {
             )
 
         throw new Error(
-          `Catalog pull failed: HTTP ${response.status} ${response.statusText}${errorText
-            ? ` - ${errorText}`
-            : ''
+          `Catalog pull failed: HTTP ${response.status} ${response.statusText}${
+            errorText
+              ? ` - ${errorText}`
+              : ''
           }`
         )
       }
@@ -1379,9 +1555,15 @@ public async syncAll(): Promise<void> {
        */
       if (
         !data ||
-        !Array.isArray(data.products) ||
-        !Array.isArray(data.categories) ||
-        !Array.isArray(data.inventory)
+        !Array.isArray(
+          data.products
+        ) ||
+        !Array.isArray(
+          data.categories
+        ) ||
+        !Array.isArray(
+          data.inventory
+        )
       ) {
         throw new Error(
           'Catalog pull returned an invalid server snapshot.'
@@ -1577,9 +1759,9 @@ public async syncAll(): Promise<void> {
 
           ...(errorMessage
             ? {
-              error_message:
-                errorMessage,
-            }
+                error_message:
+                  errorMessage,
+              }
             : {}),
 
           timestamp:
@@ -1638,20 +1820,24 @@ public async syncAll(): Promise<void> {
       errors.find(
         error => {
           if (
-            typeof error === 'string'
+            typeof error ===
+            'string'
           ) {
             return false
           }
 
           return (
             error?.id != null &&
-            String(error.id) === id
+            String(
+              error.id
+            ) === id
           )
         }
       )
 
     if (
-      typeof matchingError === 'string'
+      typeof matchingError ===
+      'string'
     ) {
       return matchingError
     }
@@ -1723,7 +1909,8 @@ public async syncAll(): Promise<void> {
   private createId(): string {
     if (
       typeof crypto !== 'undefined' &&
-      typeof crypto.randomUUID === 'function'
+      typeof crypto.randomUUID ===
+        'function'
     ) {
       return crypto.randomUUID()
     }
@@ -1735,16 +1922,7 @@ public async syncAll(): Promise<void> {
 }
 
 /* =========================================================
- * OPTIONAL SINGLETON
- * =========================================================
- *
- * Use this if the rest of your application wants:
- *
- * import { syncEngine } from '@/lib/offline/syncEngine'
- *
- * syncEngine.syncAll()
- *
- * Instead of creating a new SyncEngine every time.
+ * SINGLETON
  * ========================================================= */
 
 export const syncEngine =

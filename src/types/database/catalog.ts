@@ -1,135 +1,111 @@
-// export interface Category {}
-// export interface CategoryTemplate {}
-// export interface Product {}
-// export interface Supplier {}
-// export interface RestaurantTable {}
-
 // src/types/database/catalog.ts
 
-import type { UnitOfMeasure } from '../enum';
+import type { UnitOfMeasure } from '../enum'
 
 export interface Category {
-  id: string;
-
-  business_id: string;
-
-  name: string;
-
-  name_am: string | null;
-
-  icon: string | null;
-
-  color: string | null;
-
-  sort_order: number;
-
-  is_active: boolean;
-
-  created_at: string;
-
-  deleted_at: string | null;
+  id: string
+  business_id: string
+  name: string
+  name_am: string | null
+  icon: string | null
+  color: string | null
+  sort_order: number
+  is_active: boolean
+  created_at: string
+  deleted_at: string | null
 }
 
 export interface CategoryTemplate {
-  id: string;
-
-  business_type: string;
-
-  name: string;
-
-  name_am: string | null;
-
-  icon: string | null;
-
-  sort_order: number;
+  id: string
+  business_type: string
+  name: string
+  name_am: string | null
+  icon: string | null
+  sort_order: number
 }
 
 export interface Product {
-  id: string;
+  id: string
+  business_id: string
+  branch_id: string | null
 
-  business_id: string;
+  category_id: string | null
 
-  branch_id: string | null;
+  name: string
+  name_am: string | null
 
-  category_id: string | null;
+  barcode: string | null
+  sku: string | null
 
-  name: string;
+  unit_type: UnitOfMeasure
 
-  name_am: string | null;
+  /*
+   * NULL means the product does not use crate-based
+   * packaging information.
+   */
+  units_per_crate: number | null
 
-  barcode: string | null;
+  cost_price: number
+  retail_price: number
 
-  sku: string | null;
+  tax_inclusive: boolean
 
-  unit_type: UnitOfMeasure;
+  image_url: string | null
 
-  units_per_crate: number;
+  is_active: boolean
+  is_sold_by_weight: boolean
+  track_inventory: boolean
 
-  cost_price: number;
+  /*
+   * NULL means no low-stock threshold is configured.
+   */
+  low_stock_alert: number | null
 
-  retail_price: number;
+  created_at: string
+  updated_at: string
 
-  tax_inclusive: boolean;
+  deleted_at: string | null
 
-  image_url: string | null;
+  /*
+   * Derived field.
+   * This is not necessarily stored on products.
+   * It may come from an inventory query/join.
+   */
+  quantity?: number
 
-  is_active: boolean;
+  price_group_id: string | null
+  price_type: 'fixed' | 'group'
 
-  is_sold_by_weight: boolean;
-
-  track_inventory: boolean;
-
-  low_stock_alert: number;
-
-  created_at: string;
-
-  updated_at: string;
-
-  deleted_at: string | null;
-
-  quantity?: number;
-
-  price_group_id: string | null;
-  price_type: 'fixed' | 'group';
-  description: string | null;
+  description: string | null
 }
 
 export interface Supplier {
-  id: string;
+  id: string
+  business_id: string
 
-  business_id: string;
+  name: string
 
-  name: string;
+  phone: string | null
+  email: string | null
+  address: string | null
+  notes: string | null
 
-  phone: string | null;
+  is_active: boolean
 
-  email: string | null;
-
-  address: string | null;
-
-  notes: string | null;
-
-  is_active: boolean;
-
-  created_at: string;
-
-  deleted_at: string | null;
+  created_at: string
+  deleted_at: string | null
 }
 
 export interface RestaurantTable {
-  id: string;
+  id: string
+  business_id: string
+  branch_id: string
 
-  business_id: string;
+  name: string
+  capacity: number
 
-  branch_id: string;
+  is_active: boolean
 
-  name: string;
-
-  capacity: number;
-
-  is_active: boolean;
-
-  created_at: string;
-
-  deleted_at: string | null;
+  created_at: string
+  deleted_at: string | null
 }

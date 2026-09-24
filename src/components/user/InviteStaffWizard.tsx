@@ -1,498 +1,599 @@
-// src/components/user/InviteStaffWizard.tsx
-'use client'
+"use client";
 
-import React, { useMemo, useState } from 'react'
+import { useMemo, useState, type FormEvent } from "react";
 import {
-  Plus,
-  Users,
   CheckCircle2,
+  ChevronDown,
   Copy,
+  Link2,
+  QrCode,
+  RotateCcw,
   Share2,
-  UserCog,
-} from 'lucide-react'
+  UserPlus,
+} from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 
-import { createStaffInvitation } from '../../app/[locale]/(app)/actions/invitationActions'
-import { toast } from '@/lib/utils/toast'
-import type { StaffRole } from '@/types/enum'
-import InviteActions from './InviteActions'
-interface InviteWizardProps {
-  locale: string
+import { createStaffInvitation } from "@/app/[locale]/(app)/actions/invitationActions";
+import { toast } from "@/lib/utils/toast";
+import type { StaffRole } from "@/types/enum";
+
+interface InviteStaffWizardProps {
+  locale: string;
 }
 
-type GeneratedInvite = {
-  name: string
-  code: string
-  inviteUrl: string
+interface GeneratedInvite {
+  name: string;
+  phone: string;
+  role: StaffRole;
+  code: string;
+  inviteUrl: string;
 }
 
-const ROLE_OPTIONS: {
-  value: StaffRole
-  label: string
-  labelAm: string
-  description: string
-}[] = [
-    {
-      value: 'cashier',
-      label: 'Cashier',
-      labelAm: 'ገንዘብ ተቀባይ',
-      description: 'Sales & payments',
-    },
-    {
-      value: 'manager',
-      label: 'Manager',
-      labelAm: 'አስተዳዳሪ',
-      description: 'Operations & staff',
-    },
-    {
-      value: 'inventory_clerk',
-      label: 'Stock Clerk',
-      labelAm: 'ክምችት ኃላፊ',
-      description: 'Inventory control',
-    },
-    {
-      value: 'waiter',
-      label: 'Waiter',
-      labelAm: 'አስተናጋጅ',
-      description: 'Restaurant service',
-    },
-    {
-      value: 'barman',
-      label: 'Barman',
-      labelAm: 'ባርማን',
-      description: 'Bar operations',
-    },
-    {
-      value: 'kitchen',
-      labelAm: 'ወጥ ቤት',
-      label: 'Kitchen',
-      description: 'Kitchen operations',
-    },
-  ]
+interface RoleOption {
+  value: StaffRole;
+  label: string;
+  labelAm: string;
+  description: string;
+  descriptionAm: string;
+}
+
+const ROLE_OPTIONS: RoleOption[] = [
+  {
+    value: "cashier",
+    label: "Cashier",
+    labelAm: "ገንዘብ ተቀባይ",
+    description: "Sales & payments",
+    descriptionAm: "ሽያጭ እና ክፍያ",
+  },
+  {
+    value: "manager",
+    label: "Manager",
+    labelAm: "አስተዳዳሪ",
+    description: "Business operations",
+    descriptionAm: "የንግድ አስተዳደር",
+  },
+  {
+    value: "inventory_clerk",
+    label: "Stock Clerk",
+    labelAm: "የክምችት ኃላፊ",
+    description: "Inventory",
+    descriptionAm: "ክምችት",
+  },
+  {
+    value: "waiter",
+    label: "Waiter",
+    labelAm: "አስተናጋጅ",
+    description: "Customer orders",
+    descriptionAm: "የደንበኛ ትዕዛዝ",
+  },
+  {
+    value: "barman",
+    label: "Barman",
+    labelAm: "ባርማን",
+    description: "Bar operations",
+    descriptionAm: "የባር ስራ",
+  },
+  {
+    value: "kitchen",
+    label: "Kitchen",
+    labelAm: "ወጥ ቤት",
+    description: "Kitchen orders",
+    descriptionAm: "የወጥ ቤት ስራ",
+  },
+];
 
 export default function InviteStaffWizard({
   locale,
-}: InviteWizardProps) {
-  const isAm = locale === 'am'
+}: InviteStaffWizardProps) {
+  const isAm = locale === "am";
 
-  const [staffName, setStaffName] = useState('')
-  const [phone, setPhone] = useState('')
+  const [staffName, setStaffName] = useState("");
+  const [phone, setPhone] = useState("");
   const [roleAssigned, setRoleAssigned] =
-    useState<StaffRole>('cashier')
+    useState<StaffRole>("cashier");
 
-  const [isLoading, setIsLoading] = useState(false)
-
+  const [isLoading, setIsLoading] = useState(false);
   const [generatedInvite, setGeneratedInvite] =
-    useState<GeneratedInvite | null>(null)
+    useState<GeneratedInvite | null>(null);
 
-  const t = (en: string, am: string) =>
-    isAm ? am : en
+  const t = (en: string, am: string) => (isAm ? am : en);
 
   const selectedRole = useMemo(
     () =>
       ROLE_OPTIONS.find(
-        (r) => r.value === roleAssigned
+        (role) => role.value === roleAssigned
       ),
     [roleAssigned]
-  )
+  );
 
-  const validatePhone = (value: string) => {
-    const cleaned = value.replace(/\s+/g, '')
+  const normalizePhone = (value: string) => {
+    const cleaned = value.replace(/[^\d+]/g, "");
 
-    return (
-      cleaned.startsWith('+251') ||
-      cleaned.startsWith('09')
-    )
-  }
+    if (cleaned.startsWith("09")) {
+      return `+251${cleaned.slice(1)}`;
+    }
 
-  const buildInviteMessage = (
-    name: string,
-    code: string,
-    inviteUrl: string
-  ) => {
+    if (cleaned.startsWith("251")) {
+      return `+${cleaned}`;
+    }
+
+    return cleaned;
+  };
+
+  const isValidPhone = (value: string) => {
+    return /^\+2519\d{8}$/.test(normalizePhone(value));
+  };
+
+  const getRoleName = (role: StaffRole) => {
+    const option = ROLE_OPTIONS.find(
+      (item) => item.value === role
+    );
+
+    if (!option) return role;
+
+    return isAm ? option.labelAm : option.label;
+  };
+
+  const buildInviteMessage = (invite: GeneratedInvite) => {
+    const roleName = getRoleName(invite.role);
+
     return isAm
-      ? `👋 ሰላም ${name}
+      ? `ሰላም ${invite.name},
 
 ወደ LIYU POS ተጋብዘዋል።
 
-👤 ሚና: ${selectedRole?.labelAm ?? roleAssigned}
+ሚና: ${roleName}
+የግብዣ ኮድ: ${invite.code}
 
-🔑 ኮድ: ${code}
+${invite.inviteUrl}
 
-🔗 ${inviteUrl}
-
-እባክዎ ሊንኩን ተጠቅመው አካውንት ይፍጠሩ።`
-      : `👋 Hi ${name}
+እባክዎ ሊንኩን በመክፈት አካውንትዎን ያግብሩ።`
+      : `Hi ${invite.name},
 
 You have been invited to LIYU POS.
 
-👤 Role: ${selectedRole?.label ?? roleAssigned}
+Role: ${roleName}
+Invitation code: ${invite.code}
 
-🔑 Code: ${code}
+${invite.inviteUrl}
 
-🔗 ${inviteUrl}
+Please open the link to activate your account.`;
+  };
 
-Please open the link and activate your account.`
-  }
+  const shareInvitation = async () => {
+    if (!generatedInvite) return;
 
-  const handleShare = async (
-    message: string,
-    inviteUrl: string,
-    phoneNumber?: string
-  ) => {
+    const message = buildInviteMessage(generatedInvite);
+
     try {
       if (navigator.share) {
         await navigator.share({
-          title: 'LIYU POS',
+          title: t(
+            "LIYU POS Staff Invitation",
+            "የLIYU POS የሰራተኛ ግብዣ"
+          ),
           text: message,
-          url: inviteUrl,
-        })
+          url: generatedInvite.inviteUrl,
+        });
 
-        return
+        return;
       }
 
-      if (phoneNumber) {
-        const smsLink = `sms:${phoneNumber}?body=${encodeURIComponent(
-          message
-        )}`
-
-        window.location.href = smsLink
-        return
-      }
-
-      await navigator.clipboard.writeText(message)
+      await navigator.clipboard.writeText(message);
 
       toast(
         t(
-          'ግብዣው ወደ ክሊፕቦርድ ተቀድቷል',
-          'Invitation copied to clipboard'
+          "ግብዣው ተቀድቷል",
+          "Invitation copied to clipboard"
         ),
-        'success'
-      )
+        "success"
+      );
     } catch {
-      // silent
+      // Sharing was cancelled or unavailable.
     }
-  }
+  };
 
-  const handleRegisterAndShare = async (
-    e: React.FormEvent
+  const copyToClipboard = async (
+    value: string,
+    successMessage: string,
+    errorMessage: string
   ) => {
-    e.preventDefault()
+    try {
+      await navigator.clipboard.writeText(value);
 
-    const cleanName = staffName.trim()
-    const cleanPhone = phone.trim()
+      toast(successMessage, "success");
+    } catch {
+      toast(errorMessage, "error");
+    }
+  };
+
+  const copyCode = () => {
+    if (!generatedInvite) return;
+
+    void copyToClipboard(
+      generatedInvite.code,
+      t("ኮዱ ተቀድቷል", "Code copied"),
+      t(
+        "ኮዱን መቅዳት አልተቻለም",
+        "Could not copy the code"
+      )
+    );
+  };
+
+  const copyLink = () => {
+    if (!generatedInvite) return;
+
+    void copyToClipboard(
+      generatedInvite.inviteUrl,
+      t("ሊንኩ ተቀድቷል", "Link copied"),
+      t(
+        "ሊንኩን መቅዳት አልተቻለም",
+        "Could not copy the link"
+      )
+    );
+  };
+
+  const resetInvitation = () => {
+    setGeneratedInvite(null);
+    setStaffName("");
+    setPhone("");
+    setRoleAssigned("cashier");
+  };
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+
+    const cleanName = staffName.trim();
+    const normalizedPhone = normalizePhone(phone);
 
     if (!cleanName) {
       toast(
         t(
-          'እባክዎ ስም ያስገቡ',
-          'Please enter staff name'
+          "እባክዎ ሙሉ ስም ያስገቡ",
+          "Please enter the staff member's full name"
         ),
-        'error'
-      )
-      return
+        "error"
+      );
+      return;
     }
 
-    if (!cleanPhone) {
+    if (cleanName.length < 2) {
       toast(
         t(
-          'እባክዎ ስልክ ቁጥር ያስገቡ',
-          'Please enter phone number'
+          "እባክዎ ትክክለኛ ስም ያስገቡ",
+          "Please enter a valid name"
         ),
-        'error'
-      )
-      return
+        "error"
+      );
+      return;
     }
 
-    if (!validatePhone(cleanPhone)) {
+    if (!normalizedPhone) {
       toast(
         t(
-          'ትክክለኛ ስልክ ቁጥር ያስገቡ',
-          'Please enter a valid phone number'
+          "እባክዎ ስልክ ቁጥር ያስገቡ",
+          "Please enter a phone number"
         ),
-        'error'
-      )
-      return
+        "error"
+      );
+      return;
     }
 
-    setIsLoading(true)
+    if (!isValidPhone(normalizedPhone)) {
+      toast(
+        t(
+          "ትክክለኛ የኢትዮጵያ ስልክ ቁጥር ያስገቡ",
+          "Please enter a valid Ethiopian phone number"
+        ),
+        "error"
+      );
+      return;
+    }
+
+    setIsLoading(true);
 
     try {
-      const result =
-        await createStaffInvitation({
-          staffName: cleanName,
-          roleAssigned,
-          phone: cleanPhone,
-          locale,
-        })
+      const result = await createStaffInvitation({
+        staffName: cleanName,
+        roleAssigned,
+        phone: normalizedPhone,
+        locale,
+      });
 
-      if (!result?.success) {
+      if (!result?.success || !result.code) {
         throw new Error(
-          'Failed to create invitation'
-        )
+          t(
+            "ግብዣውን መፍጠር አልተቻለም",
+            "Unable to create the invitation"
+          )
+        );
       }
 
       const inviteUrl =
-        `${window.location.origin}/${locale}/invite?code=${result.code}`
+        `${window.location.origin}/${locale}/invite?code=${result.code}`;
 
       setGeneratedInvite({
         name: cleanName,
+        phone: normalizedPhone,
+        role: roleAssigned,
         code: result.code,
         inviteUrl,
-      })
+      });
 
-      const message = buildInviteMessage(
-        cleanName,
-        result.code,
-        inviteUrl
-      )
-
-      setStaffName('')
-      setPhone('')
-      setRoleAssigned('cashier')
+      // Clear the form only after the invitation has been
+      // successfully created.
+      setStaffName("");
+      setPhone("");
+      setRoleAssigned("cashier");
 
       toast(
         t(
-          'ግብዣ ተፈጥሯል',
-          'Invitation created successfully'
+          "ግብዣው በተሳካ ሁኔታ ተፈጥሯል",
+          "Invitation created successfully"
         ),
-        'success'
-      )
+        "success"
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : t(
+              "ስህተት ተፈጥሯል",
+              "Something went wrong"
+            );
 
-      await handleShare(
-        message,
-        inviteUrl,
-        cleanPhone
-      )
-    } catch (error: any) {
-      toast(
-        error?.message ||
-        t(
-          'ስህተት ተፈጥሯል',
-          'Something went wrong'
-        ),
-        'error'
-      )
+      toast(message, "error");
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
-
-  const copyCode = async () => {
-    if (!generatedInvite) return
-
-    await navigator.clipboard.writeText(
-      generatedInvite.code
-    )
-
-    toast(
-      t(
-        'ኮዱ ተቀድቷል',
-        'Code copied'
-      ),
-      'success'
-    )
-  }
-
-  const copyLink = async () => {
-    if (!generatedInvite) return
-
-    await navigator.clipboard.writeText(
-      generatedInvite.inviteUrl
-    )
-
-    toast(
-      t(
-        'ሊንኩ ተቀድቷል',
-        'Link copied'
-      ),
-      'success'
-    )
-  }
+  };
 
   return (
-    <div className="w-full rounded-2xl border border-cream-200 bg-white p-4 space-y-4 shadow-sm">
-
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-berbere-50">
-          <Users className="h-5 w-5 text-berbere-500" />
-        </div>
-
-        <div>
-          <h3 className="font-black text-coffee-700">
-            {t(
-              'ሰራተኛ መጋበዣ',
-              'Invite Staff'
-            )}
-          </h3>
-
-          <p className="text-xs text-coffee-400">
-            {t(
-              'አዲስ ሰራተኛ ያክሉ',
-              'Invite a new team member'
-            )}
-          </p>
-        </div>
-      </div>
-
-      {/* Form */}
-      <form
-        onSubmit={handleRegisterAndShare}
-        className="space-y-4"
-      >
-        <input
-          value={staffName}
-          onChange={(e) =>
-            setStaffName(e.target.value)
-          }
-          placeholder={t(
-            'ሙሉ ስም',
-            'Full name'
-          )}
-          className="w-full rounded-xl border border-cream-200 bg-cream-50 px-3 py-3 text-sm outline-none focus:border-berbere-400"
-          required
-        />
-
-        <input
-          value={phone}
-          onChange={(e) =>
-            setPhone(e.target.value)
-          }
-          placeholder={t(
-            'ስልክ ቁጥር (+251...)',
-            'Phone number (+251...)'
-          )}
-          className="w-full rounded-xl border border-cream-200 bg-cream-50 px-3 py-3 text-sm outline-none focus:border-berbere-400"
-          required
-        />
-
-        {/* Role Cards */}
-        <div>
-          <div className="mb-2 flex items-center gap-2">
-            <UserCog className="h-4 w-4 text-coffee-500" />
-            <span className="text-xs font-bold text-coffee-600">
-              {t(
-                'የሰራተኛ ሚና',
-                'Staff Role'
-              )}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            {ROLE_OPTIONS.map((role) => (
-              <button
-                key={role.value}
-                type="button"
-                onClick={() =>
-                  setRoleAssigned(role.value)
-                }
-                className={`rounded-xl border p-3 text-left transition-all ${roleAssigned === role.value
-                  ? 'border-berbere-500 bg-berbere-50'
-                  : 'border-cream-200 bg-white'
-                  }`}
-              >
-                <div className="text-sm font-bold text-coffee-700">
-                  {isAm
-                    ? role.labelAm
-                    : role.label}
-                </div>
-
-                <div className="mt-1 text-[11px] text-coffee-400">
-                  {role.description}
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <button
-          disabled={isLoading}
-          className="flex h-12 w-full items-center justify-center rounded-xl bg-berbere-500 font-black text-white disabled:opacity-60"
+    <div className="space-y-4">
+      {!generatedInvite ? (
+        <form
+          onSubmit={handleSubmit}
+          className="space-y-4"
         >
-          {isLoading ? (
-            <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-          ) : (
-            <>
-              <Plus className="mr-2 h-4 w-4" />
-              {t(
-                'ግብዣ ላክ',
-                'Send Invitation'
-              )}
-            </>
-          )}
-        </button>
-      </form>
+          {/* Name + phone */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1.5 block text-xs font-bold text-coffee-600">
+                {t("Full name", "ሙሉ ስም")}
+              </label>
 
-      {/* Success */}
-      {generatedInvite && (
-        <div className="rounded-2xl border border-green-200 bg-green-50 p-4">
-          <div className="mb-3 flex items-center gap-2 text-green-700">
-            <CheckCircle2 className="h-5 w-5" />
-            <span className="font-bold">
-              {t(
-                'ግብዣ ተፈጥሯል',
-                'Invitation Created'
-              )}
+              <input
+                value={staffName}
+                onChange={(event) =>
+                  setStaffName(event.target.value)
+                }
+                placeholder={t(
+                  "Enter full name",
+                  "ሙሉ ስም ያስገቡ"
+                )}
+                autoComplete="name"
+                className="h-11 w-full rounded-xl border border-cream-300 bg-cream-50 px-3.5 text-sm text-coffee-700 outline-none transition placeholder:text-coffee-300 focus:border-berbere-400 focus:ring-2 focus:ring-berbere-50"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-xs font-bold text-coffee-600">
+                {t("Phone number", "ስልክ ቁጥር")}
+              </label>
+
+              <input
+                value={phone}
+                onChange={(event) =>
+                  setPhone(event.target.value)
+                }
+                placeholder="+251 911 234 567"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                className="h-11 w-full rounded-xl border border-cream-300 bg-cream-50 px-3.5 text-sm text-coffee-700 outline-none transition placeholder:text-coffee-300 focus:border-berbere-400 focus:ring-2 focus:ring-berbere-50"
+                required
+              />
+            </div>
+          </div>
+
+          {/* Role */}
+          <div>
+            <label className="mb-1.5 block text-xs font-bold text-coffee-600">
+              {t("Staff role", "የሰራተኛ ሚና")}
+            </label>
+
+            <div className="relative">
+              <select
+                value={roleAssigned}
+                onChange={(event) =>
+                  setRoleAssigned(
+                    event.target.value as StaffRole
+                  )
+                }
+                className="h-11 w-full appearance-none rounded-xl border border-cream-300 bg-cream-50 px-3.5 pr-10 text-sm font-semibold text-coffee-700 outline-none transition focus:border-berbere-400 focus:ring-2 focus:ring-berbere-50"
+              >
+                {ROLE_OPTIONS.map((role) => (
+                  <option
+                    key={role.value}
+                    value={role.value}
+                  >
+                    {isAm ? role.labelAm : role.label}
+                    {" — "}
+                    {isAm
+                      ? role.descriptionAm
+                      : role.description}
+                  </option>
+                ))}
+              </select>
+
+              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-coffee-400" />
+            </div>
+
+            {selectedRole && (
+              <p className="mt-1.5 text-[11px] text-coffee-400">
+                {isAm
+                  ? selectedRole.descriptionAm
+                  : selectedRole.description}
+              </p>
+            )}
+          </div>
+
+          {/* Submit */}
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-berbere-500 px-4 text-sm font-bold text-white transition hover:bg-berbere-600 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isLoading ? (
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+            ) : (
+              <>
+                <UserPlus className="h-4 w-4" />
+                {t(
+                  "Create Invitation",
+                  "ግብዣ ፍጠር"
+                )}
+              </>
+            )}
+          </button>
+        </form>
+      ) : (
+        /* Generated invitation */
+        <section className="overflow-hidden rounded-2xl border border-gold-200 bg-gold-50">
+          {/* Header */}
+          <div className="flex items-center justify-between gap-3 border-b border-gold-200 px-4 py-3">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gold-100">
+                <CheckCircle2 className="h-4.5 w-4.5 text-gold-600" />
+              </div>
+
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold text-coffee-700">
+                  {t(
+                    "Invitation ready",
+                    "ግብዣው ዝግጁ ነው"
+                  )}
+                </h3>
+
+                <p className="truncate text-[11px] text-coffee-500">
+                  {generatedInvite.name} ·{" "}
+                  {getRoleName(generatedInvite.role)}
+                </p>
+              </div>
+            </div>
+
+            <span className="shrink-0 rounded-full bg-gold-100 px-2 py-1 text-[10px] font-bold text-gold-700">
+              {t("Pending", "በመጠባበቅ ላይ")}
             </span>
           </div>
 
-          <div className="mb-3 text-sm text-coffee-700">
-            {generatedInvite.name}
+          {/* QR + invitation details */}
+          <div className="grid gap-4 p-4 sm:grid-cols-[132px_1fr] sm:items-center">
+            {/* QR */}
+            <div className="flex justify-center">
+              <div className="rounded-2xl border border-cream-300 bg-white p-3 shadow-sm">
+                <QRCodeSVG
+                  value={generatedInvite.inviteUrl}
+                  size={108}
+                  level="M"
+                  includeMargin={false}
+                  bgColor="#ffffff"
+                  fgColor="#2B1E1A"
+                  title={t(
+                    "Staff invitation QR code",
+                    "የሰራተኛ ግብዣ QR ኮድ"
+                  )}
+                />
+
+                <div className="mt-2 flex items-center justify-center gap-1 text-[9px] font-bold text-coffee-400">
+                  <QrCode className="h-3 w-3" />
+                  {t("Scan to activate", "ለማግበር ስካን ያድርጉ")}
+                </div>
+              </div>
+            </div>
+
+            {/* Code + link */}
+            <div className="min-w-0 space-y-2.5">
+              <div className="rounded-xl border border-cream-300 bg-white px-3 py-2.5">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[9px] font-bold uppercase tracking-wider text-coffee-400">
+                      {t(
+                        "Invitation code",
+                        "የግብዣ ኮድ"
+                      )}
+                    </p>
+
+                    <code className="text-lg font-black tracking-[0.16em] text-berbere-600">
+                      {generatedInvite.code}
+                    </code>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={copyCode}
+                    className="shrink-0 rounded-lg p-2 text-coffee-500 transition hover:bg-cream-100 hover:text-coffee-700"
+                    aria-label={t(
+                      "Copy invitation code",
+                      "የግብዣ ኮድ ቅዳ"
+                    )}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 rounded-xl border border-cream-300 bg-white px-3 py-2.5">
+                <Link2 className="h-4 w-4 shrink-0 text-coffee-400" />
+
+                <span className="min-w-0 flex-1 truncate text-[11px] text-coffee-500">
+                  {generatedInvite.inviteUrl}
+                </span>
+
+                <button
+                  type="button"
+                  onClick={copyLink}
+                  className="shrink-0 rounded-lg p-2 text-coffee-500 transition hover:bg-cream-100 hover:text-coffee-700"
+                  aria-label={t(
+                    "Copy invitation link",
+                    "የግብዣ ሊንክ ቅዳ"
+                  )}
+                >
+                  <Copy className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
           </div>
 
-          <div className="mb-3 flex items-center justify-between rounded-xl border bg-white p-3">
-            <code className="font-black text-berbere-600">
-              {generatedInvite.code}
-            </code>
-
+          {/* Actions */}
+          <div className="grid grid-cols-2 gap-2 border-t border-gold-200 bg-gold-50 px-4 py-3 sm:grid-cols-[1fr_1fr_auto]">
             <button
               type="button"
-              onClick={copyCode}
-            >
-              <Copy className="h-4 w-4 text-coffee-500" />
-            </button>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={copyLink}
-              className="rounded-xl border border-cream-200 bg-white py-2 text-sm font-bold"
-            >
-              Copy Link
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                const msg = buildInviteMessage(
-                  generatedInvite.name,
-                  generatedInvite.code,
-                  generatedInvite.inviteUrl
-                )
-
-                handleShare(
-                  msg,
-                  generatedInvite.inviteUrl
-                )
-              }}
-              className="flex items-center justify-center gap-2 rounded-xl bg-berbere-500 py-2 text-sm font-bold text-white"
+              onClick={shareInvitation}
+              className="flex h-10 items-center justify-center gap-2 rounded-xl bg-berbere-500 px-3 text-xs font-bold text-white transition hover:bg-berbere-600 sm:col-span-2"
             >
               <Share2 className="h-4 w-4" />
-              Share
+              {t(
+                "Share Invitation",
+                "ግብዣውን አጋራ"
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={resetInvitation}
+              className="flex h-10 items-center justify-center gap-2 rounded-xl border border-cream-300 bg-white px-3 text-xs font-bold text-coffee-600 transition hover:bg-cream-100"
+            >
+              <RotateCcw className="h-4 w-4" />
+              {t(
+                "Create another",
+                "ሌላ ፍጠር"
+              )}
             </button>
           </div>
-        </div>
-      )}
-
-
-      {generatedInvite && (
-        <InviteActions
-          generatedInvite={generatedInvite}
-          phone={phone}
-          locale={locale}
-        />
+        </section>
       )}
     </div>
-  )
+  );
 }

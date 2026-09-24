@@ -1,21 +1,52 @@
-// src/app/[locale]/management/categories/[id]/edit/page.tsx
-// src/app/[locale]/management/categories/[id]/edit/page.tsx
+
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-
 import {
   ArrowLeft,
   Loader2,
   Save,
   Tag,
-  Sparkles,
-  HelpCircle
+  Palette,
 } from 'lucide-react'
 
-import createClient from '@/lib/supabase/client'
+import {
+  getCategoryById,
+  updateCategory,
+} from '@/queries/useCategoryQueries'
 import { getBusinessId } from '@/lib/auth/getBusinessId'
+
+const ICONS = [
+  '📦',
+  '☕',
+  '🍔',
+  '🥤',
+  '🍕',
+  '🍰',
+  '🥗',
+  '🍩',
+  '🍺',
+  '🛒',
+]
+
+const COLORS = [
+  '#8B2635', // berbere
+  '#1B2B50', // Liyu navy
+  '#E2A03F', // gold
+  '#10B981', // green
+  '#3B82F6', // blue
+  '#EF4444', // red
+  '#A855F7', // purple
+  '#F97316', // orange
+]
+
+interface CategoryForm {
+  name: string
+  name_am: string
+  icon: string
+  color: string
+}
 
 export default function EditCategoryPage() {
   const router = useRouter()
@@ -25,220 +56,353 @@ export default function EditCategoryPage() {
   const isAm = locale === 'am'
   const id = String(params?.id ?? '')
 
-  const supabase = createClient()
-
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<CategoryForm>({
     name: '',
-    name_am: ''
+    name_am: '',
+    icon: '📦',
+    color: '#8B2635',
   })
 
   /* ───────────────── LOAD ───────────────── */
+
   const loadCategory = useCallback(async () => {
+    if (!id) {
+      setLoading(false)
+      return
+    }
+
     try {
       setLoading(true)
 
       const businessId = await getBusinessId()
-      if (!businessId || !id) return
 
-      const { data, error } = await supabase
-        .from('categories')
-        .select('id, name, name_am')
-        .eq('id', id)
-        .eq('business_id', businessId)
-        .single()
+      if (!businessId) {
+        throw new Error('Business ID not found')
+      }
 
-      if (error) throw error
+      const category = await getCategoryById(id, businessId)
+
+      if (!category) {
+        throw new Error('Category not found')
+      }
 
       setForm({
-        name: data?.name || '',
-        name_am: data?.name_am || ''
+        name: category.name ?? '',
+        name_am: category.name_am ?? '',
+        icon: category.icon ?? '📦',
+        color: category.color ?? '#8B2635',
       })
-    } catch (err) {
-      console.error(err)
+    } catch (error) {
+      console.error('[CATEGORIES] Failed to load category:', error)
+
+      alert(
+        isAm
+          ? 'ምድቡን መጫን አልተቻለም።'
+          : 'The category could not be loaded.'
+      )
+
+      router.replace(`/${locale}/management/categories`)
     } finally {
       setLoading(false)
     }
-  }, [id])
+  }, [id, isAm, locale, router])
 
   useEffect(() => {
     loadCategory()
   }, [loadCategory])
 
+  /* ───────────────── VALIDATION ───────────────── */
+
+  const isValid = useMemo(() => {
+    return (
+      form.name.trim().length > 0 &&
+      form.name_am.trim().length > 0
+    )
+  }, [form.name, form.name_am])
+
   /* ───────────────── SAVE ───────────────── */
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (saving) return
+
+  const handleSave = async (
+    event: React.FormEvent<HTMLFormElement>
+  ) => {
+    event.preventDefault()
+
+    if (saving || !isValid || !id) return
 
     try {
       setSaving(true)
 
       const businessId = await getBusinessId()
-      if (!businessId) return
 
-      const { error } = await supabase
-        .from('categories')
-        .update({
-          name: form.name.trim(),
-          name_am: form.name_am.trim()
-        })
-        .eq('id', id)
-        .eq('business_id', businessId)
+      if (!businessId) {
+        throw new Error('Business ID not found')
+      }
 
-      if (error) throw error
+      await updateCategory(id, businessId, {
+        name: form.name.trim(),
+        name_am: form.name_am.trim(),
+        icon: form.icon,
+        color: form.color,
+      })
 
-      router.push(`/${locale}/management/categories`)
-      router.refresh()
-    } catch (err) {
-      console.error(err)
-      alert(isAm ? 'ማስተካከያ አልተሳካም' : 'Update failed')
+      router.replace(`/${locale}/management/categories`)
+    } catch (error) {
+      console.error('[CATEGORIES] Update failed:', error)
+
+      alert(
+        isAm
+          ? 'ምድቡን ማስተካከል አልተቻለም። እባክዎ እንደገና ይሞክሩ።'
+          : 'The category could not be updated. Please try again.'
+      )
     } finally {
       setSaving(false)
     }
   }
 
-  const isValid = useMemo(
-    () => form.name.trim().length > 0 && form.name_am.trim().length > 0,
-    [form]
-  )
-
   /* ───────────────── LOADING ───────────────── */
+
   if (loading) {
     return (
-      <div className="flex justify-center py-24">
-        <Loader2 className="w-8 h-8 animate-spin text-berbere-500" />
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <Loader2 className="h-7 w-7 animate-spin text-berbere-500" />
       </div>
     )
   }
 
   /* ───────────────── UI ───────────────── */
+
   return (
-    <div className="max-w-md mx-auto pb-24 space-y-6 px-4 pt-4">
+    <div className="mx-auto min-h-screen max-w-md bg-cream-50 px-4 pb-24 pt-4">
 
-      {/* BACK BUTTON */}
-      <button
-        onClick={() => router.back()}
-        className="flex items-center gap-2 text-coffee-400 font-bold text-[11px] uppercase tracking-wider"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        {isAm ? 'ተመለስ' : 'Back'}
-      </button>
+      {/* TOP BAR */}
+      <div className="mb-5 flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="flex items-center gap-2 text-xs font-bold text-coffee-500"
+        >
+          <ArrowLeft className="h-4 w-4" />
 
-      {/* HEADER (IMPROVED) */}
-      <div className="bg-white border rounded-2xl p-4 shadow-sm space-y-3">
+          {isAm ? 'ተመለስ' : 'Back'}
+        </button>
 
-        <div className="flex items-start gap-3">
+        <span className="rounded-full bg-berbere-50 px-3 py-1 text-[10px] font-black uppercase text-berbere-600">
+          {isAm ? 'ምድብ አርም' : 'Edit Category'}
+        </span>
+      </div>
 
-          <div className="w-11 h-11 rounded-xl bg-berbere-50 flex items-center justify-center">
-            <Tag className="w-6 h-6 text-berbere-500" />
+      {/* HEADER */}
+      <div className="mb-5">
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-berbere-50">
+            <Tag className="h-5 w-5 text-berbere-600" />
           </div>
 
           <div>
-            <h1 className="text-lg font-black text-coffee-900">
+            <h1 className="text-xl font-black text-coffee-900">
               {isAm ? 'ምድብ አርም' : 'Edit Category'}
             </h1>
 
-            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+            <p className="mt-0.5 text-[11px] font-medium text-gray-400">
               {isAm
-                ? 'ምድብ ስም ያሻሽሉ እና አዘምኑ'
+                ? 'የምድቡን መረጃ ያዘምኑ'
                 : 'Update your category information'}
             </p>
           </div>
         </div>
-
-        {/* SIMPLE EXPLANATION */}
-        <div className="bg-cream-50 border border-cream-200 rounded-xl p-3">
-          <p className="text-[10px] font-black text-coffee-700 uppercase flex items-center gap-1">
-            <HelpCircle className="w-3 h-3" />
-            {isAm ? 'ምን ያደርጋል?' : 'What this does'}
-          </p>
-
-          <p className="text-xs text-coffee-600 font-bold mt-1 leading-relaxed">
-            {isAm
-              ? 'ምድብ ስም በመቀየር ሁሉንም የተያያዙ ምርቶች በቀጥታ ይቀየራሉ።'
-              : 'Updating this category will automatically reflect across all linked products.'}
-          </p>
-        </div>
       </div>
 
-      {/* LIVE PREVIEW (SMART UX) */}
-      <div className="bg-white border rounded-2xl p-4 shadow-sm">
+      {/* LIVE PREVIEW */}
+      <div className="mb-5">
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-[10px] font-black uppercase text-gray-400">
+            {isAm ? 'ቅድመ እይታ' : 'Preview'}
+          </p>
 
-        <div className="flex items-center gap-2 mb-3 text-[11px] font-black text-gray-400 uppercase">
-          <Sparkles className="w-3 h-3 text-amber-500" />
-          {isAm ? 'ቅድመ እይታ' : 'Live Preview'}
+          <Palette className="h-3.5 w-3.5 text-gray-400" />
         </div>
 
-        <div className="flex items-center gap-3">
+        <div
+          className="rounded-2xl border bg-white p-4 shadow-sm"
+          style={{
+            borderColor: `${form.color}40`,
+          }}
+        >
+          <div className="flex items-center gap-3">
+            <div
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-2xl shadow-sm"
+              style={{
+                backgroundColor: form.color,
+              }}
+            >
+              {form.icon}
+            </div>
 
-          <div className="w-12 h-12 rounded-xl bg-berbere-500 flex items-center justify-center text-white font-black">
-            {form.name?.charAt(0) || 'C'}
+            <div className="min-w-0">
+              <p className="truncate text-base font-black text-coffee-900">
+                {form.name.trim() ||
+                  (isAm ? 'የምድብ ስም' : 'Category Name')}
+              </p>
+
+              <p className="truncate text-xs font-medium text-gray-400">
+                {form.name_am.trim() || 'የምድብ ስም'}
+              </p>
+            </div>
           </div>
-
-          <div>
-            <p className="font-black text-coffee-900">
-              {form.name || 'Category Name'}
-            </p>
-            <p className="text-xs text-gray-400 font-bold">
-              {form.name_am || 'የምድብ ስም'}
-            </p>
-          </div>
-
         </div>
       </div>
 
       {/* FORM */}
       <form onSubmit={handleSave} className="space-y-4">
 
-        {/* AM NAME */}
-        <div>
-          <label className="text-[11px] font-black text-gray-500 uppercase">
-            🇪🇹 {isAm ? 'አማርኛ ስም' : 'Amharic Name'}
+        {/* ENGLISH NAME */}
+        <div className="rounded-2xl border bg-white p-4">
+          <label
+            htmlFor="category-name"
+            className="mb-2 block text-[10px] font-black uppercase text-gray-500"
+          >
+            {isAm ? 'ስም (English)' : 'Name (English)'}
           </label>
 
           <input
-            value={form.name_am}
-            placeholder="ምሳሌ: መጠጦች"
-            className="w-full h-[52px] px-4 rounded-xl border bg-gray-50 font-bold text-sm focus:bg-white focus:border-berbere-500 outline-none"
-            onChange={(e) =>
-              setForm(prev => ({ ...prev, name_am: e.target.value }))
-            }
-          />
-        </div>
-
-        {/* EN NAME */}
-        <div>
-          <label className="text-[11px] font-black text-gray-500 uppercase">
-            🇺🇸 {isAm ? 'እንግሊዝኛ ስም' : 'English Name'}
-          </label>
-
-          <input
+            id="category-name"
+            type="text"
             value={form.name}
-            placeholder="e.g. Drinks"
-            className="w-full h-[52px] px-4 rounded-xl border bg-gray-50 font-bold text-sm focus:bg-white focus:border-berbere-500 outline-none"
-            onChange={(e) =>
-              setForm(prev => ({ ...prev, name: e.target.value }))
+            onChange={(event) =>
+              setForm((previous) => ({
+                ...previous,
+                name: event.target.value,
+              }))
             }
+            placeholder="e.g. Drinks"
+            autoComplete="off"
+            maxLength={100}
+            className="h-12 w-full rounded-xl border bg-gray-50 px-4 text-sm font-bold text-coffee-900 outline-none transition placeholder:text-gray-300 focus:border-berbere-500 focus:bg-white focus:ring-2 focus:ring-berbere-100"
           />
         </div>
 
-        {/* SAVE BUTTON */}
+        {/* AMHARIC NAME */}
+        <div className="rounded-2xl border bg-white p-4">
+          <label
+            htmlFor="category-name-am"
+            className="mb-2 block text-[10px] font-black uppercase text-gray-500"
+          >
+            {isAm ? 'ስም (አማርኛ)' : 'Name (Amharic)'}
+          </label>
+
+          <input
+            id="category-name-am"
+            type="text"
+            value={form.name_am}
+            onChange={(event) =>
+              setForm((previous) => ({
+                ...previous,
+                name_am: event.target.value,
+              }))
+            }
+            placeholder="ምሳሌ፡ መጠጦች"
+            autoComplete="off"
+            maxLength={100}
+            className="h-12 w-full rounded-xl border bg-gray-50 px-4 text-sm font-bold text-coffee-900 outline-none transition placeholder:text-gray-300 focus:border-berbere-500 focus:bg-white focus:ring-2 focus:ring-berbere-100"
+          />
+        </div>
+
+        {/* ICON */}
+        <div className="rounded-2xl border bg-white p-4">
+          <p className="mb-3 text-[10px] font-black uppercase text-gray-500">
+            {isAm ? 'አይኮን' : 'Icon'}
+          </p>
+
+          <div className="grid grid-cols-5 gap-2">
+            {ICONS.map((icon) => {
+              const selected = form.icon === icon
+
+              return (
+                <button
+                  key={icon}
+                  type="button"
+                  onClick={() =>
+                    setForm((previous) => ({
+                      ...previous,
+                      icon,
+                    }))
+                  }
+                  aria-label={`${isAm ? 'አይኮን' : 'Icon'} ${icon}`}
+                  aria-pressed={selected}
+                  className={`flex h-12 items-center justify-center rounded-xl border text-xl transition ${
+                    selected
+                      ? 'border-berbere-500 bg-berbere-50 ring-2 ring-berbere-100'
+                      : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
+                  }`}
+                >
+                  {icon}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* COLOR */}
+        <div className="rounded-2xl border bg-white p-4">
+          <p className="mb-3 text-[10px] font-black uppercase text-gray-500">
+            {isAm ? 'የምድብ ቀለም' : 'Category Color'}
+          </p>
+
+          <div className="flex flex-wrap gap-3">
+            {COLORS.map((color) => {
+              const selected = form.color === color
+
+              return (
+                <button
+                  key={color}
+                  type="button"
+                  onClick={() =>
+                    setForm((previous) => ({
+                      ...previous,
+                      color,
+                    }))
+                  }
+                  aria-label={`${isAm ? 'ቀለም' : 'Color'} ${color}`}
+                  aria-pressed={selected}
+                  className={`h-10 w-10 rounded-xl transition ${
+                    selected
+                      ? 'scale-110 ring-2 ring-coffee-900 ring-offset-2'
+                      : 'hover:scale-105'
+                  }`}
+                  style={{
+                    backgroundColor: color,
+                  }}
+                />
+              )
+            })}
+          </div>
+        </div>
+
+        {/* SAVE */}
         <button
+          type="submit"
           disabled={saving || !isValid}
-          className="w-full h-[56px] bg-berbere-500 text-white rounded-2xl font-black flex items-center justify-center gap-2 disabled:opacity-40 active:scale-[0.98] transition"
+          className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-berbere-600 text-sm font-black text-white shadow-sm transition hover:bg-berbere-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {saving ? (
-            <Loader2 className="w-5 h-5 animate-spin" />
+            <Loader2 className="h-5 w-5 animate-spin" />
           ) : (
-            <Save className="w-5 h-5" />
+            <Save className="h-5 w-5" />
           )}
 
-          {isAm ? 'አስቀምጥ' : 'Save Changes'}
+          {saving
+            ? isAm
+              ? 'በማስቀመጥ ላይ...'
+              : 'Saving...'
+            : isAm
+              ? 'ለውጦችን አስቀምጥ'
+              : 'Save Changes'}
         </button>
-
       </form>
     </div>
   )
 }
+

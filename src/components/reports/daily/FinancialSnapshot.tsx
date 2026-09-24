@@ -42,6 +42,8 @@ export function FinancialSnapshot({
           caption={t("Sales before expenses", "ወጪ ከመቀነሱ በፊት")}
           icon={<CircleDollarSign className="h-4 w-4" />}
           tone="primary"
+          className="daily-report-metric-card"
+          iconClassName="daily-report-metric-icon"
         />
         <MetricCard
           label={t("Net Profit", "የተጣራ ትርፍ")}
@@ -51,17 +53,23 @@ export function FinancialSnapshot({
             ? <ArrowUpRight className="h-4 w-4" />
             : <ArrowDownRight className="h-4 w-4" />}
           tone={netProfit >= 0 ? "profit" : "warning"}
+          className="daily-report-metric-card"
+          iconClassName="daily-report-metric-icon"
         />
         <MetricCard
           label={t("Expenses", "ወጪ")}
           value={formatMoney(expenseTotal)}
           icon={<ArrowDownRight className="h-4 w-4" />}
           tone="warning"
+          className="daily-report-metric-card"
+          iconClassName="daily-report-metric-icon"
         />
         <MetricCard
           label={t("Transactions", "የተደረጉ ሽያጮች")}
           value={formatNumber(orderCount)}
           icon={<ShoppingBag className="h-4 w-4" />}
+          className="daily-report-metric-card"
+          iconClassName="daily-report-metric-icon"
         />
       </div>
     </section>

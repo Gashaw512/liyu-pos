@@ -101,11 +101,14 @@ export default function InventoryPage() {
   const [liveStockMap, setLiveStockMap] =
     useState<Record<string, LiveMetaData>>({});
 
-  const [fifoCostValueByProduct, setFifoCostValueByProduct] =
-    useState<Record<string, number>>({});
+  const [fifoCostByProduct, setFifoCostByProduct] =
+    useState<Record<string, { quantity: number; value: number }>>({});
 
   const [fifoCostDataAvailable, setFifoCostDataAvailable] =
     useState(false);
+
+  const [pendingReceiptCostByProduct, setPendingReceiptCostByProduct] =
+    useState<Record<string, { quantity: number; value: number }>>({});
 
   const [counts, setCounts] =
     useState<Record<string, number>>({});
@@ -223,7 +226,51 @@ export default function InventoryPage() {
             baseProducts,
           );
 
-        const nextFifoCostValueByProduct: Record<string, number> = {};
+        const nextPendingReceiptCostByProduct: Record<
+          string,
+          { quantity: number; value: number }
+        > = {};
+
+        if (
+          businessId &&
+          branchId &&
+          db.objectStoreNames.contains("pending_stock_receipts")
+        ) {
+          const pendingReceipts = await db.getAll("pending_stock_receipts");
+
+          for (const receipt of pendingReceipts) {
+            if (
+              receipt.business_id !== businessId ||
+              receipt.branch_id !== branchId
+            ) {
+              continue;
+            }
+
+            const quantity = Number(receipt.quantity);
+            const unitCost = Number(receipt.unit_cost);
+
+            if (
+              !Number.isFinite(quantity) || quantity <= 0 ||
+              !Number.isFinite(unitCost) || unitCost < 0
+            ) {
+              continue;
+            }
+
+            const current =
+              nextPendingReceiptCostByProduct[receipt.product_id] ??
+              { quantity: 0, value: 0 };
+
+            nextPendingReceiptCostByProduct[receipt.product_id] = {
+              quantity: current.quantity + quantity,
+              value: current.value + quantity * unitCost,
+            };
+          }
+        }
+
+        const nextFifoCostByProduct: Record<
+          string,
+          { quantity: number; value: number }
+        > = {};
         let nextFifoCostDataAvailable = false;
 
         if (businessId && branchId) {
@@ -238,13 +285,24 @@ export default function InventoryPage() {
             if (error) throw error;
 
             for (const layer of data ?? []) {
-              const layerValue =
-                Number(layer.quantity_remaining) * Number(layer.unit_cost);
+              const quantity = Number(layer.quantity_remaining);
+              const unitCost = Number(layer.unit_cost);
+              const layerValue = quantity * unitCost;
 
-              if (!Number.isFinite(layerValue)) continue;
+              if (
+                !Number.isFinite(quantity) || quantity <= 0 ||
+                !Number.isFinite(layerValue)
+              ) continue;
 
-              nextFifoCostValueByProduct[layer.product_id] =
-                (nextFifoCostValueByProduct[layer.product_id] ?? 0) + layerValue;
+              const current = nextFifoCostByProduct[layer.product_id] ?? {
+                quantity: 0,
+                value: 0,
+              };
+
+              nextFifoCostByProduct[layer.product_id] = {
+                quantity: current.quantity + quantity,
+                value: current.value + layerValue,
+              };
             }
 
             nextFifoCostDataAvailable = true;
@@ -263,8 +321,9 @@ export default function InventoryPage() {
 
         setProducts(baseProducts);
         setLiveStockMap(computedMap);
-        setFifoCostValueByProduct(nextFifoCostValueByProduct);
+        setFifoCostByProduct(nextFifoCostByProduct);
         setFifoCostDataAvailable(nextFifoCostDataAvailable);
+        setPendingReceiptCostByProduct(nextPendingReceiptCostByProduct);
 
         setCounts((previous) => {
           const next: Record<string, number> = {};
@@ -1069,8 +1128,9 @@ export default function InventoryPage() {
           <InventoryValuation
             products={products}
             liveStockMap={liveStockMap}
-            fifoCostValueByProduct={fifoCostValueByProduct}
+            fifoCostByProduct={fifoCostByProduct}
             fifoCostDataAvailable={fifoCostDataAvailable}
+            pendingReceiptCostByProduct={pendingReceiptCostByProduct}
             isAm={isAm}
           />
 
@@ -1127,6 +1187,9 @@ export default function InventoryPage() {
               liveStockMap={
                 liveStockMap
               }
+              fifoCostByProduct={fifoCostByProduct}
+              fifoCostDataAvailable={fifoCostDataAvailable}
+              pendingReceiptCostByProduct={pendingReceiptCostByProduct}
               rowSavingId={
                 rowSavingId
               }

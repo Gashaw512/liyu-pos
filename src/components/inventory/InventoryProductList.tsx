@@ -12,6 +12,12 @@ interface InventoryProductListProps {
   products: InventoryProduct[]
   counts: Record<string, number>
   liveStockMap: Record<string, LiveMetaData>
+  fifoCostByProduct: Record<string, { quantity: number; value: number }>
+  fifoCostDataAvailable: boolean
+  pendingReceiptCostByProduct: Record<
+    string,
+    { quantity: number; value: number }
+  >
   rowSavingId: string | null
   isAm: boolean
   t: (en: string, am: string) => string
@@ -43,6 +49,9 @@ export default function InventoryProductList({
   products,
   counts,
   liveStockMap,
+  fifoCostByProduct,
+  fifoCostDataAvailable,
+  pendingReceiptCostByProduct,
   rowSavingId,
   isAm,
   t,
@@ -92,7 +101,7 @@ export default function InventoryProductList({
         </TableHeader>
 
         <TableHeader align="right">
-          {t('Cost Price', 'የግዢ ዋጋ')}
+          {t('Avg. Cost', 'አማካይ የግዢ ዋጋ')}
         </TableHeader>
 
         <TableHeader align="right">
@@ -144,16 +153,44 @@ export default function InventoryProductList({
               ? product.category_name_am
               : product.category_name
 
-          /*
-           * IMPORTANT:
-           * We display the real product cost price.
-           * We do NOT create a fake cost-price fallback.
-           */
-          const costPrice =
+          const configuredCost =
             typeof product.cost_price === 'number' &&
-              Number.isFinite(product.cost_price)
+              Number.isFinite(product.cost_price) &&
+              product.cost_price >= 0
               ? product.cost_price
               : null
+
+          const fifoCost = fifoCostByProduct[product.id]
+          const pendingReceipt = pendingReceiptCostByProduct[product.id]
+          const hasPendingReceipt =
+            pendingReceipt !== undefined && pendingReceipt.quantity > 0
+
+          const hasFifoCost =
+            fifoCostDataAvailable &&
+            !live?.hasPendingTransactions &&
+            fifoCost !== undefined &&
+            fifoCost.quantity > 0
+
+          const fallbackStockQuantity = hasPendingReceipt
+            ? Math.max(0, systemCount - pendingReceipt.quantity)
+            : systemCount
+
+          const liveCostQuantity = hasFifoCost
+            ? fifoCost.quantity + (pendingReceipt?.quantity ?? 0)
+            : fallbackStockQuantity + (pendingReceipt?.quantity ?? 0)
+
+          const liveCostValue = hasFifoCost
+            ? fifoCost.value + (pendingReceipt?.value ?? 0)
+            : configuredCost !== null
+              ? fallbackStockQuantity * configuredCost +
+                (pendingReceipt?.value ?? 0)
+              : null
+
+          // Show weighted average cost of the stock currently on hand.
+          const costPrice =
+            liveCostValue !== null && liveCostQuantity > 0
+              ? liveCostValue / liveCostQuantity
+              : configuredCost
 
           const retailPrice =
             typeof product.retail_price === 'number' &&

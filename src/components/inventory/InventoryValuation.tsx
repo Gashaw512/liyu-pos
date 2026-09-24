@@ -17,8 +17,12 @@ import type {
 interface ValuationProps {
   products: InventoryProduct[]
   liveStockMap: Record<string, LiveMetaData>
-  fifoCostValueByProduct: Record<string, number>
+  fifoCostByProduct: Record<string, { quantity: number; value: number }>
   fifoCostDataAvailable: boolean
+  pendingReceiptCostByProduct: Record<
+    string,
+    { quantity: number; value: number }
+  >
   isAm: boolean
 }
 
@@ -41,8 +45,9 @@ const COLORS = {
 export default function InventoryValuation({
   products,
   liveStockMap,
-  fifoCostValueByProduct,
+  fifoCostByProduct,
   fifoCostDataAvailable,
+  pendingReceiptCostByProduct,
   isAm,
 }: ValuationProps) {
   const [isOpen, setIsOpen] = useState(false)
@@ -130,15 +135,33 @@ export default function InventoryValuation({
         fifoCostDataAvailable &&
         !liveStock?.hasPendingTransactions &&
         Object.prototype.hasOwnProperty.call(
-          fifoCostValueByProduct,
+          fifoCostByProduct,
           product.id,
         )
 
-      const costValue = hasFifoCostValue
-        ? fifoCostValueByProduct[product.id]
+      const pendingReceipt =
+        pendingReceiptCostByProduct[product.id]
+
+      const hasPendingReceipt =
+        pendingReceipt !== undefined &&
+        pendingReceipt.quantity > 0
+
+      const stockBeforePendingReceipts = Math.max(
+        0,
+        currentStock - (pendingReceipt?.quantity ?? 0),
+      )
+
+      const existingStockCost = hasFifoCostValue
+        ? fifoCostByProduct[product.id].value
         : hasValidCost
-          ? currentStock * costPrice
+          ? (hasPendingReceipt
+              ? stockBeforePendingReceipts
+              : currentStock) * costPrice
           : 0
+
+      const costValue =
+        existingStockCost +
+        (hasPendingReceipt ? pendingReceipt.value : 0)
 
       const safeRetailPrice =
         Number.isFinite(retailPrice) &&
@@ -214,8 +237,9 @@ export default function InventoryValuation({
   }, [
     products,
     liveStockMap,
-    fifoCostValueByProduct,
+    fifoCostByProduct,
     fifoCostDataAvailable,
+    pendingReceiptCostByProduct,
     isAm,
   ])
 

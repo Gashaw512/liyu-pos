@@ -253,15 +253,11 @@ export async function loadRemoteReportData(
       )
       .gte(
         'expense_date',
-        range.from
-          .toISOString()
-          .slice(0, 10),
+        range.fromDate,
       )
       .lt(
         'expense_date',
-        range.to
-          .toISOString()
-          .slice(0, 10),
+        range.toDate,
       )
 
     if (options.branchId) {

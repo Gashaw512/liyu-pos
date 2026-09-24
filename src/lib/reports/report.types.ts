@@ -10,6 +10,9 @@ import type {
 export interface ReportDateRange {
   from: Date
   to: Date
+  /** Calendar-date bounds for PostgreSQL DATE columns; `toDate` is exclusive. */
+  fromDate: string
+  toDate: string
   fromISO: string
   toISO: string
 }

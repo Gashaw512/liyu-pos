@@ -74,9 +74,12 @@ export function getExpenseDate(
 export function getReportDateRange(
   input?: Date | string,
 ): ReportDateRange {
-  const date =
-    input instanceof Date
-      ? new Date(input)
+  // A YYYY-MM-DD input represents a calendar date, not a UTC timestamp.
+  // Parse it locally so it does not become the previous day in UTC+ zones.
+  const date = input instanceof Date
+    ? new Date(input)
+    : typeof input === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input)
+      ? new Date(`${input}T12:00:00`)
       : input
         ? new Date(input)
         : new Date()
@@ -96,9 +99,14 @@ export function getReportDateRange(
     to.getDate() + 1,
   )
 
+  const toCalendarDate = (value: Date) =>
+    `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
+
   return {
     from,
     to,
+    fromDate: toCalendarDate(from),
+    toDate: toCalendarDate(to),
     fromISO: from.toISOString(),
     toISO: to.toISOString(),
   }

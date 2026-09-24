@@ -97,6 +97,8 @@ export interface ReportSaleItem {
   total?: number | string
   total_amount?: number | string
 
+  cost_total?: number | string
+
   gross_profit?: number | string
 }
 

@@ -364,6 +364,119 @@ export type Database = {
           },
         ]
       }
+      inventory_cost_allocations: {
+        Row: {
+          cost_layer_id: string | null
+          created_at: string
+          id: string
+          quantity: number
+          sale_item_id: string
+          unit_cost: number
+        }
+        Insert: {
+          cost_layer_id?: string | null
+          created_at?: string
+          id?: string
+          quantity: number
+          sale_item_id: string
+          unit_cost: number
+        }
+        Update: {
+          cost_layer_id?: string | null
+          created_at?: string
+          id?: string
+          quantity?: number
+          sale_item_id?: string
+          unit_cost?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inventory_cost_allocations_cost_layer_id_fkey"
+            columns: ["cost_layer_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_cost_layers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_cost_allocations_sale_item_id_fkey"
+            columns: ["sale_item_id"]
+            isOneToOne: false
+            referencedRelation: "sale_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      inventory_cost_layers: {
+        Row: {
+          branch_id: string
+          business_id: string
+          created_at: string
+          fifo_sequence: number
+          id: string
+          product_id: string
+          quantity_received: number
+          quantity_remaining: number
+          received_at: string
+          source_movement_id: string | null
+          unit_cost: number
+        }
+        Insert: {
+          branch_id: string
+          business_id: string
+          created_at?: string
+          fifo_sequence?: never
+          id?: string
+          product_id: string
+          quantity_received: number
+          quantity_remaining: number
+          received_at?: string
+          source_movement_id?: string | null
+          unit_cost: number
+        }
+        Update: {
+          branch_id?: string
+          business_id?: string
+          created_at?: string
+          fifo_sequence?: never
+          id?: string
+          product_id?: string
+          quantity_received?: number
+          quantity_remaining?: number
+          received_at?: string
+          source_movement_id?: string | null
+          unit_cost?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inventory_cost_layers_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_cost_layers_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_cost_layers_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_cost_layers_source_movement_id_fkey"
+            columns: ["source_movement_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_movements"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       inventory: {
         Row: {
           branch_id: string
@@ -415,6 +528,7 @@ export type Database = {
       }
       inventory_movements: {
         Row: {
+          balance_after: number | null
           branch_id: string
           business_id: string
           created_at: string | null
@@ -429,6 +543,7 @@ export type Database = {
           user_id: string | null
         }
         Insert: {
+          balance_after?: number | null
           branch_id: string
           business_id: string
           created_at?: string | null
@@ -443,6 +558,7 @@ export type Database = {
           user_id?: string | null
         }
         Update: {
+          balance_after?: number | null
           branch_id?: string
           business_id?: string
           created_at?: string | null
@@ -941,6 +1057,7 @@ export type Database = {
       sale_items: {
         Row: {
           cost_price: number
+          cost_total: number
           created_at: string | null
           discount: number | null
           gross_profit: number | null
@@ -954,6 +1071,7 @@ export type Database = {
         }
         Insert: {
           cost_price: number
+          cost_total?: number
           created_at?: string | null
           discount?: number | null
           gross_profit?: number | null
@@ -967,6 +1085,7 @@ export type Database = {
         }
         Update: {
           cost_price?: number
+          cost_total?: number
           created_at?: string | null
           discount?: number | null
           gross_profit?: number | null

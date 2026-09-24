@@ -47,13 +47,13 @@ export function MetricCard({
   const muted = tone === "primary" ? "text-white/60" : "text-coffee-400";
 
   return (
-    <div className={`rounded-2xl border p-4 shadow-sm ${styles.card}`}>
+    <div className={`daily-report-metric-card rounded-2xl border p-4 shadow-sm ${styles.card}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className={`text-[9px] font-black uppercase tracking-[0.14em] ${muted}`}>{label}</p>
           <p className={`mt-2 break-words font-mono text-xl font-black tracking-tight sm:text-2xl ${styles.value}`}>{value}</p>
         </div>
-        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${styles.icon}`}>{icon}</div>
+        <div className={`daily-report-metric-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${styles.icon}`}>{icon}</div>
       </div>
       {caption && <p className={`mt-2 text-[9px] ${muted}`}>{caption}</p>}
     </div>

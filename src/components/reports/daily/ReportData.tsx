@@ -9,7 +9,7 @@ export function ReportData({ remoteAvailable, remoteSalesCount, localOnlySalesCo
                   REPORT DATA
               ================================================== */}
 
-              <section className="overflow-hidden rounded-2xl border border-coffee-700/10 bg-white shadow-sm">
+              <section className="daily-report-data-section overflow-hidden rounded-2xl border border-coffee-700/10 bg-white shadow-sm">
                 <SectionHeader
                   icon={
                     remoteAvailable ? (
@@ -28,7 +28,13 @@ export function ReportData({ remoteAvailable, remoteSalesCount, localOnlySalesCo
                   )}
                 />
 
-                <div className="grid grid-cols-2 divide-x divide-cream-200">
+                <div className="border-b border-cream-200 px-4 py-2 text-xs font-bold text-coffee-600">
+                  {t("Remote status", "የRemote ሁኔታ")}: {remoteAvailable
+                    ? t("Connected", "ተገናኝቷል")
+                    : t("Offline", "ከመስመር ውጭ")}
+                </div>
+
+                <div className="daily-report-sync-summary grid grid-cols-2 divide-x divide-cream-200">
                   <div className="p-4">
                     <p className="text-[9px] font-bold text-coffee-400">
                       {t(

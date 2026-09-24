@@ -1,4 +1,4 @@
-// src/app/[locale]/(app)/reports/daily/page.tsx
+﻿// src/app/[locale]/(app)/reports/daily/page.tsx
 "use client";
 
 import {
@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 
 import { DailyReportHeader } from "@/components/reports/daily/DailyReportHeader";
+import { DailyReportPrintHeader } from "@/components/reports/daily/DailyReportPrintHeader";
 import { FinancialSnapshot } from "@/components/reports/daily/FinancialSnapshot";
 import { CategoryPerformance } from "@/components/reports/daily/CategoryPerformance";
 import { ExpenseBreakdown } from "@/components/reports/daily/ExpenseBreakdown";
@@ -29,6 +30,7 @@ import { PaymentBreakdown } from "@/components/reports/daily/PaymentBreakdown";
 import { ReportData } from "@/components/reports/daily/ReportData";
 import { ReportFooter } from "@/components/reports/daily/ReportFooter";
 import { ReportPrintFooter } from "@/components/reports/daily/ReportPrintFooter";
+import { DailyReportPrintStyles } from "@/components/reports/daily/DailyReportPrintStyles";
 import { SalesPerformance } from "@/components/reports/daily/SalesPerformance";
 import { ShiftCash } from "@/components/reports/daily/ShiftCash";
 import { getDailyReportPeriod } from "@/lib/reports/daily-report-period.service";
@@ -82,6 +84,8 @@ export default function DailyReportPage() {
 
   const [businessName, setBusinessName] =
     useState("LIYU POS");
+  const [printGeneratedAt, setPrintGeneratedAt] =
+    useState<Date | null>(null);
 
   useEffect(() => {
     if (!businessId) {
@@ -301,22 +305,15 @@ export default function DailyReportPage() {
      PRODUCTS
   ========================================================== */
 
-  const productReport =
-    useMemo(
-      () =>
-        [...products]
-          .sort(
-            (a, b) =>
-              numberValue(
-                b.revenue,
-              ) -
-              numberValue(
-                a.revenue,
-              ),
-          )
-          .slice(0, 20),
-      [products],
-    );
+const productReport = useMemo(
+  () =>
+    [...products].sort(
+      (a, b) =>
+        numberValue(b.revenue) -
+        numberValue(a.revenue),
+    ),
+  [products],
+);
 
   /* ==========================================================
      CATEGORIES
@@ -621,15 +618,21 @@ export default function DailyReportPage() {
      PRINT / PDF
   ========================================================== */
 
-  const printReport =
-    useCallback(() => {
-      if (
-        typeof window !==
-        "undefined"
-      ) {
+const printReport = useCallback(() => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  setPrintGeneratedAt(new Date());
+
+  window.setTimeout(() => {
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
         window.print();
-      }
-    }, []);
+      });
+    });
+  }, 50);
+}, []);
 
   /* ==========================================================
      LOADING
@@ -768,224 +771,23 @@ export default function DailyReportPage() {
 
   return (
     <>
-      <style jsx global>{`
-        @media print {
-          @page {
-            size: A4 portrait;
-            margin: 12mm;
-          }
-
-          html,
-          body {
-            margin: 0 !important;
-            padding: 0 !important;
-            background: #fff !important;
-          }
-
-          body {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-
-          .no-print,
-          .screen-report-body,
-          .screen-only {
-            display: none !important;
-          }
-
-          #daily-report-print-root,
-          #daily-report-print-root * {
-            visibility: visible !important;
-          }
-
-          #daily-report-print-root {
-            display: block !important;
-            width: 100% !important;
-            max-width: none !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            background: #fff !important;
-            overflow: visible !important;
-            height: auto !important;
-            color: #2b1e1a !important;
-          }
-
-          #daily-report-print-root section,
-          #daily-report-print-root table,
-          #daily-report-print-root tr,
-          #daily-report-print-root footer {
-            break-inside: auto !important;
-            page-break-inside: auto !important;
-          }
-
-          .print-summary {
-            display: block !important;
-            color: #2b1e1a !important;
-          }
-        }
-
-        @media screen {
-          .print-summary {
-            display: none;
-          }
-        }
-      `}</style>
+      <DailyReportPrintStyles />
 
       <main className="min-h-screen bg-cream-100 pb-24">
         <div
           id="daily-report-print-root"
-          className="mx-auto max-w-6xl space-y-4 px-4 py-4 sm:px-6 sm:py-5"
+          className="daily-report-document mx-auto max-w-6xl space-y-4 px-4 py-4 sm:px-6 sm:py-5"
         >
-
-          {/* ==================================================
-              PRINT HEADER
-          ================================================== */}
-
-          <div className="print-summary mt-0 space-y-4 text-[11px] leading-relaxed text-coffee-700">
-            <div className="border-b-2 border-coffee-700 pb-3">
-              <h2 className="text-[24px] font-black tracking-tight text-coffee-700">
-                {businessId ? businessName : "LIYU POS"}
-              </h2>
-              <p className="mt-1 text-[11px] font-bold text-coffee-500">
-                {reportPeriodDetail}
-              </p>
-            </div>
-
-            <section className="rounded-xl border border-coffee-700/10 bg-white p-3">
-              <p className="mb-2 text-[9px] font-black uppercase tracking-[0.16em] text-coffee-400">
-                Financial Snapshot
-              </p>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="rounded-lg bg-cream-50 p-2">
-                  <div className="text-[9px] font-bold text-coffee-400">Sales</div>
-                  <div className="mt-1 text-[14px] font-black text-coffee-700">{formatMoney(salesTotal)}</div>
-                </div>
-                <div className="rounded-lg bg-cream-50 p-2">
-                  <div className="text-[9px] font-bold text-coffee-400">Expenses</div>
-                  <div className="mt-1 text-[14px] font-black text-coffee-700">{formatMoney(expenseTotal)}</div>
-                </div>
-                <div className="rounded-lg bg-cream-50 p-2">
-                  <div className="text-[9px] font-bold text-coffee-400">Net Profit</div>
-                  <div className="mt-1 text-[14px] font-black text-berbere-600">{formatMoney(netProfit)}</div>
-                </div>
-                <div className="rounded-lg bg-cream-50 p-2">
-                  <div className="text-[9px] font-bold text-coffee-400">Sales Made</div>
-                  <div className="mt-1 text-[14px] font-black text-coffee-700">{formatNumber(orderCount)}</div>
-                </div>
-              </div>
-            </section>
-
-            <section className="rounded-xl border border-coffee-700/10 bg-white p-3">
-              <p className="mb-2 text-[9px] font-black uppercase tracking-[0.16em] text-coffee-400">
-                Payment Breakdown
-              </p>
-              <div className="space-y-1">
-                {paymentSummary.map((item) => (
-                  <div key={item.label} className="flex items-center justify-between gap-3">
-                    <span className="font-bold text-coffee-700">{t(item.label, item.am)}</span>
-                    <span className="font-mono font-black text-coffee-700">{formatMoney(item.amount)}</span>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <section className="rounded-xl border border-coffee-700/10 bg-white p-3">
-              <p className="mb-2 text-[9px] font-black uppercase tracking-[0.16em] text-coffee-400">
-                Sold Items
-              </p>
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr className="border-b border-coffee-200 text-left text-[9px] font-black uppercase tracking-wide text-coffee-400">
-                    <th className="pb-1 pr-2">Product</th>
-                    <th className="pb-1 pr-2 text-right">Qty</th>
-                    <th className="pb-1 text-right">Revenue</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(productReport.length > 0 ? productReport : []).map((item) => (
-                    <tr key={item.id ?? item.name} className="border-b border-coffee-100">
-                      <td className="py-1 pr-2 font-bold text-coffee-700">{item.name}</td>
-                      <td className="py-1 pr-2 text-right font-mono text-coffee-600">{formatNumber(numberValue(item.quantity))}</td>
-                      <td className="py-1 text-right font-mono font-black text-berbere-600">{formatMoney(numberValue(item.revenue))}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </section>
-
-            <section className="rounded-xl border border-coffee-700/10 bg-white p-3">
-              <p className="mb-2 text-[9px] font-black uppercase tracking-[0.16em] text-coffee-400">
-                Category Performance
-              </p>
-              <div className="space-y-1">
-                {(categoryReport.length > 0 ? categoryReport : []).map((item) => (
-                  <div key={item.id ?? item.name} className="flex items-center justify-between gap-3">
-                    <span className="font-bold text-coffee-700">{item.name}</span>
-                    <span className="font-mono font-black text-berbere-600">{formatMoney(numberValue(item.revenue))}</span>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <section className="rounded-xl border border-coffee-700/10 bg-white p-3">
-              <p className="mb-2 text-[9px] font-black uppercase tracking-[0.16em] text-coffee-400">
-                Shift & Cash
-              </p>
-              <div className="space-y-1">
-                <div className="flex items-center justify-between"><span>Opening Cash</span><span className="font-mono">{formatMoney(openingCash)}</span></div>
-                <div className="flex items-center justify-between"><span>Cash Sales</span><span className="font-mono">{formatMoney(cashSales)}</span></div>
-                <div className="flex items-center justify-between"><span>Expected Cash</span><span className="font-mono">{formatMoney(expectedCash)}</span></div>
-                <div className="flex items-center justify-between"><span>Actual Cash</span><span className="font-mono">{actualCash == null ? "—" : formatMoney(actualCash)}</span></div>
-                <div className="flex items-center justify-between"><span>Difference</span><span className="font-mono">{cashDifference == null ? "—" : formatMoney(cashDifference)}</span></div>
-              </div>
-            </section>
-
-            <section className="rounded-xl border border-coffee-700/10 bg-white p-3">
-              <p className="mb-2 text-[9px] font-black uppercase tracking-[0.16em] text-coffee-400">
-                Stock Alert / Inventory Check
-              </p>
-
-              {lowStockProducts.length === 0 ? (
-                <div className="rounded-lg bg-cream-50 p-2 text-[10px] font-bold text-berbere-600">
-                  Inventory levels look healthy.
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-[0.14em] text-coffee-400">
-                    <span>Product</span>
-                    <span>Stock</span>
-                  </div>
-
-                  {lowStockProducts.map((product) => (
-                    <div key={product.id} className="flex items-center justify-between gap-3 border-t border-coffee-100 pt-2">
-                      <span className="font-bold text-coffee-700">{product.name}</span>
-                      <span className="font-mono font-black text-gold-700">
-                        {formatNumber(numberValue(product.quantity))} / {formatNumber(numberValue(product.alertLevel))}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {(lowStockCount > 0 || outOfStockCount > 0) && (
-                <div className="mt-3 flex flex-wrap gap-3 text-[9px] font-bold text-gold-700">
-                  {lowStockCount > 0 && <span>{formatNumber(lowStockCount)} low stock</span>}
-                  {outOfStockCount > 0 && <span>{formatNumber(outOfStockCount)} out of stock</span>}
-                </div>
-              )}
-            </section>
-
-            <section className="rounded-xl border border-coffee-700/10 bg-white p-3">
-              <p className="mb-2 text-[9px] font-black uppercase tracking-[0.16em] text-coffee-400">
-                Report Data
-              </p>
-              <div className="space-y-1">
-                <div className="flex items-center justify-between"><span>Remote Sales</span><span className="font-mono">{formatNumber(remoteSalesCount)}</span></div>
-                <div className="flex items-center justify-between"><span>Offline Only</span><span className="font-mono">{formatNumber(localOnlySalesCount)}</span></div>
-              </div>
-            </section>
-          </div>
-
+          {report && (
+            <DailyReportPrintHeader
+              businessName={businessId ? businessName : "LIYU POS"}
+              reportPeriodLabel={reportPeriodLabel}
+              reportPeriodDetail={reportPeriodDetail}
+              generatedAt={printGeneratedAt ?? new Date()}
+              locale={locale}
+              t={t}
+            />
+          )}
           <DailyReportHeader
             businessName={businessId ? businessName : "LIYU POS"}
             isShiftOpen={Boolean(activeShift)}
@@ -1017,7 +819,7 @@ export default function DailyReportPage() {
           ================================================== */}
 
           {report && (
-            <div className="screen-report-body">
+            <div className="daily-report-content space-y-4">
 
               <FinancialSnapshot
                 salesTotal={salesTotal}
@@ -1079,7 +881,11 @@ export default function DailyReportPage() {
                 t={t}
               />
 
-              <ReportPrintFooter reportPeriodDetail={reportPeriodDetail} t={t} />
+              <ReportPrintFooter
+                businessName={businessId ? businessName : "LIYU POS"}
+                reportPeriodDetail={reportPeriodDetail}
+                t={t}
+              />
             </div>
           )}
         </div>

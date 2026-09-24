@@ -12,7 +12,7 @@ export function MoneyFlow({ salesTotal, tips, totalReceived, expenseTotal, netPr
                   MONEY FLOW
               ================================================== */}
 
-              <section className="overflow-hidden rounded-2xl border border-coffee-700/10 bg-white shadow-sm">
+              <section className="daily-report-money-flow overflow-hidden rounded-2xl border border-coffee-700/10 bg-white shadow-sm">
                 <SectionHeader
                   icon={
                     <TrendingUp className="h-4 w-4 text-berbere-500" />

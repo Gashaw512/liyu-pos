@@ -35,7 +35,7 @@ export function FinancialSnapshot({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="daily-report-financial-grid grid grid-cols-2 gap-3 lg:grid-cols-4">
         <MetricCard
           label={t("Sales", "ሽያጭ")}
           value={formatMoney(salesTotal)}

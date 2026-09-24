@@ -4,13 +4,23 @@ import { SectionHeader } from "@/components/reports/daily/DailyReportPrimitives"
 import type { CategorySummary } from "@/lib/reports/report.types";
 type CategoryPerformanceProps = { categoryReport: CategorySummary[]; salesTotal: number; t: (en: string, am: string) => string };
 export function CategoryPerformance({ categoryReport, salesTotal, t }: CategoryPerformanceProps) {
+  const rows = categoryReport.map((category) => {
+    const revenue = numberValue(category.revenue);
+    return {
+      category,
+      revenue,
+      quantity: numberValue(category.quantity),
+      percentage: safePercentage(revenue, salesTotal),
+    };
+  });
+
   return (
     <>
               {/* ==================================================
                   CATEGORY PERFORMANCE
               ================================================== */}
 
-              <section className="overflow-hidden rounded-2xl border border-coffee-700/10 bg-white shadow-sm">
+              <section className="daily-report-category-section overflow-hidden rounded-2xl border border-coffee-700/10 bg-white shadow-sm">
                 <SectionHeader
                   icon={
                     <BarChart3 className="h-4 w-4 text-berbere-500" />
@@ -25,7 +35,7 @@ export function CategoryPerformance({ categoryReport, salesTotal, t }: CategoryP
                   )}
                 />
 
-                <div className="p-4">
+                <div className="daily-report-category-screen-content p-4">
                   {categoryReport.length ===
                     0 ? (
                     <div className="py-8 text-center text-xs text-coffee-400">
@@ -35,28 +45,8 @@ export function CategoryPerformance({ categoryReport, salesTotal, t }: CategoryP
                       )}
                     </div>
                   ) : (
-                    <div className="space-y-4">
-                      {categoryReport.map(
-                        (
-                          category,
-                        ) => {
-                          const revenue =
-                            numberValue(
-                              category.revenue,
-                            );
-
-                          const quantity =
-                            numberValue(
-                              category.quantity,
-                            );
-
-                          const percentage =
-                            safePercentage(
-                              revenue,
-                              salesTotal,
-                            );
-
-                          return (
+                    <div className="daily-report-category-screen-list space-y-4">
+                      {rows.map(({ category, revenue, quantity, percentage }) => (
                             <div
                               key={
                                 category.id ??
@@ -107,12 +97,37 @@ export function CategoryPerformance({ categoryReport, salesTotal, t }: CategoryP
                                 />
                               </div>
                             </div>
-                          );
-                        },
-                      )}
+                      ))}
                     </div>
                   )}
                 </div>
+
+                <table className="daily-report-print-table daily-report-category-print-table w-full border-collapse text-xs">
+                  <thead>
+                    <tr>
+                      <th className="px-2 py-2 text-left">{t("Category", "ምድብ")}</th>
+                      <th className="px-2 py-2 text-right">{t("Quantity", "ብዛት")}</th>
+                      <th className="px-2 py-2 text-right">{t("Revenue", "ገቢ")}</th>
+                      <th className="px-2 py-2 text-right">{t("Share", "ድርሻ")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="px-2 py-3 text-center text-coffee-500">
+                          {t("No category data available.", "የምድብ መረጃ የለም።")}
+                        </td>
+                      </tr>
+                    ) : rows.map(({ category, quantity, revenue, percentage }) => (
+                      <tr key={category.id ?? category.name}>
+                        <td className="px-2 py-2">{category.name}</td>
+                        <td className="px-2 py-2 text-right">{formatNumber(quantity)}</td>
+                        <td className="px-2 py-2 text-right">{formatMoney(revenue)}</td>
+                        <td className="px-2 py-2 text-right">{Math.round(percentage)}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </section>
 
 

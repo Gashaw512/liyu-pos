@@ -67,7 +67,7 @@ export function DailyReportHeader({
   t,
 }: DailyReportHeaderProps) {
   return (
-    <header className="no-print rounded-2xl border border-coffee-700/10 bg-white p-4 shadow-sm screen-report-body">
+    <header className="daily-report-no-print daily-report-screen-only rounded-2xl border border-coffee-700/10 bg-white p-4 shadow-sm screen-report-body">
       <div className="flex items-start gap-3">
         <button
           type="button"

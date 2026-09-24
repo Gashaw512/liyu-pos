@@ -25,7 +25,7 @@ export function PaymentBreakdown({ paymentSummary, paymentTotal, t }: PaymentBre
                   )}
                 />
 
-                <div className="grid grid-cols-2 divide-x divide-y divide-cream-200 sm:grid-cols-5 sm:divide-y-0">
+                <div className="daily-report-payment-grid grid grid-cols-2 divide-x divide-y divide-cream-200 sm:grid-cols-5 sm:divide-y-0">
                   {paymentSummary.map(
                     (item) => (
                       <div

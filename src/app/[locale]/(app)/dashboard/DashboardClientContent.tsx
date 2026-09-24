@@ -1,3 +1,4 @@
+// src/app/[locale]/(app)/dashboard/DashboardClientContent.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -19,6 +20,7 @@ import { DashboardHeader } from '@/components/dashboard/DashboardHeader'
 import { OwnerActionHeader } from '@/components/dashboard/OwnerActionHeader'
 import { CategoryPerformanceTable } from '@/components/dashboard/CategoryPerformanceTable'
 import { LowStockWarningsTable } from '@/components/dashboard/LowStockWarningsTable'
+import { DataRow, MetricCard, SectionHeader } from '@/components/shared/ReportPrimitives'
 
 import DashboardPeriodFilter from './DashboardPeriodFilter'
 
@@ -83,8 +85,6 @@ export default function DashboardClientContent({
   businessName,
 
   initialProductCount,
-  initialCategoryCount: _initialCategoryCount,
-
   categoryBreakdown,
   lowStockAlerts,
 
@@ -95,12 +95,8 @@ export default function DashboardClientContent({
   periodRevenue,
   periodTransactionCount,
 
-  periodGrossProfit,
   periodExpenses,
   periodNetProfit,
-
-  periodDiscounts: _periodDiscounts,
-  periodTax: _periodTax,
 
   averageTicketSize,
 
@@ -290,10 +286,9 @@ export default function DashboardClientContent({
         spokenText +=
           `${formatNumber(
             openShiftCount,
-          )} shift${
-            openShiftCount === 1
-              ? ''
-              : 's'
+          )} shift${openShiftCount === 1
+            ? ''
+            : 's'
           } currently open. `
       }
 
@@ -418,178 +413,67 @@ export default function DashboardClientContent({
           ================================================== */}
 
           <section className="overflow-hidden rounded-2xl border border-coffee-100 bg-white shadow-sm">
-  {/* HEADER */}
+            <SectionHeader
+              eyebrow={periodLabel}
+              title={t('Business Summary', 'የንግድ ማጠቃለያ')}
+              right={(
+                <button
+                  type="button"
+                  onClick={goToReports}
+                  className="flex items-center gap-1 text-[11px] font-black text-berbere-600 hover:underline"
+                >
+                  {t('Reports', 'ሪፖርቶች')}
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </button>
+              )}
+              className="border-coffee-100"
+            />
 
-  <div className="flex items-center justify-between border-b border-coffee-100 px-4 py-3">
-    <div>
-      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-coffee-400">
-        {periodLabel}
-      </p>
+            <div className="grid grid-cols-2 gap-3 p-3 sm:grid-cols-4 sm:p-4">
+              <MetricCard
+                label={t('Sales', 'ሽያጭ')}
+                value={formatMoney(periodRevenue)}
+                caption="ETB"
+                icon={<Wallet className="h-4 w-4" />}
+              />
+              <MetricCard
+                label={t('Net Profit', 'የተጣራ ትርፍ')}
+                value={formatMoney(periodNetProfit)}
+                caption="ETB"
+                tone="profit"
+                icon={<TrendingUp className="h-4 w-4" />}
+              />
+              <MetricCard
+                label={t('Items Sold', 'የተሸጡ እቃዎች')}
+                value={formatNumber(totalItemsSold)}
+                caption={t('items', 'እቃዎች')}
+                icon={<ShoppingCart className="h-4 w-4" />}
+              />
+              <MetricCard
+                label={t('Sales Made', 'የተደረጉ ሽያጮች')}
+                value={formatNumber(periodTransactionCount)}
+                caption={t('sales', 'ሽያጮች')}
+                icon={<BarChart3 className="h-4 w-4" />}
+              />
+            </div>
 
-      <h2 className="mt-0.5 text-sm font-black text-coffee-900">
-        {t(
-          'Business Summary',
-          'የንግድ ማጠቃለያ',
-        )}
-      </h2>
-    </div>
-
-    <button
-      type="button"
-      onClick={goToReports}
-      className="flex items-center gap-1 text-[11px] font-black text-berbere-600 hover:underline"
-    >
-      {t(
-        'Reports',
-        'ሪፖርቶች',
-      )}
-
-      <ArrowRight className="h-3.5 w-3.5" />
-    </button>
-  </div>
-
-  {/* PRIMARY NUMBERS */}
-
-  <div className="grid grid-cols-2 divide-x divide-y divide-coffee-100">
-    {/* SALES */}
-
-    <div className="p-4 sm:p-5">
-      <p className="text-[10px] font-bold text-coffee-400">
-        {t(
-          'Sales',
-          'ሽያጭ',
-        )}
-      </p>
-
-      <p className="mt-1 text-xl font-black tracking-tight text-coffee-900 sm:text-2xl">
-        {formatMoney(
-          periodRevenue,
-        )}
-      </p>
-
-      <p className="mt-0.5 text-[10px] text-coffee-400">
-        ETB
-      </p>
-    </div>
-
-    {/* NET PROFIT */}
-
-    <div className="bg-cream-100 p-4 sm:p-5">
-      <p className="text-[10px] font-black text-berbere-600">
-        {t(
-          'Net Profit',
-          'የተጣራ ትርፍ',
-        )}
-      </p>
-
-      <p className="mt-1 text-xl font-black tracking-tight text-coffee-900 sm:text-2xl">
-        {formatMoney(
-          periodNetProfit,
-        )}
-      </p>
-
-      <p className="mt-0.5 text-[10px] text-coffee-500">
-        ETB
-      </p>
-    </div>
-
-    {/* ITEMS SOLD */}
-
-    <div className="p-4 sm:p-5">
-      <div className="flex items-center gap-2">
-        <ShoppingCart className="h-3.5 w-3.5 text-berbere-600" />
-
-        <p className="text-[10px] font-bold text-coffee-400">
-          {t(
-            'Items Sold',
-            'የተሸጡ እቃዎች',
-          )}
-        </p>
-      </div>
-
-      <p className="mt-1 text-xl font-black tracking-tight text-coffee-900 sm:text-2xl">
-        {formatNumber(
-          totalItemsSold,
-        )}
-      </p>
-
-      <p className="mt-0.5 text-[10px] text-coffee-400">
-        {t(
-          'items',
-          'እቃዎች',
-        )}
-      </p>
-    </div>
-
-    {/* SALES MADE */}
-
-    <div className="p-4 sm:p-5">
-      <div className="flex items-center gap-2">
-        <TrendingUp className="h-3.5 w-3.5 text-coffee-600" />
-
-        <p className="text-[10px] font-bold text-coffee-400">
-          {t(
-            'Sales Made',
-            'የተደረጉ ሽያጮች',
-          )}
-        </p>
-      </div>
-
-      <p className="mt-1 text-xl font-black tracking-tight text-coffee-900 sm:text-2xl">
-        {formatNumber(
-          periodTransactionCount,
-        )}
-      </p>
-
-      <p className="mt-0.5 text-[10px] text-coffee-400">
-        {t(
-          'sales',
-          'ሽያጮች',
-        )}
-      </p>
-    </div>
-  </div>
-
-  {/* SMALL DETAILS */}
-
-  <div className="grid grid-cols-2 border-t border-coffee-100 bg-coffee-50/50">
-    {/* EXPENSES */}
-
-    <div className="flex items-center justify-between border-r border-coffee-100 px-4 py-3">
-      <span className="text-[10px] font-bold text-coffee-400">
-        {t(
-          'Expenses',
-          'ወጪ',
-        )}
-      </span>
-
-      <span className="text-xs font-black text-coffee-800">
-        {formatMoney(
-          periodExpenses,
-        )}{' '}
-        ETB
-      </span>
-    </div>
-
-    {/* AVERAGE SALE */}
-
-    <div className="flex items-center justify-between px-4 py-3">
-      <span className="text-[10px] font-bold text-coffee-400">
-        {t(
-          'Average Sale',
-          'አማካይ ሽያጭ',
-        )}
-      </span>
-
-      <span className="text-xs font-black text-coffee-800">
-        {formatMoney(
-          averageTicketSize,
-        )}{' '}
-        ETB
-      </span>
-    </div>
-  </div>
-</section>
+            <div className="grid grid-cols-2 divide-x divide-coffee-100 border-t border-coffee-100 bg-coffee-50/50 px-4">
+              <DataRow
+                label={t('Expenses', 'ወጪ')}
+                value={`${formatMoney(periodExpenses)} ETB`}
+                border={false}
+                className="pr-3"
+                valueClassName="text-coffee-800"
+              />
+              <DataRow
+                label={t('Average Sale', 'አማካይ ሽያጭ')}
+                value={`${formatMoney(averageTicketSize)} ETB`}
+                border={false}
+                className="pl-3"
+                valueClassName="text-coffee-800"
+              />
+            </div>
+          </section>
 
           {/* ==================================================
               TODAY / ACTIONS
@@ -729,46 +613,44 @@ export default function DashboardClientContent({
               >
                 <div className="flex items-center gap-3">
                   <Wallet
-                    className={`h-4 w-4 ${
-                      hasActiveShift
+                    className={`h-4 w-4 ${hasActiveShift
                         ? 'text-berbere-600'
                         : 'text-coffee-500'
-                    }`}
+                      }`}
                   />
 
                   <div>
                     <p className="text-xs font-black text-coffee-800">
                       {hasActiveShift
                         ? `${formatNumber(
-                            openShiftCount,
-                          )} ${
-                            openShiftCount ===
-                            1
-                              ? t(
-                                  'shift is open',
-                                  'ፈረቃ ክፍት ነው',
-                                )
-                              : t(
-                                  'shifts are open',
-                                  'ፈረቃዎች ክፍት ናቸው',
-                                )
-                          }`
+                          openShiftCount,
+                        )} ${openShiftCount ===
+                          1
+                          ? t(
+                            'shift is open',
+                            'ፈረቃ ክፍት ነው',
+                          )
+                          : t(
+                            'shifts are open',
+                            'ፈረቃዎች ክፍት ናቸው',
+                          )
+                        }`
                         : t(
-                            'No shift is open',
-                            'ምንም ፈረቃ ክፍት የለም',
-                          )}
+                          'No shift is open',
+                          'ምንም ፈረቃ ክፍት የለም',
+                        )}
                     </p>
 
                     <p className="mt-0.5 text-[9px] text-coffee-500">
                       {hasActiveShift
                         ? t(
-                            'Business is active',
-                            'ንግዱ እየሰራ ነው',
-                          )
+                          'Business is active',
+                          'ንግዱ እየሰራ ነው',
+                        )
                         : t(
-                            'Open a shift to start',
-                            'ለመጀመር ፈረቃ ይክፈቱ',
-                          )}
+                          'Open a shift to start',
+                          'ለመጀመር ፈረቃ ይክፈቱ',
+                        )}
                     </p>
                   </div>
                 </div>

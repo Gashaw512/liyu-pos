@@ -11,26 +11,16 @@ import {
 import {
   useParams,
   useRouter,
-  useSearchParams,
 } from "next/navigation";
 
 import {
   AlertTriangle,
   ArrowDownRight,
-  ArrowLeft,
-  ArrowUpRight,
   BarChart3,
-  CalendarDays,
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
-  CircleDollarSign,
-  Clock3,
-  Download,
   Loader2,
   Package,
   RefreshCw,
-  Share2,
   ShoppingBag,
   TrendingUp,
   Wallet,
@@ -38,14 +28,12 @@ import {
   WifiOff,
 } from "lucide-react";
 
-import {
-  getDailyReport,
-} from "@/lib/reports/daily-report.service";
+import { DailyReportHeader } from "@/components/reports/daily/DailyReportHeader";
+import { FinancialSnapshot } from "@/components/reports/daily/FinancialSnapshot";
+import { getDailyReportPeriod } from "@/lib/reports/daily-report-period.service";
 
 import type {
-  DailyReport,
   LowStockSummary,
-  ReportSyncState,
 } from "@/lib/reports/report.types";
 
 import {
@@ -53,401 +41,22 @@ import {
 } from "@/lib/auth/useBusinessContext";
 
 import createClient from "@/lib/supabase/client";
+import {
+  formatDateInput,
+  formatMoney,
+  formatNumber,
+  numberValue,
+  safePercentage,
+  startOfDay,
+} from "@/lib/reports/daily-report-format";
+import { useReportPeriod } from "@/lib/reports/useReportPeriod";
+import { useReportData } from "@/lib/reports/useReportData";
+import {
+  DataRow,
+  SectionHeader,
+} from "@/components/reports/daily/DailyReportPrimitives";
 
-/* ============================================================
-   TYPES
-============================================================ */
-
-type ReportPreset =
-  | "today"
-  | "yesterday"
-  | "week"
-  | "month"
-  | "custom";
-
-/* ============================================================
-   HELPERS
-============================================================ */
-
-function numberValue(value: unknown): number {
-  const number = Number(value);
-
-  return Number.isFinite(number) ? number : 0;
-}
-
-function formatMoney(value: number): string {
-  return `${Math.round(value).toLocaleString()} ETB`;
-}
-
-function formatNumber(value: number): string {
-  return Math.round(value).toLocaleString();
-}
-
-function pad(value: number): string {
-  return String(value).padStart(2, "0");
-}
-
-function formatDateInput(date: Date): string {
-  return [
-    date.getFullYear(),
-    pad(date.getMonth() + 1),
-    pad(date.getDate()),
-  ].join("-");
-}
-
-function parseDateInput(value: string): Date {
-  const parts = value.split("-").map(Number);
-
-  if (parts.length !== 3) {
-    return new Date(NaN);
-  }
-
-  const [year, month, day] = parts;
-
-  const date = new Date(
-    year,
-    month - 1,
-    day,
-    12,
-    0,
-    0,
-    0,
-  );
-
-  if (
-    date.getFullYear() !== year ||
-    date.getMonth() !== month - 1 ||
-    date.getDate() !== day
-  ) {
-    return new Date(NaN);
-  }
-
-  return date;
-}
-
-function startOfDay(date: Date): Date {
-  return new Date(
-    date.getFullYear(),
-    date.getMonth(),
-    date.getDate(),
-    12,
-    0,
-    0,
-    0,
-  );
-}
-
-function shiftDate(
-  date: Date,
-  days: number,
-): Date {
-  const next = new Date(date);
-
-  next.setDate(next.getDate() + days);
-
-  return startOfDay(next);
-}
-
-function getStartOfWeek(date: Date): Date {
-  const value = startOfDay(date);
-  const day = value.getDay();
-
-  /*
-   * Monday = first day of the business week.
-   */
-  const difference =
-    day === 0
-      ? -6
-      : 1 - day;
-
-  return shiftDate(
-    value,
-    difference,
-  );
-}
-
-function getStartOfMonth(date: Date): Date {
-  return startOfDay(
-    new Date(
-      date.getFullYear(),
-      date.getMonth(),
-      1,
-      12,
-      0,
-      0,
-      0,
-    ),
-  );
-}
-
-function formatDisplayDate(
-  date: Date,
-  isAm: boolean,
-): string {
-  return date.toLocaleDateString(
-    isAm ? "am-ET" : "en-ET",
-    {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    },
-  );
-}
-
-function formatShortDate(
-  date: Date,
-  isAm: boolean,
-): string {
-  return date.toLocaleDateString(
-    isAm ? "am-ET" : "en-ET",
-    {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    },
-  );
-}
-
-function formatDateRange(
-  from: Date,
-  to: Date,
-  isAm: boolean,
-): string {
-  const sameDay =
-    formatDateInput(from) ===
-    formatDateInput(to);
-
-  if (sameDay) {
-    return formatDisplayDate(
-      from,
-      isAm,
-    );
-  }
-
-  return `${formatShortDate(
-    from,
-    isAm,
-  )} → ${formatShortDate(to, isAm)}`;
-}
-
-function getDatesBetween(
-  from: Date,
-  to: Date,
-): Date[] {
-  const dates: Date[] = [];
-
-  let current = startOfDay(from);
-  const end = startOfDay(to);
-
-  while (current <= end) {
-    dates.push(current);
-    current = shiftDate(current, 1);
-  }
-
-  return dates;
-}
-
-function sameDate(
-  first: Date,
-  second: Date,
-): boolean {
-  return (
-    formatDateInput(first) ===
-    formatDateInput(second)
-  );
-}
-
-function safePercentage(
-  value: number,
-  total: number,
-): number {
-  if (total <= 0) {
-    return 0;
-  }
-
-  return Math.min(
-    Math.max(
-      (value / total) * 100,
-      0,
-    ),
-    100,
-  );
-}
-
-/* ============================================================
-   REUSABLE UI
-============================================================ */
-
-function SectionHeader({
-  icon,
-  title,
-  subtitle,
-  right,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  subtitle?: string;
-  right?: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-center gap-3 border-b border-cream-200 px-4 py-3">
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-cream-100">
-        {icon}
-      </div>
-
-      <div className="min-w-0 flex-1">
-        <h2 className="text-sm font-black text-coffee-700">
-          {title}
-        </h2>
-
-        {subtitle && (
-          <p className="mt-0.5 text-[10px] leading-4 text-coffee-400">
-            {subtitle}
-          </p>
-        )}
-      </div>
-
-      {right}
-    </div>
-  );
-}
-
-function MetricCard({
-  label,
-  value,
-  caption,
-  icon,
-  tone = "default",
-}: {
-  label: string;
-  value: string;
-  caption?: string;
-  icon: React.ReactNode;
-  tone?:
-  | "default"
-  | "primary"
-  | "profit"
-  | "warning";
-}) {
-  const styles = {
-    default: {
-      card: "border-coffee-700/10 bg-white",
-      icon: "bg-cream-100 text-coffee-500",
-      value: "text-coffee-700",
-    },
-    primary: {
-      card: "border-berbere-500 bg-berbere-500",
-      icon: "bg-white/10 text-white",
-      value: "text-white",
-    },
-    profit: {
-      card: "border-berbere-100 bg-white",
-      icon: "bg-berbere-50 text-berbere-600",
-      value: "text-berbere-600",
-    },
-    warning: {
-      card: "border-gold-100 bg-white",
-      icon: "bg-gold-50 text-gold-700",
-      value: "text-gold-700",
-    },
-  }[tone];
-
-  const muted =
-    tone === "primary"
-      ? "text-white/60"
-      : "text-coffee-400";
-
-  return (
-    <div
-      className={`rounded-2xl border p-4 shadow-sm ${styles.card}`}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p
-            className={`text-[9px] font-black uppercase tracking-[0.14em] ${muted}`}
-          >
-            {label}
-          </p>
-
-          <p
-            className={`mt-2 break-words font-mono text-xl font-black tracking-tight sm:text-2xl ${styles.value}`}
-          >
-            {value}
-          </p>
-        </div>
-
-        <div
-          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${styles.icon}`}
-        >
-          {icon}
-        </div>
-      </div>
-
-      {caption && (
-        <p
-          className={`mt-2 text-[9px] ${muted}`}
-        >
-          {caption}
-        </p>
-      )}
-    </div>
-  );
-}
-
-function DataRow({
-  label,
-  value,
-  valueClassName = "text-coffee-700",
-  border = true,
-}: {
-  label: string;
-  value: React.ReactNode;
-  valueClassName?: string;
-  border?: boolean;
-}) {
-  return (
-    <div
-      className={`flex items-center justify-between gap-4 py-3 ${border
-        ? "border-b border-cream-200"
-        : ""
-        }`}
-    >
-      <span className="min-w-0 text-xs text-coffee-500">
-        {label}
-      </span>
-
-      <span
-        className={`shrink-0 text-right font-mono text-sm font-black ${valueClassName}`}
-      >
-        {value}
-      </span>
-    </div>
-  );
-}
-
-function PresetButton({
-  active,
-  children,
-  onClick,
-}: {
-  active: boolean;
-  children: React.ReactNode;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`h-9 whitespace-nowrap rounded-xl px-3 text-[10px] font-black transition active:scale-[0.98] ${active
-        ? "bg-berbere-500 text-white shadow-sm"
-        : "border border-coffee-700/10 bg-white text-coffee-500 hover:bg-cream-50"
-        }`}
-    >
-      {children}
-    </button>
-  );
-}
+const EMPTY_REPORT_ITEMS: never[] = [];
 
 /* ============================================================
    PAGE
@@ -456,7 +65,6 @@ function PresetButton({
 export default function DailyReportPage() {
   const params = useParams();
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   const locale = String(
     params.locale || "en",
@@ -482,7 +90,6 @@ export default function DailyReportPage() {
 
   useEffect(() => {
     if (!businessId) {
-      setBusinessName("LIYU POS");
       return;
     }
 
@@ -523,80 +130,21 @@ export default function DailyReportPage() {
     [],
   );
 
-  const queryDate =
-    searchParams.get("date");
-
-  const initialDate = useMemo(() => {
-    if (
-      queryDate &&
-      /^\d{4}-\d{2}-\d{2}$/.test(
-        queryDate,
-      )
-    ) {
-      const parsed =
-        parseDateInput(queryDate);
-
-      if (
-        !Number.isNaN(
-          parsed.getTime(),
-        )
-      ) {
-        return parsed;
-      }
-    }
-
-    return today;
-  }, [queryDate, today]);
-
-  const [reportPreset, setReportPreset] =
-    useState<ReportPreset>(
-      sameDate(initialDate, today)
-        ? "today"
-        : sameDate(
-          initialDate,
-          shiftDate(today, -1),
-        )
-          ? "yesterday"
-          : "custom",
-    );
-
-  const [fromDate, setFromDate] =
-    useState<Date>(initialDate);
-
-  const [toDate, setToDate] =
-    useState<Date>(initialDate);
-
-  const [customFrom, setCustomFrom] =
-    useState<string>(
-      formatDateInput(initialDate),
-    );
-
-  const [customTo, setCustomTo] =
-    useState<string>(
-      formatDateInput(initialDate),
-    );
-
-  /* ==========================================================
-     REPORT STATE
-  ========================================================== */
-
-  const [loading, setLoading] =
-    useState(true);
-
-  const [refreshing, setRefreshing] =
-    useState(false);
-
-  const [report, setReport] =
-    useState<DailyReport | null>(null);
-
-  const [reportDays, setReportDays] =
-    useState(0);
-
-  const [lastUpdated, setLastUpdated] =
-    useState<Date | null>(null);
-
-  const [loadError, setLoadError] =
-    useState<string | null>(null);
+  const {
+    reportPreset,
+    customFrom,
+    customTo,
+    setCustomFrom,
+    setCustomTo,
+    reportPeriod,
+    reportPeriodLabel,
+    reportPeriodDetail,
+    periodDates,
+    applyPreset,
+    applyCustomRange,
+    goPreviousDay,
+    goNextDay,
+  } = useReportPeriod({ today, locale });
 
   /* ==========================================================
      TRANSLATION
@@ -608,861 +156,30 @@ export default function DailyReportPage() {
     [isAm],
   );
 
-  /* ==========================================================
-     REPORT PERIOD
-  ========================================================== */
-
-  const reportPeriod = useMemo(() => {
-    switch (reportPreset) {
-      case "today":
-        return {
-          from: today,
-          to: today,
-        };
-
-      case "yesterday": {
-        const yesterday =
-          shiftDate(today, -1);
-
-        return {
-          from: yesterday,
-          to: yesterday,
-        };
-      }
-
-      case "week":
-        return {
-          from: getStartOfWeek(today),
-          to: today,
-        };
-
-      case "month":
-        return {
-          from: getStartOfMonth(today),
-          to: today,
-        };
-
-      case "custom": {
-        const from =
-          parseDateInput(customFrom);
-
-        const to =
-          parseDateInput(customTo);
-
-        if (
-          Number.isNaN(
-            from.getTime(),
-          ) ||
-          Number.isNaN(to.getTime())
-        ) {
-          return {
-            from: today,
-            to: today,
-          };
-        }
-
-        return from <= to
-          ? { from, to }
-          : { from: to, to: from };
-      }
-
-      default:
-        return {
-          from: today,
-          to: today,
-        };
-    }
-  }, [
-    reportPreset,
-    today,
-    customFrom,
-    customTo,
-  ]);
-
-  const reportPeriodLabel =
-    useMemo(
-      () => {
-        switch (reportPreset) {
-          case "today":
-            return t(
-              "Today",
-              "ዛሬ",
-            );
-
-          case "yesterday":
-            return t(
-              "Yesterday",
-              "ትናንት",
-            );
-
-          case "week":
-            return t(
-              "This Week",
-              "በዚህ ሳምንት",
-            );
-
-          case "month":
-            return t(
-              "This Month",
-              "በዚህ ወር",
-            );
-
-          case "custom":
-            return formatDateRange(
-              reportPeriod.from,
-              reportPeriod.to,
-              isAm,
-            );
-
-          default:
-            return "";
-        }
-      },
-      [
-        reportPreset,
-        reportPeriod,
-        isAm,
-        t,
-      ],
-    );
-
-  const reportPeriodDetail =
-    useMemo(
-      () =>
-        formatDateRange(
-          reportPeriod.from,
-          reportPeriod.to,
-          isAm,
-        ),
-      [
-        reportPeriod,
-        isAm,
-      ],
-    );
-
-  const periodDates = useMemo(
-    () =>
-      getDatesBetween(
-        reportPeriod.from,
-        reportPeriod.to,
-      ),
-    [reportPeriod],
-  );
-
-  /* ==========================================================
-     LOAD REPORTS
-  ========================================================== */
-
-  const loadReport = useCallback(
-    async (
-      showRefresh = false,
-    ) => {
-      if (
-        !businessId ||
-        !branchId ||
-        !userId
-      ) {
-        return;
-      }
-
-      try {
-        setLoadError(null);
-
-        if (showRefresh) {
-          setRefreshing(true);
-        } else {
-          setLoading(true);
-        }
-
-        /*
-         * The existing service is a daily service.
-         *
-         * For a range, load each day and combine the
-         * returned report data. This keeps the existing
-         * report service unchanged.
-         */
-        const dailyReports: DailyReport[] =
-          [];
-
-        for (
-          const date of periodDates
-        ) {
-          const daily =
-            await getDailyReport({
-              businessId,
-              branchId,
-              userId,
-              date,
-              allowRemote: true,
-            });
-
-          dailyReports.push(daily);
-        }
-
-        if (
-          dailyReports.length === 0
-        ) {
-          setReport(null);
-          setReportDays(0);
-          return;
-        }
-
-        /*
-         * One-day report.
-         */
-        if (
-          dailyReports.length === 1
-        ) {
-          setReport(
-            dailyReports[0],
-          );
-        } else {
-          /*
-           * Combine the known report sections.
-           *
-           * The original daily report remains the base
-           * object so fields added by the service later
-           * are not accidentally removed.
-           */
-          const first =
-            dailyReports[0];
-
-          const last =
-            dailyReports[
-            dailyReports.length - 1
-            ];
-
-          const financials = {
-            ...first.financials,
-
-            revenue: dailyReports.reduce(
-              (sum, current) =>
-                sum + numberValue(current.financials?.revenue),
-              0,
-            ),
-
-            grossProfit: dailyReports.reduce(
-              (sum, current) =>
-                sum + numberValue(current.financials?.grossProfit),
-              0,
-            ),
-
-            netProfit: dailyReports.reduce(
-              (sum, current) =>
-                sum + numberValue(current.financials?.netProfit),
-              0,
-            ),
-
-            totalReceived: dailyReports.reduce(
-              (sum, current) =>
-                sum + numberValue(current.financials?.totalReceived),
-              0,
-            ),
-
-            tips: dailyReports.reduce(
-              (sum, current) =>
-                sum + numberValue(current.financials?.tips),
-              0,
-            ),
-
-            transactions: dailyReports.reduce(
-              (sum, current) =>
-                sum + numberValue(current.financials?.transactions),
-              0,
-            ),
-
-            itemsSold: dailyReports.reduce(
-              (sum, current) =>
-                sum + numberValue(current.financials?.itemsSold),
-              0,
-            ),
-
-            cash: dailyReports.reduce(
-              (sum, current) =>
-                sum + numberValue(current.financials?.cash),
-              0,
-            ),
-
-            telebirr: dailyReports.reduce(
-              (sum, current) =>
-                sum + numberValue(current.financials?.telebirr),
-              0,
-            ),
-
-            bank: dailyReports.reduce(
-              (sum, current) =>
-                sum + numberValue(current.financials?.bank),
-              0,
-            ),
-
-            card: dailyReports.reduce(
-              (sum, current) =>
-                sum + numberValue(current.financials?.card),
-              0,
-            ),
-
-            other: dailyReports.reduce(
-              (sum, current) =>
-                sum + numberValue(current.financials?.other),
-              0,
-            ),
-          };
-
-          const expenses = {
-            total: dailyReports.reduce(
-              (sum, current) =>
-                sum +
-                numberValue(
-                  current.expenses?.total,
-                ),
-              0,
-            ),
-
-            transactions: dailyReports.reduce(
-              (sum, current) =>
-                sum +
-                numberValue(
-                  current.expenses?.transactions,
-                ),
-              0,
-            ),
-
-            byCategory: [] as {
-              category: string;
-              amount: number;
-            }[],
-          };
-
-          /*
-           * Merge expense categories.
-           */
-          /*
- * Merge expense categories.
- *
- * Each expense category has:
- * - category
- * - amount
- */
-          const expenseCategoryMap = new Map<
-            string,
-            {
-              category: string;
-              amount: number;
-            }
-          >();
-
-          for (const current of dailyReports) {
-            const rows =
-              current.expenses?.byCategory ?? [];
-
-            for (const row of rows) {
-              const key = row.category || "Other";
-
-              const existing =
-                expenseCategoryMap.get(key);
-
-              if (!existing) {
-                expenseCategoryMap.set(key, {
-                  category: key,
-                  amount: numberValue(row.amount),
-                });
-              } else {
-                existing.amount +=
-                  numberValue(row.amount);
-              }
-            }
-          }
-
-          expenses.byCategory =
-            Array.from(
-              expenseCategoryMap.values(),
-            );
-
-
-
-          /*
-           * Merge products.
-           */
-          type AggregatedProduct = {
-            id: string;
-            name: string;
-            quantity: number;
-            revenue: number;
-            grossProfit: number;
-          };
-
-          const productMap = new Map<
-            string,
-            AggregatedProduct
-          >();
-
-          for (const current of dailyReports) {
-            for (const product of current.products ?? []) {
-              const key = String(
-                product.id ??
-                product.name ??
-                "unknown",
-              );
-
-              const existing =
-                productMap.get(key);
-
-              if (!existing) {
-                productMap.set(key, {
-                  id: String(
-                    product.id ??
-                    key,
-                  ),
-                  name: String(
-                    product.name ??
-                    "Unnamed Product",
-                  ),
-                  quantity:
-                    numberValue(
-                      product.quantity,
-                    ),
-                  revenue:
-                    numberValue(
-                      product.revenue,
-                    ),
-                  grossProfit:
-                    numberValue(
-                      product.grossProfit,
-                    ),
-                });
-              } else {
-                existing.quantity +=
-                  numberValue(
-                    product.quantity,
-                  );
-
-                existing.revenue +=
-                  numberValue(
-                    product.revenue,
-                  );
-
-                existing.grossProfit +=
-                  numberValue(
-                    product.grossProfit,
-                  );
-              }
-            }
-          }
-
-          /*
-  * Merge categories.
-  */
-          type AggregatedCategory = {
-            id: string;
-            name: string;
-            nameAm: string | null;
-            quantity: number;
-            revenue: number;
-            grossProfit: number;
-          };
-
-          const categoryMap = new Map<
-            string,
-            AggregatedCategory
-          >();
-
-          for (const current of dailyReports) {
-            for (const category of current.categories ?? []) {
-              const key = String(
-                category.id ??
-                category.name ??
-                "unknown",
-              );
-
-              const existing =
-                categoryMap.get(key);
-
-              if (!existing) {
-                categoryMap.set(key, {
-                  id: String(
-                    category.id ??
-                    key,
-                  ),
-                  name: String(
-                    category.name ??
-                    "Uncategorized",
-                  ),
-                  nameAm:
-                    category.nameAm ?? null,
-                  quantity:
-                    numberValue(
-                      category.quantity,
-                    ),
-                  revenue:
-                    numberValue(
-                      category.revenue,
-                    ),
-                  grossProfit:
-                    numberValue(
-                      category.grossProfit,
-                    ),
-                });
-              } else {
-                existing.quantity +=
-                  numberValue(
-                    category.quantity,
-                  );
-
-                existing.revenue +=
-                  numberValue(
-                    category.revenue,
-                  );
-
-                existing.grossProfit +=
-                  numberValue(
-                    category.grossProfit,
-                  );
-              }
-            }
-          }
-
-          /*
-           * Merge sync counts.
-           */
-          const sync: ReportSyncState =
-            dailyReports.reduce<ReportSyncState>(
-              (result, current) => {
-                const source =
-                  current.sync;
-
-                if (!source) {
-                  return result;
-                }
-
-                const next: ReportSyncState = {
-                  ...result,
-                  source:
-                    source.source ||
-                    result.source ||
-                    "merged",
-                  remoteAvailable:
-                    result.remoteAvailable &&
-                    source.remoteAvailable !==
-                      false,
-                  localOnlySales:
-                    numberValue(
-                      result.localOnlySales,
-                    ) +
-                    numberValue(
-                      source.localOnlySales,
-                    ),
-                  remoteSales:
-                    numberValue(
-                      result.remoteSales,
-                    ) +
-                    numberValue(
-                      source.remoteSales,
-                    ),
-                  remoteExpenses:
-                    numberValue(
-                      result.remoteExpenses,
-                    ) +
-                    numberValue(
-                      source.remoteExpenses,
-                    ),
-                  lastUpdated:
-                    source.lastUpdated ||
-                    result.lastUpdated,
-                };
-
-                return next;
-              },
-              {
-                source:
-                  first.sync?.source ??
-                  "merged",
-                remoteAvailable:
-                  dailyReports.every(
-                    (report) =>
-                      report.sync?.remoteAvailable !==
-                      false,
-                  ),
-                localOnlySales: 0,
-                remoteSales: 0,
-                remoteExpenses: 0,
-                lastUpdated:
-                  first.sync?.lastUpdated ??
-                  new Date().toISOString(),
-              },
-            );
-
-          /*
-           * Inventory represents the latest
-           * inventory state in the selected period.
-           */
-          const combinedReport: DailyReport = {
-            ...last,
-            financials,
-            expenses,
-            products: Array.from(
-              productMap.values(),
-            ),
-            categories: Array.from(
-              categoryMap.values(),
-            ),
-            sync,
-          };
-
-          setReport(
-            combinedReport,
-          );
-        }
-
-        setReportDays(
-          dailyReports.length,
-        );
-
-        /*
-         * Use the latest valid sync time.
-         */
-        for (
-          let index =
-            dailyReports.length - 1;
-          index >= 0;
-          index--
-        ) {
-          const value =
-            dailyReports[index]
-              ?.sync?.lastUpdated;
-
-          if (!value) {
-            continue;
-          }
-
-          const date =
-            new Date(value);
-
-          if (
-            !Number.isNaN(
-              date.getTime(),
-            )
-          ) {
-            setLastUpdated(date);
-            break;
-          }
-        }
-      } catch (error) {
-        console.error(
-          "[DailyReport] Failed to load report:",
-          error,
-        );
-
-        setLoadError(
-          t(
-            "Unable to load the report. Please try again.",
-            "ሪፖርቱን መጫን አልተቻለም። እባክዎ እንደገና ይሞክሩ።",
-          ),
-        );
-      } finally {
-        setLoading(false);
-        setRefreshing(false);
-      }
-    },
-    [
-      businessId,
-      branchId,
-      userId,
-      periodDates,
-      t,
-    ],
-  );
-
-  /* ==========================================================
-     INITIAL LOAD
-  ========================================================== */
-
-  useEffect(() => {
-    if (contextLoading) {
-      return;
+  const loadPeriod = useCallback(() => {
+    if (!businessId || !branchId || !userId) {
+      return Promise.resolve({ report: null, reportDays: 0, lastUpdated: null });
     }
 
-    if (
-      !businessId ||
-      !branchId ||
-      !userId
-    ) {
-      setLoading(false);
-      return;
-    }
+    return getDailyReportPeriod({ businessId, branchId, userId, periodDates });
+  }, [businessId, branchId, userId, periodDates]);
 
-    void loadReport();
-  }, [
-    contextLoading,
-    businessId,
-    branchId,
-    userId,
-    loadReport,
-  ]);
-
-  /* ==========================================================
-     PERIOD ACTIONS
-  ========================================================== */
-
-  const applyPreset = useCallback(
-    (preset: ReportPreset) => {
-      setReportPreset(preset);
-
-      if (preset === "today") {
-        const value =
-          formatDateInput(today);
-
-        router.replace(
-          `/${locale}/reports/daily?date=${value}`,
-        );
-
-        return;
-      }
-
-      if (
-        preset === "yesterday"
-      ) {
-        const yesterday =
-          shiftDate(today, -1);
-
-        const value =
-          formatDateInput(
-            yesterday,
-          );
-
-        router.replace(
-          `/${locale}/reports/daily?date=${value}`,
-        );
-
-        return;
-      }
-
-      /*
-       * Week, month and custom ranges are
-       * controlled locally.
-       */
-      if (preset === "week") {
-        const from =
-          getStartOfWeek(today);
-
-        setFromDate(from);
-        setToDate(today);
-      }
-
-      if (preset === "month") {
-        const from =
-          getStartOfMonth(today);
-
-        setFromDate(from);
-        setToDate(today);
-      }
-    },
-    [
-      locale,
-      router,
-      today,
-    ],
-  );
-
-  const applyCustomRange =
-    useCallback(() => {
-      const from =
-        parseDateInput(
-          customFrom,
-        );
-
-      const to =
-        parseDateInput(
-          customTo,
-        );
-
-      if (
-        Number.isNaN(
-          from.getTime(),
-        ) ||
-        Number.isNaN(
-          to.getTime(),
-        )
-      ) {
-        return;
-      }
-
-      const actualFrom =
-        from <= to ? from : to;
-
-      const actualTo =
-        from <= to ? to : from;
-
-      setFromDate(
-        actualFrom,
-      );
-
-      setToDate(
-        actualTo,
-      );
-
-      setReportPreset(
-        "custom",
-      );
-    }, [
-      customFrom,
-      customTo,
-    ]);
-
-  const goPreviousDay =
-    useCallback(() => {
-      const previous =
-        shiftDate(
-          reportPeriod.from,
-          -1,
-        );
-
-      setCustomFrom(
-        formatDateInput(previous),
-      );
-
-      setCustomTo(
-        formatDateInput(previous),
-      );
-
-      setFromDate(previous);
-      setToDate(previous);
-      setReportPreset("custom");
-    }, [
-      reportPeriod.from,
-    ]);
-
-  const goNextDay =
-    useCallback(() => {
-      const next =
-        shiftDate(
-          reportPeriod.to,
-          1,
-        );
-
-      if (next > today) {
-        return;
-      }
-
-      setCustomFrom(
-        formatDateInput(next),
-      );
-
-      setCustomTo(
-        formatDateInput(next),
-      );
-
-      setFromDate(next);
-      setToDate(next);
-      setReportPreset("custom");
-    }, [
-      reportPeriod.to,
-      today,
-    ]);
-
-  /* ==========================================================
-     SAFE REPORT DATA
-  ========================================================== */
-
+  const {
+    report,
+    loading,
+    refreshing,
+    error,
+    lastUpdated,
+    refresh,
+  } = useReportData({
+    load: loadPeriod,
+    ready: !contextLoading,
+    enabled: Boolean(businessId && branchId && userId),
+    errorMessage: t(
+      "Unable to load the report. Please try again.",
+      "ሪፖርቱን መጫን አልተቻለም። እባክዎ እንደገና ይሞክሩ።",
+    ),
+  });
   const financials =
     report?.financials;
 
@@ -1473,10 +190,10 @@ export default function DailyReportPage() {
     report?.inventory;
 
   const categories =
-    report?.categories ?? [];
+    report?.categories ?? EMPTY_REPORT_ITEMS;
 
   const products =
-    report?.products ?? [];
+    report?.products ?? EMPTY_REPORT_ITEMS;
 
   const activeShift =
     report?.activeShift ?? null;
@@ -1522,11 +239,6 @@ export default function DailyReportPage() {
   const orderCount =
     numberValue(
       financials?.transactions,
-    );
-
-  const itemsSold =
-    numberValue(
-      financials?.itemsSold,
     );
 
   const averageSale =
@@ -1590,11 +302,6 @@ export default function DailyReportPage() {
   const expenseCategories =
     expenses?.byCategory ?? [];
 
-  const expenseTransactionCount =
-    numberValue(
-      expenses?.transactions,
-    );
-
   /* ==========================================================
      PRODUCTS
   ========================================================== */
@@ -1641,7 +348,7 @@ export default function DailyReportPage() {
 
   const lowStockProducts:
     LowStockSummary[] =
-    inventory?.lowStock ?? [];
+    inventory?.lowStock ?? EMPTY_REPORT_ITEMS;
 
   const lowStockCount =
     numberValue(
@@ -2020,7 +727,7 @@ export default function DailyReportPage() {
   ========================================================== */
 
   if (
-    loadError &&
+    error &&
     !report
   ) {
     return (
@@ -2038,15 +745,13 @@ export default function DailyReportPage() {
           </h1>
 
           <p className="mt-2 text-xs leading-5 text-coffee-500">
-            {loadError}
+            {error}
           </p>
 
           <button
             type="button"
             onClick={() => {
-              void loadReport(
-                true,
-              );
+              void refresh();
             }}
             className="mt-5 inline-flex h-10 items-center gap-2 rounded-xl bg-berbere-500 px-4 text-xs font-black text-white transition hover:bg-berbere-600"
           >
@@ -2144,7 +849,7 @@ export default function DailyReportPage() {
           <div className="print-summary mt-0 space-y-4 text-[11px] leading-relaxed text-coffee-700">
             <div className="border-b-2 border-coffee-700 pb-3">
               <h2 className="text-[24px] font-black tracking-tight text-coffee-700">
-                {businessName}
+                {businessId ? businessName : "LIYU POS"}
               </h2>
               <p className="mt-1 text-[11px] font-bold text-coffee-500">
                 {reportPeriodDetail}
@@ -2286,398 +991,32 @@ export default function DailyReportPage() {
             </section>
           </div>
 
-          {/* ==================================================
-              HEADER
-          ================================================== */}
-
-          <header className="no-print rounded-2xl border border-coffee-700/10 bg-white p-4 shadow-sm screen-report-body">
-            <div className="flex items-start gap-3">
-              <button
-                type="button"
-                onClick={() =>
-                  router.push(
-                    `/${locale}/reports`,
-                  )
-                }
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-coffee-700/10 bg-white text-coffee-500 transition hover:bg-cream-50 active:scale-95"
-                aria-label={t(
-                  "Back",
-                  "ተመለስ",
-                )}
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </button>
-
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="text-lg font-black tracking-tight text-coffee-700 sm:text-xl">
-                    {t(
-                      "Sales Report",
-                      "የሽያጭ ሪፖርት",
-                    )}
-                  </h1>
-
-                  <span
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[9px] font-black ${activeShift
-                      ? "border-berbere-200 bg-berbere-50 text-berbere-600"
-                      : "border-coffee-200 bg-cream-200 text-coffee-500"
-                      }`}
-                  >
-                    <span
-                      className={`h-1.5 w-1.5 rounded-full ${activeShift
-                        ? "bg-berbere-500"
-                        : "bg-coffee-400"
-                        }`}
-                    />
-
-                    {activeShift
-                      ? t(
-                        "Shift Open",
-                        "ፈረቃ ክፍት",
-                      )
-                      : t(
-                        "Shift Closed",
-                        "ፈረቃ ተዘግቷል",
-                      )}
-                  </span>
-                </div>
-
-                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-coffee-500">
-                  <span className="flex items-center gap-1.5">
-                    <CalendarDays className="h-3.5 w-3.5" />
-
-                    {reportPeriodLabel}
-                  </span>
-
-                  <span className="text-coffee-300">
-                    •
-                  </span>
-
-                  <span>
-                    {reportPeriodDetail}
-                  </span>
-
-                  {lastUpdated && (
-                    <span className="hidden items-center gap-1 sm:flex">
-                      <Clock3 className="h-3 w-3" />
-
-                      {lastUpdated.toLocaleTimeString(
-                        isAm
-                          ? "am-ET"
-                          : "en-ET",
-                      )}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* PERIOD BUTTONS */}
-
-            <div className="mt-4 overflow-x-auto border-t border-cream-200 pt-3">
-              <div className="flex min-w-max items-center gap-1.5">
-                <PresetButton
-                  active={
-                    reportPreset ===
-                    "today"
-                  }
-                  onClick={() =>
-                    applyPreset(
-                      "today",
-                    )
-                  }
-                >
-                  {t(
-                    "Today",
-                    "ዛሬ",
-                  )}
-                </PresetButton>
-
-                <PresetButton
-                  active={
-                    reportPreset ===
-                    "yesterday"
-                  }
-                  onClick={() =>
-                    applyPreset(
-                      "yesterday",
-                    )
-                  }
-                >
-                  {t(
-                    "Yesterday",
-                    "ትናንት",
-                  )}
-                </PresetButton>
-
-                <PresetButton
-                  active={
-                    reportPreset ===
-                    "week"
-                  }
-                  onClick={() =>
-                    applyPreset(
-                      "week",
-                    )
-                  }
-                >
-                  {t(
-                    "This Week",
-                    "በዚህ ሳምንት",
-                  )}
-                </PresetButton>
-
-                <PresetButton
-                  active={
-                    reportPreset ===
-                    "month"
-                  }
-                  onClick={() =>
-                    applyPreset(
-                      "month",
-                    )
-                  }
-                >
-                  {t(
-                    "This Month",
-                    "በዚህ ወር",
-                  )}
-                </PresetButton>
-
-                <PresetButton
-                  active={
-                    reportPreset ===
-                    "custom"
-                  }
-                  onClick={() =>
-                    setReportPreset(
-                      "custom",
-                    )
-                  }
-                >
-                  {t(
-                    "Custom Range",
-                    "የተመረጠ ክልል",
-                  )}
-                </PresetButton>
-              </div>
-            </div>
-
-            {/* CUSTOM RANGE */}
-
-            {reportPreset ===
-              "custom" && (
-                <div className="mt-3 rounded-2xl border border-cream-200 bg-cream-50 p-3">
-                  <div className="grid gap-3 sm:grid-cols-[1fr_auto_1fr_auto] sm:items-end">
-                    <div>
-                      <label
-                        htmlFor="report-from"
-                        className="mb-1.5 block text-[9px] font-black uppercase tracking-wider text-coffee-400"
-                      >
-                        {t(
-                          "From",
-                          "ከ",
-                        )}
-                      </label>
-
-                      <input
-                        id="report-from"
-                        type="date"
-                        value={
-                          customFrom
-                        }
-                        max={formatDateInput(
-                          today,
-                        )}
-                        onChange={(event) =>
-                          setCustomFrom(
-                            event.target
-                              .value,
-                          )
-                        }
-                        className="h-10 w-full rounded-xl border border-coffee-700/10 bg-white px-3 text-xs font-bold text-coffee-700 outline-none transition focus:border-berbere-400 focus:ring-2 focus:ring-berbere-100"
-                      />
-                    </div>
-
-                    <div className="hidden pb-3 text-coffee-300 sm:block">
-                      →
-                    </div>
-
-                    <div>
-                      <label
-                        htmlFor="report-to"
-                        className="mb-1.5 block text-[9px] font-black uppercase tracking-wider text-coffee-400"
-                      >
-                        {t(
-                          "To",
-                          "እስከ",
-                        )}
-                      </label>
-
-                      <input
-                        id="report-to"
-                        type="date"
-                        value={
-                          customTo
-                        }
-                        max={formatDateInput(
-                          today,
-                        )}
-                        onChange={(event) =>
-                          setCustomTo(
-                            event.target
-                              .value,
-                          )
-                        }
-                        className="h-10 w-full rounded-xl border border-coffee-700/10 bg-white px-3 text-xs font-bold text-coffee-700 outline-none transition focus:border-berbere-400 focus:ring-2 focus:ring-berbere-100"
-                      />
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={
-                        applyCustomRange
-                      }
-                      className="h-10 rounded-xl bg-berbere-500 px-4 text-[10px] font-black text-white transition hover:bg-berbere-600 active:scale-[0.98]"
-                    >
-                      {t(
-                        "Apply",
-                        "ተግብር",
-                      )}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-            {/* ACTIONS */}
-
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={
-                  goPreviousDay
-                }
-                className="flex h-9 items-center justify-center gap-1.5 rounded-xl border border-coffee-700/10 bg-white px-3 text-[10px] font-bold text-coffee-500 transition hover:bg-cream-50"
-                title={t(
-                  "Previous day",
-                  "ቀዳሚ ቀን",
-                )}
-              >
-                <ChevronLeft className="h-3.5 w-3.5" />
-
-                <span className="hidden sm:inline">
-                  {t(
-                    "Previous",
-                    "ቀዳሚ",
-                  )}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={
-                  goNextDay
-                }
-                disabled={
-                  reportPeriod.to >=
-                  today
-                }
-                className="flex h-9 items-center justify-center gap-1.5 rounded-xl border border-coffee-700/10 bg-white px-3 text-[10px] font-bold text-coffee-500 transition hover:bg-cream-50 disabled:cursor-not-allowed disabled:opacity-30"
-                title={t(
-                  "Next day",
-                  "ቀጣይ ቀን",
-                )}
-              >
-                <span className="hidden sm:inline">
-                  {t(
-                    "Next",
-                    "ቀጣይ",
-                  )}
-                </span>
-
-                <ChevronRight className="h-3.5 w-3.5" />
-              </button>
-
-              <div
-                className={`flex h-9 flex-1 items-center justify-center gap-1.5 rounded-xl border px-3 text-[10px] font-bold sm:flex-none ${remoteAvailable
-                  ? "border-berbere-200 bg-berbere-50 text-berbere-600"
-                  : "border-gold-200 bg-gold-50 text-gold-700"
-                  }`}
-              >
-                {remoteAvailable ? (
-                  <Wifi className="h-3 w-3" />
-                ) : (
-                  <WifiOff className="h-3 w-3" />
-                )}
-
-                {remoteAvailable
-                  ? t(
-                    "Connected",
-                    "ተገናኝቷል",
-                  )
-                  : t(
-                    "Offline",
-                    "ከመስመር ውጭ",
-                  )}
-              </div>
-
-              <button
-                type="button"
-                onClick={() =>
-                  void loadReport(
-                    true,
-                  )
-                }
-                disabled={
-                  refreshing
-                }
-                className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-xl border border-coffee-700/10 bg-white px-3 text-[10px] font-bold text-coffee-500 transition hover:bg-cream-50 disabled:opacity-60 sm:flex-none"
-              >
-                <RefreshCw
-                  className={`h-3.5 w-3.5 ${refreshing
-                    ? "animate-spin"
-                    : ""
-                    }`}
-                />
-
-                {t(
-                  "Refresh",
-                  "አድስ",
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={
-                  printReport
-                }
-                className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-xl border border-coffee-700/10 bg-white px-3 text-[10px] font-bold text-coffee-500 transition hover:bg-cream-50 sm:flex-none"
-              >
-                <Download className="h-3.5 w-3.5" />
-
-                {t(
-                  "Save PDF",
-                  "PDF አስቀምጥ",
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={() =>
-                  void shareReport()
-                }
-                className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-xl bg-berbere-500 px-3 text-[10px] font-black text-white shadow-sm transition hover:bg-berbere-600 active:scale-95 sm:flex-none"
-              >
-                <Share2 className="h-3.5 w-3.5" />
-
-                {t(
-                  "Share",
-                  "አጋራ",
-                )}
-              </button>
-            </div>
-          </header>
-
+          <DailyReportHeader
+            businessName={businessId ? businessName : "LIYU POS"}
+            isShiftOpen={Boolean(activeShift)}
+            reportPreset={reportPreset}
+            reportPeriodLabel={reportPeriodLabel}
+            reportPeriodDetail={reportPeriodDetail}
+            customFrom={customFrom}
+            customTo={customTo}
+            maxDate={formatDateInput(today)}
+            canGoNext={reportPeriod.to < today}
+            remoteAvailable={remoteAvailable}
+            lastUpdated={lastUpdated}
+            refreshing={refreshing}
+            isAm={isAm}
+            onBack={() => router.push(`/${locale}/reports`)}
+            onPresetChange={applyPreset}
+            onCustomFromChange={setCustomFrom}
+            onCustomToChange={setCustomTo}
+            onApplyCustomRange={applyCustomRange}
+            onPrevious={goPreviousDay}
+            onNext={goNextDay}
+            onRefresh={() => void refresh()}
+            onPrint={printReport}
+            onShare={() => void shareReport()}
+            t={t}
+          />
           {/* ==================================================
               REPORT CONTENT
           ================================================== */}
@@ -2685,120 +1024,13 @@ export default function DailyReportPage() {
           {report && (
             <div className="screen-report-body">
 
-              {/* ==================================================
-                  FINANCIAL SNAPSHOT
-              ================================================== */}
-
-              <section>
-                <div className="mb-2 flex items-end justify-between px-1">
-                  <div>
-                    <p className="text-[9px] font-black uppercase tracking-[0.14em] text-coffee-400">
-                      {t(
-                        "Financial Snapshot",
-                        "የገንዘብ ማጠቃለያ",
-                      )}
-                    </p>
-
-                    <h2 className="mt-0.5 text-sm font-black text-coffee-700">
-                      {reportDays <= 1
-                        ? t(
-                          "Business performance",
-                          "የንግድ አፈጻጸም",
-                        )
-                        : t(
-                          "Business performance for the selected period",
-                          "ለተመረጠው ጊዜ የንግድ አፈጻጸም",
-                        )}
-                    </h2>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                  <MetricCard
-                    label={t(
-                      "Sales",
-                      "ሽያጭ",
-                    )}
-                    value={formatMoney(
-                      salesTotal,
-                    )}
-                    caption={t(
-                      "Sales before expenses",
-                      "ወጪ ከመቀነሱ በፊት",
-                    )}
-                    icon={
-                      <CircleDollarSign className="h-4 w-4" />
-                    }
-                    tone="primary"
-                  />
-
-                  <MetricCard
-                    label={t(
-                      "Net Profit",
-                      "የተጣራ ትርፍ",
-                    )}
-                    value={formatMoney(
-                      netProfit,
-                    )}
-                    caption={t(
-                      "After expenses",
-                      "ከወጪ በኋላ",
-                    )}
-                    icon={
-                      netProfit >=
-                        0 ? (
-                        <ArrowUpRight className="h-4 w-4" />
-                      ) : (
-                        <ArrowDownRight className="h-4 w-4" />
-                      )
-                    }
-                    tone={
-                      netProfit >= 0
-                        ? "profit"
-                        : "warning"
-                    }
-                  />
-
-                  <MetricCard
-                    label={t(
-                      "Expenses",
-                      "ወጪ",
-                    )}
-                    value={formatMoney(
-                      expenseTotal,
-                    )}
-                    caption={`${formatNumber(
-                      expenseTransactionCount,
-                    )} ${t(
-                      "expense records",
-                      "የወጪ መዝገቦች",
-                    )}`}
-                    icon={
-                      <ArrowDownRight className="h-4 w-4" />
-                    }
-                    tone="warning"
-                  />
-
-                  <MetricCard
-                    label={t(
-                      "Sales Made",
-                      "የተደረጉ ሽያጮች",
-                    )}
-                    value={formatNumber(
-                      orderCount,
-                    )}
-                    caption={`${formatNumber(
-                      itemsSold,
-                    )} ${t(
-                      "items sold",
-                      "እቃዎች ተሸጡ",
-                    )}`}
-                    icon={
-                      <ShoppingBag className="h-4 w-4" />
-                    }
-                  />
-                </div>
-              </section>
+              <FinancialSnapshot
+                salesTotal={salesTotal}
+                netProfit={netProfit}
+                expenseTotal={expenseTotal}
+                orderCount={orderCount}
+                t={t}
+              />
 
               {/* ==================================================
                   MONEY FLOW

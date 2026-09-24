@@ -45,6 +45,35 @@ export function DailyReportPrintStyles() {
         }
 
         /*
+         * The authenticated AppShell is a viewport-height flex layout
+         * with overflow clipping and a fixed sidebar offset. Flatten only
+         * the ancestors of this report for print so those screen layout
+         * constraints cannot cut off later report pages.
+         */
+
+        body:has(#daily-report-print-root),
+        body:has(#daily-report-print-root)
+          *:has(#daily-report-print-root) {
+          width: 100% !important;
+          min-width: 0 !important;
+          min-height: 0 !important;
+          max-width: none !important;
+          max-height: none !important;
+          height: auto !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          overflow: visible !important;
+        }
+
+        /* Remove hidden shell siblings from layout flow as well. */
+
+        body:has(#daily-report-print-root)
+          *:has(#daily-report-print-root)
+          > *:not(#daily-report-print-root):not(:has(#daily-report-print-root)) {
+          display: none !important;
+        }
+
+        /*
          * Your global.css already hides the application during print.
          * We keep that architecture and explicitly restore visibility
          * only for this report.

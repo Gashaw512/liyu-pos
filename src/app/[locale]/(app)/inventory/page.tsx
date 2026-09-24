@@ -1,3 +1,4 @@
+// src/app/[locale]/(app)/reports/page.tsx
 "use client";
 
 import {
@@ -31,6 +32,8 @@ import InventoryCategoryTabs from "@/components/inventory/InventoryCategoryTabs"
 import InventoryValuation from "@/components/inventory/InventoryValuation";
 import InventoryEmptyState from "@/components/inventory/InventoryEmptyState";
 import InventoryProductList from "@/components/inventory/InventoryProductList";
+import { useBusinessContext } from "@/lib/auth/useBusinessContext";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 import type {
   InventoryProduct,
@@ -86,6 +89,8 @@ export default function InventoryPage() {
 
   const isAm = locale === "am";
 
+  const { businessId, branchId } = useBusinessContext();
+
   // ==========================================================
   // STATE
   // ==========================================================
@@ -95,6 +100,12 @@ export default function InventoryPage() {
 
   const [liveStockMap, setLiveStockMap] =
     useState<Record<string, LiveMetaData>>({});
+
+  const [fifoCostValueByProduct, setFifoCostValueByProduct] =
+    useState<Record<string, number>>({});
+
+  const [fifoCostDataAvailable, setFifoCostDataAvailable] =
+    useState(false);
 
   const [counts, setCounts] =
     useState<Record<string, number>>({});
@@ -212,12 +223,48 @@ export default function InventoryPage() {
             baseProducts,
           );
 
+        const nextFifoCostValueByProduct: Record<string, number> = {};
+        let nextFifoCostDataAvailable = false;
+
+        if (businessId && branchId) {
+          try {
+            const { data, error } = await getSupabaseBrowserClient()
+              .from("inventory_cost_layers")
+              .select("product_id, quantity_remaining, unit_cost")
+              .eq("business_id", businessId)
+              .eq("branch_id", branchId)
+              .gt("quantity_remaining", 0);
+
+            if (error) throw error;
+
+            for (const layer of data ?? []) {
+              const layerValue =
+                Number(layer.quantity_remaining) * Number(layer.unit_cost);
+
+              if (!Number.isFinite(layerValue)) continue;
+
+              nextFifoCostValueByProduct[layer.product_id] =
+                (nextFifoCostValueByProduct[layer.product_id] ?? 0) + layerValue;
+            }
+
+            nextFifoCostDataAvailable = true;
+          } catch (error) {
+            // The inventory screen remains usable offline and falls back to cached costs.
+            console.warn(
+              "[InventoryPage] FIFO valuation unavailable; using cached product costs.",
+              error,
+            );
+          }
+        }
+
         if (!mountedRef.current) {
           return;
         }
 
         setProducts(baseProducts);
         setLiveStockMap(computedMap);
+        setFifoCostValueByProduct(nextFifoCostValueByProduct);
+        setFifoCostDataAvailable(nextFifoCostDataAvailable);
 
         setCounts((previous) => {
           const next: Record<string, number> = {};
@@ -265,7 +312,7 @@ export default function InventoryPage() {
         refreshingRef.current = false;
       }
     },
-    [t],
+    [businessId, branchId, t],
   );
 
   // ==========================================================
@@ -1022,6 +1069,8 @@ export default function InventoryPage() {
           <InventoryValuation
             products={products}
             liveStockMap={liveStockMap}
+            fifoCostValueByProduct={fifoCostValueByProduct}
+            fifoCostDataAvailable={fifoCostDataAvailable}
             isAm={isAm}
           />
 

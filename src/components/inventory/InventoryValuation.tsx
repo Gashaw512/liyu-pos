@@ -17,6 +17,8 @@ import type {
 interface ValuationProps {
   products: InventoryProduct[]
   liveStockMap: Record<string, LiveMetaData>
+  fifoCostValueByProduct: Record<string, number>
+  fifoCostDataAvailable: boolean
   isAm: boolean
 }
 
@@ -39,6 +41,8 @@ const COLORS = {
 export default function InventoryValuation({
   products,
   liveStockMap,
+  fifoCostValueByProduct,
+  fifoCostDataAvailable,
   isAm,
 }: ValuationProps) {
   const [isOpen, setIsOpen] = useState(false)
@@ -122,6 +126,20 @@ export default function InventoryValuation({
         Number.isFinite(costPrice) &&
         costPrice >= 0
 
+      const hasFifoCostValue =
+        fifoCostDataAvailable &&
+        !liveStock?.hasPendingTransactions &&
+        Object.prototype.hasOwnProperty.call(
+          fifoCostValueByProduct,
+          product.id,
+        )
+
+      const costValue = hasFifoCostValue
+        ? fifoCostValueByProduct[product.id]
+        : hasValidCost
+          ? currentStock * costPrice
+          : 0
+
       const safeRetailPrice =
         Number.isFinite(retailPrice) &&
           retailPrice >= 0
@@ -130,10 +148,7 @@ export default function InventoryValuation({
 
       totalUnits += currentStock
 
-      if (hasValidCost) {
-        totalCostValue +=
-          currentStock * costPrice
-      }
+      totalCostValue += costValue
 
       totalRetailValue +=
         currentStock * safeRetailPrice
@@ -162,10 +177,7 @@ export default function InventoryValuation({
       categories[category].count +=
         currentStock
 
-      if (hasValidCost) {
-        categories[category].costValue +=
-          currentStock * costPrice
-      }
+      categories[category].costValue += costValue
 
       categories[category].retailValue +=
         currentStock * safeRetailPrice
@@ -202,6 +214,8 @@ export default function InventoryValuation({
   }, [
     products,
     liveStockMap,
+    fifoCostValueByProduct,
+    fifoCostDataAvailable,
     isAm,
   ])
 

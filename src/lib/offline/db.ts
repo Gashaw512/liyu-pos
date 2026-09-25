@@ -82,6 +82,19 @@ export interface LocalPendingStockReceipt {
   lastSyncError?: string
 }
 
+export interface LocalPendingShiftClosure {
+  reportId: string
+  businessId: string
+  branchId: string
+  cashierId: string
+  openedAt: string
+  closedAt: string
+  openingCash: number
+  actualCash: number | null
+  attempts: number
+  lastError?: string
+}
+
 /* =========================================================
  * LOCAL STOCK RECONCILIATION
  * ========================================================= */
@@ -247,6 +260,11 @@ interface LiyuPOSDBSchema extends DBSchema {
     value: LocalPendingStockReceipt
   }
 
+  pending_shift_closures: {
+    key: string
+    value: LocalPendingShiftClosure
+  }
+
   /* -------------------------------------------------------
    * SALES HISTORY
    * ------------------------------------------------------- */
@@ -340,7 +358,7 @@ const DB_NAME = 'liyu-pos-core'
  * object store already exists, so existing local data
  * is preserved.
  */
-const DB_VERSION = 12
+const DB_VERSION = 13
 
 /* =========================================================
  * DATABASE INITIALIZATION
@@ -539,6 +557,10 @@ export const getDB = (): Promise<
               keyPath: 'localId',
             }
           )
+        }
+
+        if (!db.objectStoreNames.contains('pending_shift_closures')) {
+          db.createObjectStore('pending_shift_closures', { keyPath: 'reportId' })
         }
 
         /* ===================================================

@@ -6,7 +6,9 @@
     "dev": "next dev --webpack",
     "build": "next build --webpack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "node --experimental-strip-types --test tests/shift-report-pdf.test.mjs",
+    "encrypt:telegram-bot": "node --env-file=.env.local --experimental-strip-types scripts/encrypt-telegram-token.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",

@@ -157,6 +157,8 @@ export class SyncEngine {
         return
       }
 
+      await this.syncPendingShiftClosures()
+
       // ======================================================
       // 4. PULL SERVER SNAPSHOT WHEN NEEDED
       //
@@ -1025,6 +1027,39 @@ export class SyncEngine {
       return {
         success: false,
         hadWork: true,
+      }
+    }
+  }
+
+  private async syncPendingShiftClosures(): Promise<void> {
+    const db = await getDB()
+    const pending = await db.getAll('pending_shift_closures')
+    for (const closure of pending) {
+      try {
+        const response = await fetch('/api/shift-reports/close', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          cache: 'no-store',
+          signal: AbortSignal.timeout(30_000),
+          body: JSON.stringify({
+            reportId: closure.reportId,
+            branchId: closure.branchId,
+            openedAt: closure.openedAt,
+            closedAt: closure.closedAt,
+            openingCash: closure.openingCash,
+            actualCash: closure.actualCash,
+          }),
+        })
+        const result = await response.json().catch(() => null) as { success?: boolean; error?: string } | null
+        if (!response.ok || !result?.success) throw new Error(result?.error || `HTTP ${response.status}`)
+        await db.delete('pending_shift_closures', closure.reportId)
+      } catch (error) {
+        await db.put('pending_shift_closures', {
+          ...closure,
+          attempts: closure.attempts + 1,
+          lastError: error instanceof Error ? error.message.slice(0, 300) : 'Report send failed',
+        })
+        console.warn('[SYNC] Shift report delivery remains queued for retry.', { reportId: closure.reportId })
       }
     }
   }

@@ -8,7 +8,7 @@ import {
   useState,
 } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { Coins, Loader2 } from 'lucide-react'
+import { Coins, LayoutGrid, Loader2 } from 'lucide-react'
 
 import { getDB } from '../../../../lib/offline/db'
 import type { Shift } from '../../../../types/database/operations'
@@ -1091,6 +1091,16 @@ export default function SalesPage() {
           )}
           savingTab={savingTab}
           onSaveOrder={handleSaveTab}
+          todayReport={(
+            <SellerDailyStatement
+              businessId={businessId}
+              branchId={branchId}
+              cashierId={activeShift.cashier_id ?? userId}
+              locale={locale}
+              isAm={isAm}
+              initiallyExpanded
+            />
+          )}
         />
 
         {/* CURRENT BILL */}
@@ -1128,25 +1138,22 @@ export default function SalesPage() {
                 lg:px-4 lg:pb-6 lg:pt-2.5
               "
             >
-              <SellerDailyStatement
-                businessId={businessId}
-                branchId={branchId}
-                cashierId={activeShift.cashier_id ?? userId}
-                locale={locale}
-                isAm={isAm}
-              />
+              {/* VISIBLE, COMPACT PRODUCT AND TABLE CONTROLS */}
 
-              {/* TABLE + ACTIONS */}
+              <div className="sticky top-0 z-30 -mx-2 shrink-0 bg-cream-100/95 px-2 pb-1.5 pt-0.5 backdrop-blur-md sm:-mx-3 sm:px-3 lg:-mx-4 lg:px-4">
+                <section className="overflow-hidden rounded-xl border border-cream-300 bg-white shadow-sm">
+                  <div className="border-b border-cream-100 p-1.5 sm:p-2">
+                    <POSSearch
+                      value={productSearch}
+                      onChange={setProductSearch}
+                      resultCount={filteredProducts.length}
+                      isAm={isAm}
+                      placeholder={isAm ? 'ምርት በስም ይፈልጉ' : 'Find a product by name'}
+                      className="!p-0"
+                    />
+                  </div>
 
-              <section
-                className="
-                  sticky top-0 z-30 shrink-0 overflow-hidden
-                  rounded-lg border border-cream-300 bg-cream-50/95
-                  shadow-sm backdrop-blur-md
-                "
-              >
-                <div className="flex min-h-10 items-center gap-1.5 px-1.5 py-1 sm:px-2">
-                  <div className="min-w-0 flex-1 overflow-hidden">
+                  <div className="border-b border-cream-100 px-2 pt-1.5 sm:px-2.5">
                     <POSTableSelector
                       tables={tables}
                       selectedTable={selectedTable}
@@ -1158,34 +1165,25 @@ export default function SalesPage() {
                     />
                   </div>
 
-                </div>
-              </section>
-
-              {/* SEARCH + CATEGORIES */}
-
-              <section
-                className="
-                  mt-1.5 shrink-0 overflow-hidden rounded-lg
-                  border border-cream-300 bg-cream-50 shadow-sm
-                  sm:mt-2
-                "
-              >
-                <POSSearch
-                  value={productSearch}
-                  onChange={setProductSearch}
-                  resultCount={filteredProducts.length}
-                  isAm={isAm}
-                />
-
-                <div className="border-t border-cream-200 px-1.5 py-1 sm:px-2">
-                  <POSCategories
-                    categories={categories}
-                    selectedCategoryId={selectedCategoryId}
-                    onSelectCategory={setSelectedCategoryId}
-                    isAm={isAm}
-                  />
-                </div>
-              </section>
+                  <div className="px-1.5 py-1 sm:px-2">
+                    <div className="mb-0.5 flex items-center justify-between gap-2 px-1">
+                      <span className="flex items-center gap-1.5 text-[10px] font-bold text-coffee-600">
+                        <LayoutGrid className="h-3.5 w-3.5 text-berbere-500" aria-hidden="true" />
+                        {isAm ? 'ምርትን በዓይነት ይምረጡ' : 'Choose product type'}
+                      </span>
+                      <span className="text-[8px] font-medium text-coffee-400 sm:hidden">
+                        {isAm ? 'ወደ ጎን ያንሸራትቱ' : 'Swipe for more'}
+                      </span>
+                    </div>
+                    <POSCategories
+                      categories={categories}
+                      selectedCategoryId={selectedCategoryId}
+                      onSelectCategory={setSelectedCategoryId}
+                      isAm={isAm}
+                    />
+                  </div>
+                </section>
+              </div>
 
               {/* PRODUCTS */}
 

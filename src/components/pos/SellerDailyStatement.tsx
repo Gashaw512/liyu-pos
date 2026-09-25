@@ -51,6 +51,7 @@ interface Props {
   cashierId: string | null
   locale: string
   isAm: boolean
+  initiallyExpanded?: boolean
 }
 
 const SALES_UPDATED_EVENT = 'liyu:inventory-updated'
@@ -81,6 +82,7 @@ export default function SellerDailyStatement({
   cashierId,
   locale,
   isAm,
+  initiallyExpanded = false,
 }: Props) {
   const [sales, setSales] = useState<StatementSale[]>([])
   const [loading, setLoading] = useState(true)
@@ -88,7 +90,7 @@ export default function SellerDailyStatement({
   const [productDetailsAvailable, setProductDetailsAvailable] = useState(true)
   const [sharing, setSharing] = useState(false)
   const [copied, setCopied] = useState(false)
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(initiallyExpanded)
 
   const t = useCallback(
     (en: string, am: string) => isAm ? am : en,

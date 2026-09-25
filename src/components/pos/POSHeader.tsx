@@ -1,11 +1,14 @@
 'use client'
 
+import { useState, type ReactNode } from 'react'
 import {
+  BarChart3,
   ChevronDown,
   ChevronUp,
   Coins,
   Loader2,
   LogOut,
+  X,
   Save,
   ShoppingBag,
   Utensils,
@@ -27,6 +30,7 @@ interface POSHeaderProps {
   hasUnsavedTableOrder: boolean
   savingTab: boolean
   onSaveOrder: () => Promise<void>
+  todayReport: ReactNode
 }
 
 const controlClass =
@@ -46,10 +50,13 @@ export default function POSHeader({
   hasUnsavedTableOrder,
   savingTab,
   onSaveOrder,
+  todayReport,
 }: POSHeaderProps) {
+  const [showTodayReport, setShowTodayReport] = useState(false)
   const orderPlace = selectedTable?.name ?? (isAm ? 'ቀጥታ ሽያጭ' : 'Walk-in')
 
   return (
+    <div className="relative">
     <header className="sticky top-0 z-40 w-full shrink-0 border-b border-cream-300 bg-cream-50/95 shadow-sm backdrop-blur-md">
       <div className="mx-auto flex h-12 w-full max-w-[1600px] items-center gap-1.5 px-2 sm:gap-2 sm:px-3 lg:px-4">
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
@@ -76,10 +83,28 @@ export default function POSHeader({
           </button>
         )}
 
+        <button
+          type="button"
+          onClick={() => {
+            if (billOpen) onToggleBill()
+            setShowTodayReport((open) => !open)
+          }}
+          aria-expanded={showTodayReport}
+          aria-label={isAm ? 'የዛሬ ሽያጭ ሪፖርት' : "Today's sales report"}
+          title={isAm ? 'የዛሬ ሽያጭ ሪፖርት' : "Today's sales report"}
+          className={`${controlClass} gap-1 border border-cream-300 bg-white px-2 text-[10px] font-black text-coffee-700 hover:bg-cream-100`}
+        >
+          <BarChart3 className="h-3.5 w-3.5 text-berbere-500" aria-hidden="true" />
+          <span>{isAm ? 'ዛሬ' : 'Today'}</span>
+        </button>
+
         {cartHasItems && (
           <button
             type="button"
-            onClick={onToggleBill}
+            onClick={() => {
+              setShowTodayReport(false)
+              onToggleBill()
+            }}
             aria-expanded={billOpen}
             aria-label={isAm ? 'ትዕዛዙን ይመልከቱ' : 'View current order'}
             title={isAm ? 'ትዕዛዙን ይመልከቱ' : 'View current order'}
@@ -96,7 +121,10 @@ export default function POSHeader({
         {cartHasItems && (
           <button
             type="button"
-            onClick={onCheckout}
+            onClick={() => {
+              setShowTodayReport(false)
+              onCheckout()
+            }}
             className={`${controlClass} gap-1.5 bg-berbere-500 px-2.5 text-[11px] font-black text-white shadow-sm hover:bg-berbere-600 sm:px-3`}
             aria-label={`${isAm ? 'ክፍያ' : 'Pay'} ${totalBill.toLocaleString()} ETB`}
             title={`${isAm ? 'ክፍያ' : 'Pay'} ${totalBill.toLocaleString()} ETB`}
@@ -121,5 +149,24 @@ export default function POSHeader({
         </button>
       </div>
     </header>
+    {showTodayReport && (
+      <div className="absolute right-2 top-full z-[60] max-h-[calc(100dvh-4rem)] w-[min(24rem,calc(100vw-1rem))] overflow-y-auto rounded-xl border border-cream-300 bg-cream-50 p-2 shadow-elevated">
+        <div className="mb-1 flex items-center justify-between gap-2 px-1">
+          <span className="text-[11px] font-black text-coffee-700">
+            {isAm ? 'የዛሬ ሽያጭ' : "Today's sales"}
+          </span>
+          <button
+            type="button"
+            onClick={() => setShowTodayReport(false)}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-coffee-500 hover:bg-cream-200"
+            aria-label={isAm ? 'ዝጋ' : 'Close report'}
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+        {todayReport}
+      </div>
+    )}
+    </div>
   )
 }

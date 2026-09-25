@@ -1,20 +1,20 @@
-
 'use client'
 
 import {
   ChevronDown,
   ChevronUp,
+  Coins,
+  Loader2,
   LogOut,
+  Save,
   ShoppingBag,
   Utensils,
-  Loader2,
 } from 'lucide-react'
 
-import type { POSShift, POSTable } from './types'
+import type { POSTable } from './types'
 
 interface POSHeaderProps {
   isAm: boolean
-  activeShift: POSShift
   selectedTable: POSTable | null
   totalItems: number
   totalBill: number
@@ -23,7 +23,14 @@ interface POSHeaderProps {
   cartHasItems: boolean
   billOpen: boolean
   onToggleBill: () => void
+  onCheckout: () => void
+  hasUnsavedTableOrder: boolean
+  savingTab: boolean
+  onSaveOrder: () => Promise<void>
 }
+
+const controlClass =
+  'inline-flex h-8 shrink-0 items-center justify-center rounded-lg transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-50'
 
 export default function POSHeader({
   isAm,
@@ -35,370 +42,84 @@ export default function POSHeader({
   cartHasItems,
   billOpen,
   onToggleBill,
+  onCheckout,
+  hasUnsavedTableOrder,
+  savingTab,
+  onSaveOrder,
 }: POSHeaderProps) {
-  const orderPlace =
-    selectedTable?.name ??
-    (isAm ? 'ቀጥታ ሽያጭ' : 'Walk-In')
-
-  const isWalkIn = !selectedTable
+  const orderPlace = selectedTable?.name ?? (isAm ? 'ቀጥታ ሽያጭ' : 'Walk-in')
 
   return (
-    <header
-      className="
-        sticky top-0 z-40
-        w-full shrink-0
-        border-b border-cream-300
-        bg-cream-50/95
-        shadow-sm
-        backdrop-blur-md
-      "
-    >
-      <div
-        className="
-          mx-auto flex
-          h-12
-          w-full max-w-[1600px]
-          items-center
-          gap-1.5
-          px-2
-          sm:gap-2
-          sm:px-3
-          lg:px-4
-        "
-      >
-        {/* ==========================================================
-            CURRENT SALES AREA
-            Flexible section. Everything else stays visible.
-        ========================================================== */}
-
-        <div
-          className="
-            flex
-            min-w-0
-            flex-1
-            items-center
-            gap-1.5
-            sm:gap-2
-          "
-        >
-          {/* SALES ICON */}
-
-          <div
-            className={[
-              `
-                flex
-                h-8
-                w-8
-                shrink-0
-                items-center
-                justify-center
-                rounded-lg
-              `,
-              isWalkIn
-                ? 'bg-cream-200 text-coffee-500'
-                : 'bg-berbere-50 text-berbere-500',
-            ].join(' ')}
-            aria-hidden="true"
-          >
+    <header className="sticky top-0 z-40 w-full shrink-0 border-b border-cream-300 bg-cream-50/95 shadow-sm backdrop-blur-md">
+      <div className="mx-auto flex h-12 w-full max-w-[1600px] items-center gap-1.5 px-2 sm:gap-2 sm:px-3 lg:px-4">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-cream-200 text-coffee-500" aria-hidden="true">
             <Utensils className="h-3.5 w-3.5" />
-          </div>
-
-          {/* SALES AREA */}
-
-          <div className="min-w-0 leading-none">
-            <div
-              className="
-                hidden
-                text-[7px]
-                font-black
-                uppercase
-                tracking-[0.12em]
-                text-coffee-400
-                sm:block
-              "
-            >
-              {isAm ? 'የሽያጭ ቦታ' : 'SALES AREA'}
-            </div>
-
-            <div
-              className="
-                flex
-                min-w-0
-                items-center
-                gap-1.5
-                sm:mt-0.5
-              "
-            >
-              <span
-                className="
-                  max-w-[110px]
-                  truncate
-                  text-xs
-                  font-black
-                  text-coffee-900
-                  sm:max-w-[180px]
-                  sm:text-sm
-                "
-              >
-                {orderPlace}
-              </span>
-
-              <span
-                className={[
-                  `
-                    h-1.5
-                    w-1.5
-                    shrink-0
-                    rounded-full
-                  `,
-                  isWalkIn
-                    ? 'bg-coffee-300'
-                    : 'bg-berbere-500',
-                ].join(' ')}
-                aria-hidden="true"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* ==========================================================
-            ITEMS
-        ========================================================== */}
-
-        <div
-          className="
-            flex
-            h-8
-            shrink-0
-            items-center
-            gap-1
-            rounded-lg
-            border
-            border-cream-200
-            bg-cream-100
-            px-2
-          "
-          title={
-            isAm
-              ? 'የትዕዛዙ እቃዎች ብዛት'
-              : 'Number of items in this order'
-          }
-        >
-          <ShoppingBag
-            className="
-              h-3.5
-              w-3.5
-              shrink-0
-              text-gold-600
-            "
-            aria-hidden="true"
-          />
-
-          <span
-            className="
-              font-mono
-              text-xs
-              font-black
-              text-coffee-900
-            "
-          >
-            {totalItems}
           </span>
-
-          <span
-            className="
-              hidden
-              text-[9px]
-              font-bold
-              text-coffee-400
-              md:inline
-            "
-          >
-            {isAm ? 'እቃ' : 'items'}
+          <span className="truncate text-xs font-black text-coffee-900 sm:text-sm" title={orderPlace}>
+            {orderPlace}
           </span>
         </div>
 
-        {/* ==========================================================
-            TOTAL
-        ========================================================== */}
-
-        <div
-          className="
-            shrink-0
-            text-right
-          "
-          title={
-            isAm
-              ? 'የአሁኑ ትዕዛዝ ጠቅላላ'
-              : 'Current order total'
-          }
-        >
-          <div
-            className="
-              whitespace-nowrap
-              font-mono
-              text-sm
-              font-black
-              leading-none
-              text-berbere-500
-              sm:text-base
-            "
+        {hasUnsavedTableOrder && (
+          <button
+            type="button"
+            onClick={() => void onSaveOrder()}
+            disabled={savingTab}
+            className={`${controlClass} w-9 border border-cream-300 bg-white text-coffee-700 hover:bg-cream-100`}
+            aria-label={isAm ? 'ትዕዛዙን አስቀምጥ' : 'Save table order'}
+            title={isAm ? 'ትዕዛዙን አስቀምጥ' : 'Save table order'}
           >
-            {totalBill.toLocaleString()}
-          </div>
+            {savingTab
+              ? <Loader2 className="h-4 w-4 animate-spin" />
+              : <Save className="h-4 w-4" />}
+          </button>
+        )}
 
-          <div
-            className="
-              mt-0.5
-              text-[6px]
-              font-black
-              tracking-[0.18em]
-              text-coffee-400
-            "
+        {cartHasItems && (
+          <button
+            type="button"
+            onClick={onToggleBill}
+            aria-expanded={billOpen}
+            aria-label={isAm ? 'ትዕዛዙን ይመልከቱ' : 'View current order'}
+            title={isAm ? 'ትዕዛዙን ይመልከቱ' : 'View current order'}
+            className={`${controlClass} min-w-10 gap-1 bg-cream-200 px-2 text-xs font-black text-coffee-800 hover:bg-cream-300`}
           >
-            ETB
-          </div>
-        </div>
-
-        {/* ==========================================================
-            CURRENT ORDER / BILL
-        ========================================================== */}
-
-        <button
-          type="button"
-          onClick={onToggleBill}
-          disabled={!cartHasItems}
-          aria-expanded={billOpen}
-          aria-label={
-            isAm
-              ? 'የአሁኑን ትዕዛዝ ይመልከቱ'
-              : 'View current order'
-          }
-          title={
-            isAm
-              ? 'የአሁኑን ትዕዛዝ ይመልከቱ'
-              : 'View current order'
-          }
-          className={[
-            `
-              flex
-              h-8
-              shrink-0
-              items-center
-              justify-center
-              gap-1
-              rounded-lg
-              px-2
-              text-[9px]
-              font-black
-              transition-all
-              active:scale-95
-              sm:px-2.5
-            `,
-            cartHasItems
-              ? billOpen
-                ? `
-                  bg-berbere-600
-                  text-white
-                  shadow-sm
-                `
-                : `
-                  bg-berbere-500
-                  text-white
-                  shadow-sm
-                  hover:bg-berbere-600
-                `
-              : `
-                cursor-default
-                bg-cream-200
-                text-coffee-400
-              `,
-          ].join(' ')}
-        >
-          <ShoppingBag
-            className="h-3.5 w-3.5 shrink-0"
-            aria-hidden="true"
-          />
-
-          <span className="hidden sm:inline">
+            <ShoppingBag className="h-3.5 w-3.5" />
+            <span>{totalItems}</span>
             {billOpen
-              ? isAm
-                ? 'ዝጋ'
-                : 'Close'
-              : isAm
-                ? 'ትዕዛዝ'
-                : 'Order'}
-          </span>
+              ? <ChevronUp className="h-3 w-3" />
+              : <ChevronDown className="h-3 w-3" />}
+          </button>
+        )}
 
-          {cartHasItems &&
-            (billOpen ? (
-              <ChevronUp
-                className="h-3 w-3 shrink-0"
-                aria-hidden="true"
-              />
-            ) : (
-              <ChevronDown
-                className="h-3 w-3 shrink-0"
-                aria-hidden="true"
-              />
-            ))}
-        </button>
-
-        {/* ==========================================================
-            CLOSE SHIFT
-        ========================================================== */}
+        {cartHasItems && (
+          <button
+            type="button"
+            onClick={onCheckout}
+            className={`${controlClass} gap-1.5 bg-berbere-500 px-2.5 text-[11px] font-black text-white shadow-sm hover:bg-berbere-600 sm:px-3`}
+            aria-label={`${isAm ? 'ክፍያ' : 'Pay'} ${totalBill.toLocaleString()} ETB`}
+            title={`${isAm ? 'ክፍያ' : 'Pay'} ${totalBill.toLocaleString()} ETB`}
+          >
+            <Coins className="h-3.5 w-3.5" />
+            <span>{isAm ? 'ክፍያ' : 'Pay'}</span>
+            <span className="max-w-[48px] truncate font-mono text-[10px] sm:max-w-[70px] sm:text-[11px]">{totalBill.toLocaleString()}</span>
+          </button>
+        )}
 
         <button
           type="button"
-          onClick={onCloseShift}
+          onClick={() => void onCloseShift()}
           disabled={closingShift}
-          aria-label={
-            isAm
-              ? 'ፈረቃ ዝጋ'
-              : 'Close shift'
-          }
-          title={
-            isAm
-              ? 'የስራ ፈረቃ ዝጋ'
-              : 'Close shift'
-          }
-          className="
-            flex
-            h-8
-            w-8
-            shrink-0
-            items-center
-            justify-center
-            rounded-lg
-            border
-            border-cream-300
-            bg-cream-50
-            text-danger
-            transition-all
-            hover:bg-cream-100
-            active:scale-95
-            disabled:cursor-not-allowed
-            disabled:opacity-50
-          "
+          className={`${controlClass} w-9 border border-cream-300 bg-white text-danger hover:bg-cream-100`}
+          aria-label={isAm ? 'ፈረቃ ዝጋ' : 'Close shift'}
+          title={isAm ? 'ፈረቃ ዝጋ' : 'Close shift'}
         >
-          {closingShift ? (
-            <Loader2
-              className="
-                h-3.5
-                w-3.5
-                animate-spin
-              "
-              aria-hidden="true"
-            />
-          ) : (
-            <LogOut
-              className="h-3.5 w-3.5"
-              aria-hidden="true"
-            />
-          )}
+          {closingShift
+            ? <Loader2 className="h-4 w-4 animate-spin" />
+            : <LogOut className="h-4 w-4" />}
         </button>
       </div>
     </header>
   )
 }
-

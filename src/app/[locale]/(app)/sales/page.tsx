@@ -1,3 +1,4 @@
+// src/app/[locale]/(app)/sales/page.tsx
 'use client'
 
 import {
@@ -7,7 +8,7 @@ import {
   useState,
 } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { Coins, Loader2, Save } from 'lucide-react'
+import { Coins, Loader2 } from 'lucide-react'
 
 import { getDB } from '../../../../lib/offline/db'
 import type { Shift } from '../../../../types/database/operations'
@@ -20,6 +21,7 @@ import POSTableSelector from '@/components/pos/POSTableSelector'
 import POSCategories from '@/components/pos/POSCategories'
 import POSProductGrid from '@/components/pos/POSProductGrid'
 import POSCheckout from '@/components/pos/POSCheckout'
+import SellerDailyStatement from '@/components/pos/SellerDailyStatement'
 import POSSearch from '@/components/ui/Search'
 
 import { useToast } from '@/components/ui/ToastProvider'
@@ -943,53 +945,6 @@ export default function SalesPage() {
   }
 
   // ==========================================================
-  // DIRECT SAVE BUTTON
-  // ==========================================================
-
-  const DirectSaveOrderButton = () => {
-    if (
-      !selectedTable ||
-      !cartHasItems ||
-      !hasUnsavedChanges
-    ) {
-      return null
-    }
-
-    return (
-      <button
-        type="button"
-        onClick={() => void handleSaveTab()}
-        disabled={savingTab}
-        className="
-          flex h-10 items-center justify-center gap-1.5
-          rounded-xl bg-coffee-900 px-3 text-xs font-black
-          text-white shadow-md transition-all duration-200
-          hover:-translate-y-0.5 hover:bg-coffee-800
-          hover:shadow-lg active:scale-95
-          disabled:cursor-not-allowed disabled:opacity-60
-          sm:h-11 sm:px-4 sm:text-sm
-        "
-      >
-        {savingTab ? (
-          <>
-            <Loader2 className="h-4 w-4 animate-spin" />
-            <span>
-              {isAm ? 'በማስቀመጥ ላይ...' : 'Saving...'}
-            </span>
-          </>
-        ) : (
-          <>
-            <Save className="h-4 w-4" />
-            <span>
-              {isAm ? 'አስቀምጥ' : 'Save'}
-            </span>
-          </>
-        )}
-      </button>
-    )
-  }
-
-  // ==========================================================
   // LOADING
   // ==========================================================
 
@@ -1117,7 +1072,6 @@ export default function SalesPage() {
       <div className="relative z-50 shrink-0">
         <POSHeader
           isAm={isAm}
-          activeShift={activeShift}
           selectedTable={selectedTable}
           totalItems={totalItems}
           totalBill={totalBill}
@@ -1128,6 +1082,15 @@ export default function SalesPage() {
           onToggleBill={() =>
             setBillOpen((current) => !current)
           }
+          onCheckout={() => {
+            setShowCheckout(true)
+            setBillOpen(false)
+          }}
+          hasUnsavedTableOrder={Boolean(
+            selectedTable && cartHasItems && hasUnsavedChanges,
+          )}
+          savingTab={savingTab}
+          onSaveOrder={handleSaveTab}
         />
 
         {/* CURRENT BILL */}
@@ -1165,6 +1128,14 @@ export default function SalesPage() {
                 lg:px-4 lg:pb-6 lg:pt-2.5
               "
             >
+              <SellerDailyStatement
+                businessId={businessId}
+                branchId={branchId}
+                cashierId={activeShift.cashier_id ?? userId}
+                locale={locale}
+                isAm={isAm}
+              />
+
               {/* TABLE + ACTIONS */}
 
               <section
@@ -1187,35 +1158,6 @@ export default function SalesPage() {
                     />
                   </div>
 
-                  {cartHasItems && (
-                    <div className="flex shrink-0 items-center gap-1">
-                      {selectedTable &&
-                        hasUnsavedChanges && (
-                          <DirectSaveOrderButton />
-                        )}
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowCheckout(true)
-                          setBillOpen(false)
-                        }}
-                        className="
-                          flex h-8 shrink-0 items-center
-                          justify-center gap-1 rounded-lg
-                          bg-berbere-500 px-2.5 text-[11px]
-                          font-black text-white shadow-sm
-                          transition hover:bg-berbere-600
-                          active:scale-95
-                        "
-                      >
-                        <Coins className="h-3.5 w-3.5" />
-                        <span>
-                          {isAm ? 'ክፍያ' : 'Pay'}
-                        </span>
-                      </button>
-                    </div>
-                  )}
                 </div>
               </section>
 

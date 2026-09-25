@@ -314,6 +314,18 @@ export default function SalesPage() {
     loadPOSData,
   ])
 
+  useEffect(() => {
+    const refreshCatalog = () => {
+      void loadPOSData()
+    }
+
+    window.addEventListener('liyu:sync-complete', refreshCatalog)
+
+    return () => {
+      window.removeEventListener('liyu:sync-complete', refreshCatalog)
+    }
+  }, [loadPOSData])
+
   // ==========================================================
   // DERIVED DATA
   // ==========================================================

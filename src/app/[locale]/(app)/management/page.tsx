@@ -95,6 +95,13 @@ export default function ManagementHubPage() {
           route: `/${locale}/management/profile`,
         },
         {
+          title: isAm ? 'የሪፖርት መልዕክቶች' : 'Shift Report Messages',
+          description: isAm
+            ? 'የፈረቃ PDF ሪፖርትን በቴሌግራም ያዋቅሩ'
+            : 'Configure Telegram shift report delivery',
+          route: `/${locale}/management/notifications`,
+        },
+        {
           title: isAm ? 'ፕሪንተሮች' : 'Printers',
           description: isAm
             ? 'የህትመት እና ፕሪንተር ቅንብሮች'

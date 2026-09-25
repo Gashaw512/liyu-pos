@@ -629,6 +629,8 @@ export default function SalesPage() {
       const newShift: Shift = {
         id: 'current',
 
+        report_id: crypto.randomUUID(),
+
         business_id:
           businessId,
 
@@ -776,6 +778,20 @@ export default function SalesPage() {
     try {
       const db = await getDB()
 
+      if (activeShift) {
+        await db.put('pending_shift_closures', {
+          reportId: activeShift.report_id || crypto.randomUUID(),
+          businessId: activeShift.business_id,
+          branchId: activeShift.branch_id,
+          cashierId: activeShift.cashier_id,
+          openedAt: activeShift.opened_at,
+          closedAt: new Date().toISOString(),
+          openingCash: Number(activeShift.opening_cash) || 0,
+          actualCash: activeShift.actual_cash == null ? null : Number(activeShift.actual_cash) || 0,
+          attempts: 0,
+        })
+      }
+
       await db.delete('active_shift', 'current')
 
       setActiveShift(null)
@@ -790,9 +806,14 @@ export default function SalesPage() {
       toast(
         isAm
           ? 'ፈረቃው ተዘግቷል'
-          : 'Shift closed successfully.',
+          : 'Shift closed. The report will be sent when notifications are enabled and connected.',
         'success',
       )
+
+      if (typeof navigator !== 'undefined' && navigator.onLine) {
+        const { syncEngine } = await import('@/lib/offline/syncEngine')
+        void syncEngine.syncAll()
+      }
     } catch (error) {
       console.error(
         '[POS] Failed to close shift:',

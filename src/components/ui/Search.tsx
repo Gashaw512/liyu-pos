@@ -11,6 +11,7 @@ interface POSSearchProps {
   placeholder?: string
   ariaLabel?: string
   className?: string
+  autoFocus?: boolean
 }
 
 export default function POSSearch({
@@ -22,6 +23,7 @@ export default function POSSearch({
   placeholder,
   ariaLabel,
   className = '',
+  autoFocus = false,
 }: POSSearchProps) {
   const hasSearch = value.trim().length > 0
 
@@ -36,6 +38,7 @@ export default function POSSearch({
         <input
           type="search"
           value={value}
+          autoFocus={autoFocus}
           onChange={(event) =>
             onChange(event.target.value)
           }

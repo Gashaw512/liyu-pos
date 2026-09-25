@@ -8,7 +8,7 @@ import {
   useState,
 } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { Coins, LayoutGrid, Loader2 } from 'lucide-react'
+import { Coins, LayoutGrid, Loader2, Search, X } from 'lucide-react'
 
 import { getDB } from '../../../../lib/offline/db'
 import type { Shift } from '../../../../types/database/operations'
@@ -85,6 +85,7 @@ export default function SalesPage() {
 
   const [selectedCategoryId, setSelectedCategoryId] = useState('all')
   const [productSearch, setProductSearch] = useState('')
+  const [showProductSearch, setShowProductSearch] = useState(false)
   const [selectedTable, setSelectedTable] =
     useState<POSTable | null>(null)
   const [cart, setCart] = useState<POSCartItem[]>([])
@@ -1152,19 +1153,16 @@ export default function SalesPage() {
             >
               {/* VISIBLE, COMPACT PRODUCT AND TABLE CONTROLS */}
 
-              <div className="sticky top-0 z-30 -mx-2 shrink-0 bg-cream-100/95 px-2 pb-1.5 pt-0.5 backdrop-blur-md sm:-mx-3 sm:px-3 lg:-mx-4 lg:px-4">
+              <div
+                className="sticky top-0 z-30 -mx-2 shrink-0 bg-cream-100/95 px-2 pb-1.5 pt-0.5 backdrop-blur-md sm:-mx-3 sm:px-3 lg:-mx-4 lg:px-4"
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    setShowProductSearch(false)
+                    setProductSearch('')
+                  }
+                }}
+              >
                 <section className="overflow-hidden rounded-xl border border-cream-300 bg-white shadow-sm">
-                  <div className="border-b border-cream-100 p-1.5 sm:p-2">
-                    <POSSearch
-                      value={productSearch}
-                      onChange={setProductSearch}
-                      resultCount={filteredProducts.length}
-                      isAm={isAm}
-                      placeholder={isAm ? 'ምርት በስም ይፈልጉ' : 'Find a product by name'}
-                      className="!p-0"
-                    />
-                  </div>
-
                   <div className="border-b border-cream-100 px-2 pt-1.5 sm:px-2.5">
                     <POSTableSelector
                       tables={tables}
@@ -1177,15 +1175,30 @@ export default function SalesPage() {
                     />
                   </div>
 
-                  <div className="px-1.5 py-1 sm:px-2">
+                  <div className="relative px-1.5 py-1 sm:px-2">
                     <div className="mb-0.5 flex items-center justify-between gap-2 px-1">
                       <span className="flex items-center gap-1.5 text-[10px] font-bold text-coffee-600">
                         <LayoutGrid className="h-3.5 w-3.5 text-berbere-500" aria-hidden="true" />
                         {isAm ? 'ምርትን በዓይነት ይምረጡ' : 'Choose product type'}
                       </span>
-                      <span className="text-[8px] font-medium text-coffee-400 sm:hidden">
-                        {isAm ? 'ወደ ጎን ያንሸራትቱ' : 'Swipe for more'}
-                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (showProductSearch) {
+                            setProductSearch('')
+                            setShowProductSearch(false)
+                          } else {
+                            setShowProductSearch(true)
+                          }
+                        }}
+                        aria-expanded={showProductSearch}
+                        aria-controls="pos-product-search"
+                        aria-label={isAm ? 'ምርት ይፈልጉ' : 'Search for a product'}
+                        className="inline-flex min-h-8 items-center gap-1 rounded-lg px-2 text-[10px] font-bold text-berbere-600 transition hover:bg-berbere-50 active:scale-95"
+                      >
+                        <Search className="h-3.5 w-3.5" aria-hidden="true" />
+                        {isAm ? 'ፈልግ' : 'Search'}
+                      </button>
                     </div>
                     <POSCategories
                       categories={categories}
@@ -1193,6 +1206,39 @@ export default function SalesPage() {
                       onSelectCategory={setSelectedCategoryId}
                       isAm={isAm}
                     />
+
+                    {showProductSearch && (
+                      <div
+                        role="search"
+                        id="pos-product-search"
+                        aria-label={isAm ? 'ምርቶችን ፈልግ' : 'Search products'}
+                        className="absolute right-2 top-0 z-40 w-[min(22rem,calc(100vw-1.5rem))] rounded-xl border border-cream-300 bg-white p-1.5 shadow-elevated"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <POSSearch
+                            value={productSearch}
+                            onChange={setProductSearch}
+                            resultCount={filteredProducts.length}
+                            showResultCount={false}
+                            isAm={isAm}
+                            placeholder={isAm ? 'ምርት በስም ይፈልጉ' : 'Type a product name'}
+                            autoFocus
+                            className="!min-w-0 !flex-1 !p-0"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowProductSearch(false)
+                              setProductSearch('')
+                            }}
+                            aria-label={isAm ? 'ዝጋ' : 'Close search'}
+                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-coffee-500 hover:bg-cream-100"
+                          >
+                            <X className="h-4 w-4" aria-hidden="true" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </section>
               </div>

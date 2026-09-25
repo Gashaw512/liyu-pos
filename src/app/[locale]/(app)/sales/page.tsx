@@ -1,3 +1,4 @@
+// src/app/[locale]/(app)/sales/page.tsx
 'use client'
 
 import {
@@ -7,7 +8,7 @@ import {
   useState,
 } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { Coins, Loader2, Save } from 'lucide-react'
+import { Coins, LayoutGrid, Loader2 } from 'lucide-react'
 
 import { getDB } from '../../../../lib/offline/db'
 import type { Shift } from '../../../../types/database/operations'
@@ -20,6 +21,7 @@ import POSTableSelector from '@/components/pos/POSTableSelector'
 import POSCategories from '@/components/pos/POSCategories'
 import POSProductGrid from '@/components/pos/POSProductGrid'
 import POSCheckout from '@/components/pos/POSCheckout'
+import SellerDailyStatement from '@/components/pos/SellerDailyStatement'
 import POSSearch from '@/components/ui/Search'
 
 import { useToast } from '@/components/ui/ToastProvider'
@@ -311,6 +313,18 @@ export default function SalesPage() {
     businessContextLoading,
     loadPOSData,
   ])
+
+  useEffect(() => {
+    const refreshCatalog = () => {
+      void loadPOSData()
+    }
+
+    window.addEventListener('liyu:sync-complete', refreshCatalog)
+
+    return () => {
+      window.removeEventListener('liyu:sync-complete', refreshCatalog)
+    }
+  }, [loadPOSData])
 
   // ==========================================================
   // DERIVED DATA
@@ -943,53 +957,6 @@ export default function SalesPage() {
   }
 
   // ==========================================================
-  // DIRECT SAVE BUTTON
-  // ==========================================================
-
-  const DirectSaveOrderButton = () => {
-    if (
-      !selectedTable ||
-      !cartHasItems ||
-      !hasUnsavedChanges
-    ) {
-      return null
-    }
-
-    return (
-      <button
-        type="button"
-        onClick={() => void handleSaveTab()}
-        disabled={savingTab}
-        className="
-          flex h-10 items-center justify-center gap-1.5
-          rounded-xl bg-coffee-900 px-3 text-xs font-black
-          text-white shadow-md transition-all duration-200
-          hover:-translate-y-0.5 hover:bg-coffee-800
-          hover:shadow-lg active:scale-95
-          disabled:cursor-not-allowed disabled:opacity-60
-          sm:h-11 sm:px-4 sm:text-sm
-        "
-      >
-        {savingTab ? (
-          <>
-            <Loader2 className="h-4 w-4 animate-spin" />
-            <span>
-              {isAm ? 'በማስቀመጥ ላይ...' : 'Saving...'}
-            </span>
-          </>
-        ) : (
-          <>
-            <Save className="h-4 w-4" />
-            <span>
-              {isAm ? 'አስቀምጥ' : 'Save'}
-            </span>
-          </>
-        )}
-      </button>
-    )
-  }
-
-  // ==========================================================
   // LOADING
   // ==========================================================
 
@@ -1117,7 +1084,6 @@ export default function SalesPage() {
       <div className="relative z-50 shrink-0">
         <POSHeader
           isAm={isAm}
-          activeShift={activeShift}
           selectedTable={selectedTable}
           totalItems={totalItems}
           totalBill={totalBill}
@@ -1128,6 +1094,25 @@ export default function SalesPage() {
           onToggleBill={() =>
             setBillOpen((current) => !current)
           }
+          onCheckout={() => {
+            setShowCheckout(true)
+            setBillOpen(false)
+          }}
+          hasUnsavedTableOrder={Boolean(
+            selectedTable && cartHasItems && hasUnsavedChanges,
+          )}
+          savingTab={savingTab}
+          onSaveOrder={handleSaveTab}
+          todayReport={(
+            <SellerDailyStatement
+              businessId={businessId}
+              branchId={branchId}
+              cashierId={activeShift.cashier_id ?? userId}
+              locale={locale}
+              isAm={isAm}
+              initiallyExpanded
+            />
+          )}
         />
 
         {/* CURRENT BILL */}
@@ -1165,17 +1150,22 @@ export default function SalesPage() {
                 lg:px-4 lg:pb-6 lg:pt-2.5
               "
             >
-              {/* TABLE + ACTIONS */}
+              {/* VISIBLE, COMPACT PRODUCT AND TABLE CONTROLS */}
 
-              <section
-                className="
-                  sticky top-0 z-30 shrink-0 overflow-hidden
-                  rounded-lg border border-cream-300 bg-cream-50/95
-                  shadow-sm backdrop-blur-md
-                "
-              >
-                <div className="flex min-h-10 items-center gap-1.5 px-1.5 py-1 sm:px-2">
-                  <div className="min-w-0 flex-1 overflow-hidden">
+              <div className="sticky top-0 z-30 -mx-2 shrink-0 bg-cream-100/95 px-2 pb-1.5 pt-0.5 backdrop-blur-md sm:-mx-3 sm:px-3 lg:-mx-4 lg:px-4">
+                <section className="overflow-hidden rounded-xl border border-cream-300 bg-white shadow-sm">
+                  <div className="border-b border-cream-100 p-1.5 sm:p-2">
+                    <POSSearch
+                      value={productSearch}
+                      onChange={setProductSearch}
+                      resultCount={filteredProducts.length}
+                      isAm={isAm}
+                      placeholder={isAm ? 'ምርት በስም ይፈልጉ' : 'Find a product by name'}
+                      className="!p-0"
+                    />
+                  </div>
+
+                  <div className="border-b border-cream-100 px-2 pt-1.5 sm:px-2.5">
                     <POSTableSelector
                       tables={tables}
                       selectedTable={selectedTable}
@@ -1187,63 +1177,25 @@ export default function SalesPage() {
                     />
                   </div>
 
-                  {cartHasItems && (
-                    <div className="flex shrink-0 items-center gap-1">
-                      {selectedTable &&
-                        hasUnsavedChanges && (
-                          <DirectSaveOrderButton />
-                        )}
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowCheckout(true)
-                          setBillOpen(false)
-                        }}
-                        className="
-                          flex h-8 shrink-0 items-center
-                          justify-center gap-1 rounded-lg
-                          bg-berbere-500 px-2.5 text-[11px]
-                          font-black text-white shadow-sm
-                          transition hover:bg-berbere-600
-                          active:scale-95
-                        "
-                      >
-                        <Coins className="h-3.5 w-3.5" />
-                        <span>
-                          {isAm ? 'ክፍያ' : 'Pay'}
-                        </span>
-                      </button>
+                  <div className="px-1.5 py-1 sm:px-2">
+                    <div className="mb-0.5 flex items-center justify-between gap-2 px-1">
+                      <span className="flex items-center gap-1.5 text-[10px] font-bold text-coffee-600">
+                        <LayoutGrid className="h-3.5 w-3.5 text-berbere-500" aria-hidden="true" />
+                        {isAm ? 'ምርትን በዓይነት ይምረጡ' : 'Choose product type'}
+                      </span>
+                      <span className="text-[8px] font-medium text-coffee-400 sm:hidden">
+                        {isAm ? 'ወደ ጎን ያንሸራትቱ' : 'Swipe for more'}
+                      </span>
                     </div>
-                  )}
-                </div>
-              </section>
-
-              {/* SEARCH + CATEGORIES */}
-
-              <section
-                className="
-                  mt-1.5 shrink-0 overflow-hidden rounded-lg
-                  border border-cream-300 bg-cream-50 shadow-sm
-                  sm:mt-2
-                "
-              >
-                <POSSearch
-                  value={productSearch}
-                  onChange={setProductSearch}
-                  resultCount={filteredProducts.length}
-                  isAm={isAm}
-                />
-
-                <div className="border-t border-cream-200 px-1.5 py-1 sm:px-2">
-                  <POSCategories
-                    categories={categories}
-                    selectedCategoryId={selectedCategoryId}
-                    onSelectCategory={setSelectedCategoryId}
-                    isAm={isAm}
-                  />
-                </div>
-              </section>
+                    <POSCategories
+                      categories={categories}
+                      selectedCategoryId={selectedCategoryId}
+                      onSelectCategory={setSelectedCategoryId}
+                      isAm={isAm}
+                    />
+                  </div>
+                </section>
+              </div>
 
               {/* PRODUCTS */}
 

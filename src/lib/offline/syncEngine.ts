@@ -85,6 +85,10 @@ interface OutboundSyncResult {
   hadWork: boolean
 }
 
+const CATALOG_REFRESH_INTERVAL_MS = 5 * 60 * 1000
+const SYNC_COMPLETE_EVENT = 'liyu:sync-complete'
+const INVENTORY_CHANNEL_NAME = 'liyu-pos-inventory'
+
 /* =========================================================
  * SYNC ENGINE
  * ========================================================= */
@@ -135,23 +139,6 @@ export class SyncEngine {
         await this.syncOutboundTransactions()
 
       // ======================================================
-      // 2. NOTHING WAS WAITING
-      //
-      // This is the major performance fix.
-      //
-      // Do NOT pull /api/products/templates when the local
-      // queues are already empty.
-      // ======================================================
-
-      if (!outboundResult.hadWork) {
-        console.log(
-          '[SYNC] No outbound work. Catalog pull skipped.'
-        )
-
-        return
-      }
-
-      // ======================================================
       // 3. OUTBOUND SYNC FAILED
       //
       // Never replace local state with a server snapshot
@@ -171,13 +158,24 @@ export class SyncEngine {
       }
 
       // ======================================================
-      // 4. PULL SERVER SNAPSHOT
+      // 4. PULL SERVER SNAPSHOT WHEN NEEDED
       //
-      // This now happens ONLY after real outbound work was
-      // successfully confirmed by the server.
+      // A new device has no outbound work, but still needs its
+      // first catalog snapshot. Refresh it on first use, after
+      // successful outbound sync, and periodically when online.
       // ======================================================
 
-      await this.pullLatestProducts()
+      const refreshCatalog =
+        outboundResult.hadWork ||
+        await this.isCatalogRefreshDue()
+
+      if (refreshCatalog) {
+        await this.pullLatestProducts()
+      } else {
+        console.log(
+          '[SYNC] Catalog is current. Pull skipped.'
+        )
+      }
 
       console.log(
         '[SYNC] Synchronization finished successfully.'
@@ -1031,6 +1029,26 @@ export class SyncEngine {
     }
   }
 
+  private async isCatalogRefreshDue(): Promise<boolean> {
+    try {
+      const db = await getDB()
+      const logs = await db.getAll('sync_log')
+      const lastSuccessfulPull = logs
+        .filter((entry) => entry.type === 'catalog_pull' && entry.status === 'success')
+        .reduce((latest, entry) => {
+          const timestamp = Date.parse(entry.timestamp)
+          return Number.isFinite(timestamp) && timestamp > latest
+            ? timestamp
+            : latest
+        }, 0)
+
+      return Date.now() - lastSuccessfulPull >= CATALOG_REFRESH_INTERVAL_MS
+    } catch (error) {
+      console.warn('[SYNC] Could not check catalog freshness; refreshing it.', error)
+      return true
+    }
+  }
+
   // =========================================================
   // COLLECT BUSINESS CONTEXTS
   // =========================================================
@@ -1710,6 +1728,8 @@ export class SyncEngine {
 
       await tx.done
 
+      this.notifyCatalogUpdated()
+
       console.log(
         '[SYNC] Server catalog/inventory pull completed.'
       )
@@ -1726,6 +1746,24 @@ export class SyncEngine {
         '[SYNC] Catalog pull failed:',
         error
       )
+    }
+  }
+
+  private notifyCatalogUpdated(): void {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    window.dispatchEvent(new Event(SYNC_COMPLETE_EVENT))
+
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const channel = new BroadcastChannel(INVENTORY_CHANNEL_NAME)
+        channel.postMessage({ type: SYNC_COMPLETE_EVENT })
+        channel.close()
+      } catch (error) {
+        console.warn('[SYNC] Could not notify other tabs about catalog update.', error)
+      }
     }
   }
 

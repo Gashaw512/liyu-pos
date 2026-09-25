@@ -135,15 +135,10 @@ async function withSaleLock<T>(
     | (() => void)
     | undefined
 
-  let rejectLock:
-    | ((reason?: unknown) => void)
-    | undefined
-
   const lockPromise =
     new Promise<void>(
-      (resolve, reject) => {
+      (resolve) => {
         resolveLock = resolve
-        rejectLock = reject
       },
     )
 
@@ -154,10 +149,9 @@ async function withSaleLock<T>(
 
   try {
     return await operation()
-  } catch (error) {
-    rejectLock?.(error)
-    throw error
   } finally {
+    // Always resolve the coordination promise. Rejecting it can create an
+    // unhandled rejection when no concurrent request is waiting on this lock.
     resolveLock?.()
 
     if (
@@ -1183,6 +1177,61 @@ async function syncSale(
 
         if (saleError) {
           throw saleError
+        }
+      }
+
+      /*
+       * FIFO costing runs from a database trigger on sale_items and expects
+       * an inventory row for every sold product. Some older/catalog products
+       * can be sold before a branch inventory row exists. Create a zero-stock
+       * row first so the sale can sync and the existing negative-stock/FIFO
+       * fallback behavior can account for the sold quantity.
+       *
+       * Ignore conflicts to avoid overwriting a live inventory balance.
+       */
+      const productIds = [
+        ...new Set(
+          items
+            .map((item) => item.product_id)
+            .filter(Boolean),
+        ),
+      ]
+
+      if (productIds.length > 0) {
+        const {
+          data: validProducts,
+          error: productsError,
+        } = await supabase
+          .from('products')
+          .select('id')
+          .eq('business_id', sale.business_id)
+          .in('id', productIds)
+
+        if (productsError) {
+          throw productsError
+        }
+
+        const validProductIds = new Set(
+          (validProducts ?? []).map((product) => product.id),
+        )
+        const missingInventoryRows = [...validProductIds].map((productId) => ({
+          business_id: sale.business_id,
+          branch_id: sale.branch_id,
+          product_id: productId,
+          quantity: 0,
+        }))
+
+        if (missingInventoryRows.length > 0) {
+          const { error: inventorySeedError } = await supabase
+            .from('inventory')
+            .upsert(missingInventoryRows, {
+              onConflict: 'branch_id,product_id',
+              ignoreDuplicates: true,
+            })
+
+          if (inventorySeedError) {
+            throw inventorySeedError
+          }
         }
       }
 

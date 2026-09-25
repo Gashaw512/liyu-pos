@@ -24,8 +24,8 @@ export default function POSCategories({
   isAm,
 }: POSCategoriesProps) {
   return (
-    <div className="sticky top-0 z-20 bg-cream-100 py-2">
-      <div className="flex gap-2 overflow-x-auto pb-1 subtle-scrollbar">
+    <div className="py-0.5">
+      <div className="flex gap-1.5 overflow-x-auto py-0.5 subtle-scrollbar">
         <CategoryButton
           active={selectedCategoryId === 'all'}
           label={isAm ? 'ሁሉም' : 'All'}
@@ -63,19 +63,19 @@ function CategoryButton({
       type="button"
       onClick={onClick}
       className={[
-        'flex h-12 min-w-[76px] shrink-0 items-center gap-1.5',
-        'justify-center rounded-xl border px-3',
-        'text-xs font-black transition active:scale-[0.97]',
+        'flex h-11 min-w-[68px] shrink-0 items-center gap-1',
+        'justify-center rounded-lg border px-2.5',
+        'text-[11px] font-black transition active:scale-[0.97]',
         active
           ? 'border-berbere-500 bg-berbere-500 text-white shadow-card'
           : 'border-cream-300 bg-cream-50 text-coffee-700 hover:border-berbere-300',
       ].join(' ')}
     >
-      <span className={active ? 'text-gold-300' : 'text-berbere-500'}>
+      <span className={active ? 'text-gold-300 [&>svg]:h-3.5 [&>svg]:w-3.5' : 'text-berbere-500 [&>svg]:h-3.5 [&>svg]:w-3.5'}>
         {icon}
       </span>
 
-      <span className="max-w-[80px] truncate">
+      <span className="max-w-[72px] truncate">
         {label}
       </span>
     </button>

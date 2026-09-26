@@ -4,6 +4,7 @@ import { ReactNode } from 'react'
 import { redirect } from 'next/navigation'
 import { createClient } from '../../../lib/supabase/server'
 import AppShell from '../../../components/layout/AppShell'
+import OfflineAwareAppShell from '../../../components/layout/OfflineAwareAppShell'
 import { ToastProvider } from '../../../components/ui/ToastProvider'
 
 interface AuthenticatedGroupLayoutProps {
@@ -79,15 +80,22 @@ export default async function AuthenticatedGroupLayout({
   // ============================================================
 
   return (
-     <ToastProvider>
-    <AppShell
-      locale={locale}
-      role={profile.role}
-      fullName={profile.full_name}
-      businessName={businessData?.name || 'LIYU POS'}
-    >
-      {children}
-    </AppShell>
-   </ToastProvider>
+    <ToastProvider>
+      <OfflineAwareAppShell
+        locale={locale}
+        role={profile.role}
+        fullName={profile.full_name}
+        businessName={businessData?.name || 'LIYU POS'}
+      >
+        <AppShell
+          locale={locale}
+          role={profile.role}
+          fullName={profile.full_name}
+          businessName={businessData?.name || 'LIYU POS'}
+        >
+          {children}
+        </AppShell>
+      </OfflineAwareAppShell>
+    </ToastProvider>
   )
 }

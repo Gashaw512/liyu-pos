@@ -88,6 +88,7 @@ interface OutboundSyncResult {
 const CATALOG_REFRESH_INTERVAL_MS = 5 * 60 * 1000
 const SYNC_COMPLETE_EVENT = 'liyu:sync-complete'
 const INVENTORY_CHANNEL_NAME = 'liyu-pos-inventory'
+const SHIFT_REPORT_STATUS_EVENT = 'liyu:shift-report-status'
 
 /* =========================================================
  * SYNC ENGINE
@@ -1050,15 +1051,35 @@ export class SyncEngine {
             actualCash: closure.actualCash,
           }),
         })
-        const result = await response.json().catch(() => null) as { success?: boolean; error?: string } | null
+        const result = await response.json().catch(() => null) as { success?: boolean; status?: string; error?: string } | null
         if (!response.ok || !result?.success) throw new Error(result?.error || `HTTP ${response.status}`)
+        if (result.status === 'sending' || result.status === 'pending') {
+          await db.put('pending_shift_closures', {
+            ...closure,
+            attempts: closure.attempts + 1,
+            lastError: 'Report delivery is still in progress.',
+          })
+          window.dispatchEvent(new CustomEvent(SHIFT_REPORT_STATUS_EVENT, {
+            detail: { reportId: closure.reportId, status: 'queued' },
+          }))
+          continue
+        }
         await db.delete('pending_shift_closures', closure.reportId)
+        window.dispatchEvent(new CustomEvent(SHIFT_REPORT_STATUS_EVENT, {
+          detail: {
+            reportId: closure.reportId,
+            status: result.status === 'disabled' ? 'disabled' : 'sent',
+          },
+        }))
       } catch (error) {
         await db.put('pending_shift_closures', {
           ...closure,
           attempts: closure.attempts + 1,
           lastError: error instanceof Error ? error.message.slice(0, 300) : 'Report send failed',
         })
+        window.dispatchEvent(new CustomEvent(SHIFT_REPORT_STATUS_EVENT, {
+          detail: { reportId: closure.reportId, status: 'queued' },
+        }))
         console.warn('[SYNC] Shift report delivery remains queued for retry.', { reportId: closure.reportId })
       }
     }

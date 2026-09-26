@@ -8,7 +8,7 @@ import {
   useState,
 } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { Coins, LayoutGrid, Loader2, Search, X } from 'lucide-react'
+import { CheckCircle2, Clock3, Coins, LayoutGrid, Loader2, Search, Send, WifiOff, X } from 'lucide-react'
 
 import { getDB } from '../../../../lib/offline/db'
 import type { Shift } from '../../../../types/database/operations'
@@ -23,6 +23,7 @@ import POSProductGrid from '@/components/pos/POSProductGrid'
 import POSCheckout from '@/components/pos/POSCheckout'
 import SellerDailyStatement from '@/components/pos/SellerDailyStatement'
 import POSSearch from '@/components/ui/Search'
+import CloseShiftDialog from '@/components/pos/CloseShiftDialog'
 
 import { useToast } from '@/components/ui/ToastProvider'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
@@ -53,6 +54,13 @@ import {
   restoreCartFromTab,
   saveTableTab
 } from '@/components/pos/posUtils'
+
+type ShiftReportDeliveryStatus = 'queued' | 'sent' | 'disabled'
+
+interface ClosedShiftFeedback {
+  reportId: string
+  status: ShiftReportDeliveryStatus
+}
 
 // ============================================================
 // PAGE
@@ -96,6 +104,16 @@ export default function SalesPage() {
   const [savingTab, setSavingTab] = useState(false)
   const [openingShift, setOpeningShift] = useState(false)
   const [closingShift, setClosingShift] = useState(false)
+  const [closedShiftFeedback, setClosedShiftFeedback] = useState<ClosedShiftFeedback | null>(null)
+  const [closeShiftDialogOpen, setCloseShiftDialogOpen] = useState(false)
+  const [actualCashCount, setActualCashCount] = useState('')
+
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean
+    title: string
+    message: string
+    onConfirm: (() => void) | null
+  }>({ open: false, title: '', message: '', onConfirm: null })
 
   const [cashFloat, setCashFloat] =
     useState(DEFAULT_CASH_FLOAT)
@@ -107,25 +125,28 @@ export default function SalesPage() {
   const [savedCartSnapshot, setSavedCartSnapshot] =
     useState(EMPTY_CART_SNAPSHOT)
 
-  const [confirmDialog, setConfirmDialog] = useState<{
-    open: boolean
-    title: string
-    message: string
-    onConfirm: (() => void) | null
-  }>({
+  const closeConfirmDialog = () => setConfirmDialog({
     open: false,
     title: '',
     message: '',
     onConfirm: null,
   })
 
-  const closeConfirmDialog = () =>
-    setConfirmDialog({
-      open: false,
-      title: '',
-      message: '',
-      onConfirm: null,
-    })
+  useEffect(() => {
+    const handleShiftReportStatus = (event: Event) => {
+      const detail = (event as CustomEvent<ClosedShiftFeedback>).detail
+      if (!detail?.reportId) return
+
+      setClosedShiftFeedback((current) =>
+        current?.reportId === detail.reportId
+          ? { reportId: detail.reportId, status: detail.status }
+          : current,
+      )
+    }
+
+    window.addEventListener('liyu:shift-report-status', handleShiftReportStatus)
+    return () => window.removeEventListener('liyu:shift-report-status', handleShiftReportStatus)
+  }, [])
 
   // =========================================================
   // LEGACY SHIFT REPAIR
@@ -706,6 +727,8 @@ export default function SalesPage() {
         newShift,
       )
 
+      setClosedShiftFeedback(null)
+      setActualCashCount('')
       setActiveShift(
         newShift,
       )
@@ -756,21 +779,22 @@ export default function SalesPage() {
 
   const handleCloseShift = async () => {
     if (closingShift) return
+    if (!activeShift) return
 
-    setConfirmDialog({
-      open: true,
-      title: isAm ? 'ፈረቃ ዝጋ' : 'Close shift',
-      message: isAm
-        ? 'የአሁኑን ፈረቃ መዝጋት ይፈልጋሉ?'
-        : 'Are you sure you want to close this shift?',
-      onConfirm: () => {
-        closeConfirmDialog()
-        void closeShift()
-      },
-    })
+    if (hasUnsavedChanges || (cartHasItems && !selectedTable)) {
+      toast(
+        isAm
+          ? 'ፈረቃውን ከመዝጋትዎ በፊት ክፍያውን ያጠናቅቁ ወይም ትዕዛዙን ያስቀምጡ።'
+          : 'Finish payment or save the current order before closing the shift.',
+        'warning',
+      )
+      return
+    }
+
+    setCloseShiftDialogOpen(true)
   }
 
-  const closeShift = async () => {
+  const closeShift = async (countedCash: number | null) => {
     if (closingShift) return
 
     setClosingShift(true)
@@ -779,22 +803,26 @@ export default function SalesPage() {
       const db = await getDB()
 
       if (activeShift) {
+        const reportId = activeShift.report_id || crypto.randomUUID()
         await db.put('pending_shift_closures', {
-          reportId: activeShift.report_id || crypto.randomUUID(),
+          reportId,
           businessId: activeShift.business_id,
           branchId: activeShift.branch_id,
           cashierId: activeShift.cashier_id,
           openedAt: activeShift.opened_at,
           closedAt: new Date().toISOString(),
           openingCash: Number(activeShift.opening_cash) || 0,
-          actualCash: activeShift.actual_cash == null ? null : Number(activeShift.actual_cash) || 0,
+          actualCash: countedCash,
           attempts: 0,
         })
+        setClosedShiftFeedback({ reportId, status: 'queued' })
       }
 
       await db.delete('active_shift', 'current')
 
       setActiveShift(null)
+      setCloseShiftDialogOpen(false)
+      setActualCashCount('')
       setCart([])
       setSelectedTable(null)
       setSavedCartSnapshot(EMPTY_CART_SNAPSHOT)
@@ -806,7 +834,7 @@ export default function SalesPage() {
       toast(
         isAm
           ? 'ፈረቃው ተዘግቷል'
-          : 'Shift closed. The report will be sent when notifications are enabled and connected.',
+          : 'Shift closed. Sales are saved; check the report status on this screen.',
         'success',
       )
 
@@ -829,6 +857,19 @@ export default function SalesPage() {
     } finally {
       setClosingShift(false)
     }
+  }
+
+  const confirmCloseShift = () => {
+    const countedCash = actualCashCount.trim() === '' ? null : Number(actualCashCount)
+    if (countedCash !== null && (!Number.isFinite(countedCash) || countedCash < 0)) {
+      toast(
+        isAm ? 'እባክዎ ትክክለኛ የካሽ መጠን ያስገቡ።' : 'Enter a valid cash count, or leave the field blank.',
+        'warning',
+      )
+      return
+    }
+
+    void closeShift(countedCash)
   }
 
   // ==========================================================
@@ -1002,7 +1043,7 @@ export default function SalesPage() {
 
   if (!activeShift) {
     return (
-      <div className="flex h-dvh items-center justify-center bg-coffee-900 p-4">
+      <div className="flex min-h-dvh items-center justify-center overflow-y-auto bg-coffee-900 p-4">
         <div className="w-full max-w-sm overflow-hidden rounded-3xl bg-cream-50 shadow-elevated">
           <div className="bg-coffee-900 px-6 py-7 text-center text-white">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-gold-400/15">
@@ -1019,6 +1060,46 @@ export default function SalesPage() {
                 : 'Enter the starting cash float to begin selling.'}
             </p>
           </div>
+
+          {closedShiftFeedback && (
+            <div
+              role="status"
+              className={`mx-4 mt-4 flex items-start gap-3 rounded-2xl border p-3.5 ${
+                closedShiftFeedback.status === 'sent'
+                  ? 'border-berbere-200 bg-berbere-50 text-berbere-800'
+                  : closedShiftFeedback.status === 'disabled'
+                    ? 'border-cream-300 bg-cream-100 text-coffee-700'
+                    : 'border-gold-200 bg-gold-50 text-gold-800'
+              }`}
+            >
+              <span className="mt-0.5 shrink-0">
+                {closedShiftFeedback.status === 'sent' ? (
+                  <CheckCircle2 className="h-5 w-5" />
+                ) : closedShiftFeedback.status === 'disabled' ? (
+                  <WifiOff className="h-5 w-5" />
+                ) : (
+                  <Clock3 className="h-5 w-5" />
+                )}
+              </span>
+              <div>
+                <p className="text-xs font-black">
+                  {closedShiftFeedback.status === 'sent'
+                    ? isAm ? 'ሪፖርቱ ተልኳል' : 'Shift report sent'
+                    : closedShiftFeedback.status === 'disabled'
+                      ? isAm ? 'ሪፖርት አልተላከም' : 'Report was not sent'
+                      : isAm ? 'ሪፖርቱ ለመላክ ተጠብቋል' : 'Report is waiting to send'}
+                </p>
+                <p className="mt-1 text-[11px] leading-4 opacity-80">
+                  {closedShiftFeedback.status === 'sent'
+                    ? isAm ? 'ሪፖርቱ ለንግድዎ ነቅተው ላሉ ተቀባዮች ደርሷል።' : 'The report reached this business’s enabled Telegram recipients.'
+                    : closedShiftFeedback.status === 'disabled'
+                      ? isAm ? 'ባለቤቱ በቅንብር ውስጥ የሪፖርት መላክን ማንቃት አለበት።' : 'Ask the owner to enable Telegram reports in settings.'
+                      : isAm ? 'ግንኙነት ሲመለስ በራሱ እንደገና ይሞክራል።' : 'It will retry automatically when the connection is available.'}
+                </p>
+              </div>
+              {closedShiftFeedback.status === 'sent' && <Send className="ml-auto mt-0.5 h-4 w-4 shrink-0" />}
+            </div>
+          )}
 
           <div className="space-y-4 p-5">
             <div>
@@ -1327,18 +1408,25 @@ export default function SalesPage() {
         )}
       </div>
 
-      {/* CONFIRMATION UI */}
-
       <ConfirmDialog
         open={confirmDialog.open}
         title={confirmDialog.title}
         message={confirmDialog.message}
         confirmLabel={isAm ? 'አዎ' : 'Continue'}
         cancelLabel={isAm ? 'ሰርዝ' : 'Cancel'}
-        onConfirm={() => {
-          confirmDialog.onConfirm?.()
-        }}
+        onConfirm={() => confirmDialog.onConfirm?.()}
         onCancel={closeConfirmDialog}
+      />
+
+      <CloseShiftDialog
+        open={closeShiftDialogOpen}
+        isAm={isAm}
+        openingCash={Number(activeShift?.opening_cash) || 0}
+        actualCash={actualCashCount}
+        busy={closingShift}
+        onActualCashChange={setActualCashCount}
+        onConfirm={confirmCloseShift}
+        onCancel={() => setCloseShiftDialogOpen(false)}
       />
     </div>
   )

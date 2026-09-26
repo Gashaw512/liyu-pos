@@ -7,14 +7,41 @@ import { isAllowedNotificationRole, selectEnabledBusinessRecipients } from '../s
 import { telegramSendDocument, telegramSendMessage } from '../src/lib/shift-reports/telegram.ts'
 
 test('creates a valid PDF with every product line over multiple pages', () => {
-  const lines = ['LIYU POS SHIFT REPORT', ...Array.from({ length: 105 }, (_, index) => `Product ${index + 1} | 2 | 120.00 ETB`)]
-  const pdf = createShiftReportPdf(lines)
+  const report = {
+    businessName: 'Aman Bar',
+    branchName: 'Main Branch',
+    staffName: 'Gashaw Kidanu',
+    openedAt: '9/25/2026, 6:52:36 PM',
+    closedAt: '9/25/2026, 6:58:24 PM',
+    summary: [{ label: 'Sales', value: '12,345.00 ETB' }],
+    payments: [{ method: 'Cash', amount: 12345 }],
+    products: Array.from({ length: 105 }, (_, index) => ({ name: `Product ${index + 1}`, quantity: 2, sales: 120 })),
+  }
+  const pdf = createShiftReportPdf(report)
   const text = pdf.toString('latin1')
   assert.ok(text.startsWith('%PDF-1.4'))
   assert.ok(text.includes('%%EOF'))
-  assert.match(text, /\/Count 3\b/)
+  assert.match(text, /\/Count [2-9]\b/)
   for (let index = 1; index <= 105; index++) assert.ok(text.includes(`Product ${index}`), `missing product ${index}`)
   assert.ok(text.includes('120.00 ETB'))
+  assert.ok(text.includes('SHIFT SUMMARY'))
+  assert.ok(text.includes('QTY SOLD'))
+})
+
+test('renders a clear empty shift and removes unsupported glyphs instead of question marks', () => {
+  const pdf = createShiftReportPdf({
+    businessName: 'Aman Bar',
+    branchName: 'ዋና ቅርንጫፍ (Main Branch)',
+    staffName: 'Staff member',
+    openedAt: '9/25/2026, 6:52 PM',
+    closedAt: '9/25/2026, 6:58 PM',
+    summary: [],
+    payments: [],
+    products: [],
+  }).toString('latin1')
+  assert.ok(pdf.includes('Main Branch'))
+  assert.ok(pdf.includes('No sales were recorded during this shift.'))
+  assert.ok(!pdf.includes('????'))
 })
 
 test('encrypts credentials and detects ciphertext tampering', () => {

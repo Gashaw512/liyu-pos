@@ -11,6 +11,7 @@ import {
   ShoppingBag,
   X,
 } from 'lucide-react'
+import { getEffectiveCatalog } from '@/lib/catalog/guard'
 
 /* ============================================================
    TYPES
@@ -42,71 +43,6 @@ export interface RecordTodaysSalesProps {
 }
 
 /* ============================================================
-   DEMO DATA
-   Replace this later with your real products from Supabase/
-   IndexedDB.
-   ============================================================ */
-
-const DEMO_PRODUCTS: Product[] = [
-  {
-    id: 'beer-st-george',
-    name: 'St. George Beer',
-    available: 100,
-    unit: 'bottle',
-    categoryId: 'beer',
-    categoryName: 'Beer',
-  },
-  {
-    id: 'beer-walia',
-    name: 'Walia Beer',
-    available: 40,
-    unit: 'bottle',
-    categoryId: 'beer',
-    categoryName: 'Beer',
-  },
-  {
-    id: 'tej',
-    name: 'Tej',
-    available: 30,
-    unit: 'glass',
-    categoryId: 'tej',
-    categoryName: 'Tej',
-  },
-  {
-    id: 'water-ambo',
-    name: 'Ambo Water',
-    available: 50,
-    unit: 'bottle',
-    categoryId: 'water',
-    categoryName: 'Water',
-  },
-  {
-    id: 'water-highland',
-    name: 'Highland Water',
-    available: 30,
-    unit: 'bottle',
-    categoryId: 'water',
-    categoryName: 'Water',
-  },
-  {
-    id: 'coca-cola',
-    name: 'Coca Cola',
-    available: 40,
-    unit: 'bottle',
-    categoryId: 'soft-drinks',
-    categoryName: 'Soft Drinks',
-  },
-  {
-    id: 'sprite',
-    name: 'Sprite',
-    available: 30,
-    unit: 'bottle',
-    categoryId: 'soft-drinks',
-    categoryName: 'Soft Drinks',
-  },
-]
-
-/* ============================================================
    CATEGORY ICONS
 
    These are only visual helpers.
@@ -131,7 +67,7 @@ export default function RecordTodaysSales({
   locale,
   businessName,
   isAm = false,
-  products = DEMO_PRODUCTS,
+  products,
   onBack,
   onSave,
 }: RecordTodaysSalesProps) {
@@ -142,6 +78,8 @@ export default function RecordTodaysSales({
    */
   void locale
   void businessName
+
+  const catalog = getEffectiveCatalog(products)
 
   /* ==========================================================
      STATE
@@ -180,10 +118,10 @@ export default function RecordTodaysSales({
     const query = search.trim().toLowerCase()
 
     if (!query) {
-      return products
+      return catalog
     }
 
-    return products.filter((product) => {
+    return catalog.filter((product) => {
       const productName =
         product.name.toLowerCase()
 
@@ -195,7 +133,7 @@ export default function RecordTodaysSales({
         categoryName.includes(query)
       )
     })
-  }, [products, search])
+  }, [catalog, search])
 
   /* ==========================================================
      GROUP PRODUCTS BY CATEGORY
@@ -238,7 +176,7 @@ export default function RecordTodaysSales({
      ========================================================== */
 
   const selectedItems = useMemo(() => {
-    return products
+    return catalog
       .map((product) => ({
         ...product,
         quantity:
@@ -247,7 +185,7 @@ export default function RecordTodaysSales({
       .filter(
         (product) => product.quantity > 0,
       )
-  }, [products, quantities])
+  }, [catalog, quantities])
 
   /* ==========================================================
      TOTAL QUANTITY SOLD
@@ -617,20 +555,21 @@ export default function RecordTodaysSales({
 
         <section>
           {categories.length === 0 ? (
-            /* NO RESULTS */
+            /* NO CATALOG */
 
             <div
               className="
                 rounded-2xl
                 border
-                border-cream-200
+                border-dashed
+                border-cream-300
                 bg-white
                 px-5
                 py-10
                 text-center
               "
             >
-              <Search
+              <ShoppingBag
                 className="
                   mx-auto
                   h-6
@@ -648,8 +587,8 @@ export default function RecordTodaysSales({
                 "
               >
                 {t(
-                  'No items found',
-                  'እቃ አልተገኘም',
+                  'No products available',
+                  'ምንም ምርቶች የሉም',
                 )}
               </p>
 
@@ -661,8 +600,8 @@ export default function RecordTodaysSales({
                 "
               >
                 {t(
-                  'Try another name.',
-                  'ሌላ ስም ይሞክሩ።',
+                  'Add your product catalog first, then record sales.',
+                  'ምርት ዝርዝር ካስገቡ በኋላ ሽያጭ ይመዘገባል።',
                 )}
               </p>
             </div>

@@ -1,125 +1,202 @@
 # Liyu POS
 
-Liyu POS is a point-of-sale and business operations app built for day-to-day work in Ethiopian shops and hospitality businesses. It brings sales, shifts, stock, expenses, and reporting together in one mobile-friendly workspace. The interface supports English and Amharic, and ETB is used throughout the sales and reporting flows.
+A premium, mobile-first POS and operations platform for Ethiopian businesses that need speed, clarity, and reliability in the real world.
 
-The project is designed to keep checkout useful when a connection is unreliable: sales can be recorded locally and synchronized when the device is back online. The browser's local database is a working cache and queue, so it should be allowed to finish its initial data load before a device is used for offline selling.
+Liyu POS is built for shops, cafés, bars, hotels, and small retail businesses operating in environments where internet access is inconsistent, staff turnover is high, and daily cash reconciliation matters. It combines point-of-sale workflows, staff management, inventory monitoring, and operational reporting into one elegant system built for daily execution.
 
-## What's in the app
+## Why teams choose Liyu POS
 
-- **Point of sale:** browse and search products, filter by category, record sales and payments, and review a seller’s own daily statement.
-- **Shifts and cash:** open and close staff shifts, enter counted cash, and review the shift summary.
-- **Inventory:** view stock, receive stock with its purchase cost, and review inventory valuation.
-- **FIFO costing:** inventory receipts create cost layers. Sales consume the oldest available layer first, and sale allocations preserve the cost used for historical profit calculations.
-- **Dashboard and expenses:** review business performance, stock alerts, and expense records.
-- **Reports:** open daily, weekly, monthly, and custom-range sales reports, with print/PDF support on the daily report.
-- **Shift report delivery:** an owner or other authorized user can configure business-specific Telegram recipients. Closing a shift can produce a PDF report and route it to enabled recipients for that business.
-- **Offline synchronization:** IndexedDB stores the local catalog and pending work. The sync engine sends queued sales and related operations to the authenticated server endpoint and handles retryable failures.
-- **Installable web app:** production builds generate a service worker; PWA support is disabled during local development.
+- Lightning-fast checkout for busy retail and hospitality teams
+- Offline-first behavior when connectivity drops during the day
+- English and Amharic support for local staff and business owners
+- Cash and shift reconciliation designed for real store operations
+- Clear reporting that helps owners spot losses, margin leaks, and sales trends
+- A web experience that works like a reliable retail tool, not a generic admin dashboard
 
-WhatsApp shift-report delivery is not implemented yet. Telegram uses one server-configured bot, while each business manages its own enabled recipients. These are current product boundaries, not setup options.
+## Product snapshot
 
-## Technology
+### Core capabilities
 
-- Next.js 16 with the App Router and React 19
+- Point-of-sale selling with product browsing, filters, cart flow, and payment handling
+- Shift opening and closing with cash counts and discrepancy checks
+- Inventory review, stock counts, and valuation-aware stock tracking
+- Dashboard metrics for revenue, profit, stock alerts, and daily summaries
+- Expense logging and operational reporting
+- Telegram-enabled shift report delivery for configured business recipients
+- Offline synchronization through IndexedDB and retry-safe sync flows
+- Installable PWA experience for devices used in-store
+
+### Business value
+
+Liyu POS helps businesses move from spreadsheet chaos to a structured operational system without adding friction for staff. The platform is designed to keep front-line work simple while giving owners the confidence to monitor performance and act quickly.
+
+---
+
+## Product architecture at a glance
+
+The current repository reflects a production-minded architecture built around a Next.js app, Supabase backend, and local-first operational flow.
+
+### System layers
+
+- Frontend: Next.js 16 + React 19 + TypeScript + Tailwind
+- App state: Zustand + React Query
+- Data and auth: Supabase Auth and Postgres
+- Local operations: IndexedDB for queued and cached work
+- Reporting: dashboard, shift, and PDF/report generation utilities
+- Delivery: Telegram-based shift report messaging
+
+### Repository map
+
+- [src/app](src/app) — route structure, locale-aware pages, and API handlers
+- [src/components](src/components) — domain UI modules for dashboard, inventory, POS, reports, management, and shared screens
+- [src/lib](src/lib) — calculations, offline logic, auth, reports, and app services
+- [src/stores](src/stores) — local state for inventory, cart, auth, reports, and shifts
+- [src/hooks](src/hooks) — behavioral hooks for permissions, online status, sync, and store workflows
+- [src/queries](src/queries) — data access and query logic
+- [src/services](src/services) — business logic and access rules
+- [src/types](src/types) — typed domain structures and database contracts
+- [src/i18n](src/i18n) — messages and locale configuration
+- [supabase/migrations](supabase/migrations) — database schema and security evolution
+- [tests](tests) — validation for critical operational flows
+
+---
+
+## User roles by screen
+
+The app is structured around real business responsibilities. The roles below reflect the system’s current access model and how screens are intended to behave.
+
+| Role | Primary use | Typical screens | Access pattern |
+| --- | --- | --- | --- |
+| Owner | Controls the business and sees the full picture | Dashboard, Reports, Management, Staff, Shift close, Settings | Full visibility and admin authority |
+| Manager | Oversight and operational control | Dashboard, Sales, Inventory, Reports, Management | Broad operational access without owner-only controls |
+| Cashier | Day-to-day selling and shift work | POS, Shift workflow, Dashboard summary | Limited to sales and relevant shift context |
+| Inventory Clerk | Stock movement and counts | Inventory, Stock review, Inventory adjustments | Access focused on stock operations |
+
+### Screen-level access summary
+
+| Screen / area | Owner | Manager | Cashier | Inventory Clerk |
+| --- | --- | --- | --- | --- |
+| Dashboard | Full | Full | Summary only | Limited |
+| POS / Sales | Full | Full | Full | No |
+| Inventory | Full | Full | View only | Full |
+| Reports | Full | Full | Own shift only / restricted | No |
+| Staff / Management | Full | Full / partial depending on operation | No | No |
+| Shift close | Full | Full | Full for own shift | No |
+| Settings / business controls | Full | Partial | No | No |
+
+This is aligned with the project’s role model and navigation permissions implemented in the app structure, especially in the shared navigation and authorization logic.
+
+---
+
+## Core workflows
+
+### 1. Shift workflow
+
+A cashier opens a shift, processes sales throughout the day, and closes the shift with cash reconciliation. The owner or manager can review the closing summary and delivery activity.
+
+### 2. POS workflow
+
+The cashier selects products, builds a cart, chooses a payment method, and completes a sale. The system keeps the operation fast and understandable on mobile devices.
+
+### 3. Inventory workflow
+
+Stock clerks and managers can review inventory, count stock, and reconcile counts against expected values. The app supports a low-friction inventory check without heavy manual entry.
+
+### 4. Reporting workflow
+
+The reporting layer summarizes sales, costs, margin, and discrepancies so owners can understand what happened in a day or week. Shift reports can also be delivered to Telegram recipients.
+
+### 5. Offline workflow
+
+The app caches product and operational data locally, queues pending work, and syncs it when the device reconnects. This keeps the experience resilient in low-connectivity conditions.
+
+---
+
+## Technology stack
+
+- Next.js 16 with App Router
+- React 19
 - TypeScript
-- Supabase Auth and Postgres, accessed with `@supabase/ssr` and `@supabase/supabase-js`
-- IndexedDB (`idb`) for local operational data and pending synchronization
 - Tailwind CSS 4
-- `next-intl` for localized routes and messages
-- A generated service worker for production PWA support
+- Supabase Auth and Postgres
+- `@supabase/ssr` and `@supabase/supabase-js`
+- Zustand for client-side state
+- React Query for data access
+- IndexedDB (`idb`) for local-first persistence
+- `next-intl` for localization
+- PWA support for installable store-friendly workflows
 
-## Run locally
+---
+
+## Local setup
 
 ### Requirements
 
-- Node.js 20.9 or later and npm
-- A Supabase project (or a local Supabase stack) with this repository’s migrations applied
+- Node.js 20.9 or later
+- npm
+- A Supabase project or local Supabase stack
 
-Install dependencies from the committed lockfile:
+### Install
 
 ```bash
 npm ci
 ```
 
-Create `.env.local` in the repository root and add the values for your Supabase project:
+### Environment configuration
+
+Create a local `.env.local` file:
 
 ```dotenv
 NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_OR_PUBLISHABLE_KEY
-```
-
-The public Supabase URL and anon/publishable key are used by the browser and server clients. Never put a service-role key or other secret in a variable prefixed with `NEXT_PUBLIC_`.
-
-Some server-side operations need additional configuration:
-
-```dotenv
 SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVER_ONLY_SERVICE_ROLE_KEY
 MESSAGING_ENCRYPTION_KEY=YOUR_SERVER_ONLY_ENCRYPTION_KEY
 TELEGRAM_BOT_TOKEN_ENCRYPTED=YOUR_ENCRYPTED_TELEGRAM_BOT_TOKEN
 ```
 
-Keep these values in local environment configuration and your deployment platform’s **server-side runtime environment**. Do not commit `.env.local`, paste secrets into source files, or expose them in browser responses or logs. `.env*` files are ignored by Git. The Telegram bot token is encrypted with the project’s `MESSAGING_ENCRYPTION_KEY`; see [Telegram shift reports](#telegram-shift-reports) for setup. The encryption key must remain stable across deployments so stored credentials can still be decrypted.
+Important notes:
 
-Apply the SQL migrations under [`supabase/migrations`](supabase/migrations) to the intended database using your team's Supabase migration workflow. Review each migration and confirm the target project before applying it; do not use production as a development database.
+- `NEXT_PUBLIC_*` values are public by design
+- Service-role credentials, Telegram tokens, and encryption keys are server-only
+- Never commit secrets or plaintext credentials to the repo
 
-Start the development server:
+### Run
 
 ```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Local development uses Webpack and does not generate/register the production service worker.
+Open http://localhost:3000
+
+---
 
 ## Common commands
 
 | Command | Purpose |
 | --- | --- |
-| `npm run dev` | Start the local Next.js development server. |
-| `npm run build` | Create the production build. |
-| `npm start` | Serve a previously created production build. |
-| `npm run lint` | Run ESLint. |
-| `npx tsc --noEmit` | Check TypeScript without emitting files. |
-| `npm test` | Run the shift-report PDF, encryption, delivery, and tenant-routing tests. |
-| `npm run encrypt:telegram-bot` | Encrypt a Telegram bot token for server configuration. |
+| `npm run dev` | Start the local dev server |
+| `npm run build` | Build the production app |
+| `npm start` | Start the built app |
+| `npm run lint` | Run ESLint |
+| `npx tsc --noEmit` | Type-check the project |
+| `npm test` | Run project tests |
+| `npm run encrypt:telegram-bot` | Encrypt the Telegram bot token |
 
-The test script uses Node's built-in test runner and the native TypeScript stripping flag. Use a Node release that supports `--experimental-strip-types` when running it.
+---
 
-## Telegram shift reports
+## Security and reliability
 
-Shift reports use one Telegram bot configured for the application. Recipient lists and the enabled state belong to individual businesses. The closing request is associated with the authenticated user and shift; the server resolves the business and sends only to that business's enabled recipients. The browser does not choose the tenant for delivery.
+- Tenant data is protected by Supabase Auth and database-level authorization rules
+- UI visibility is not a substitute for true permission checks
+- Local queueing protects operational work during temporary outages
+- Shift reporting is tenant-scoped and resolved server-side before delivery
+- External messaging is designed to be idempotent and retry-safe
 
-1. Set the server-only `MESSAGING_ENCRYPTION_KEY` on the deployment environment. It must be a 32-byte key in the format accepted by [`src/lib/shift-reports/crypto.ts`](src/lib/shift-reports/crypto.ts). Keep it private and stable.
-2. Provide the bot token to the encryption script through the secure local setup described by the script, then run `npm run encrypt:telegram-bot`. Store the resulting ciphertext as `TELEGRAM_BOT_TOKEN_ENCRYPTED` in the server runtime environment. Do not commit the token or ciphertext.
-3. In the app, open **Management > Shift report messages**, add each recipient's Telegram chat ID, enable the intended recipients, save, and use **Test all enabled recipients**.
-4. Close a shift to generate and deliver its PDF report. Failed deliveries are retained for retry, and delivery records protect against duplicate notifications.
+---
 
-The bot token and encryption key are never settings to share with a business recipient. Business users manage only their own recipient list. WhatsApp is currently shown as unavailable because Meta document-delivery credentials and integration are not present.
+## Quality checks
 
-## Where to look in the code
-
-| Area | Location |
-| --- | --- |
-| Local persistence and sync | [`src/lib/offline`](src/lib/offline), [`src/app/api/sync/route.ts`](src/app/api/sync/route.ts) |
-| POS and shift workflows | [`src/app/[locale]/(app)/sales`](src/app/%5Blocale%5D/%28app%29/sales), [`src/components/pos`](src/components/pos), [`src/components/shifts`](src/components/shifts) |
-| Inventory and stock receipt UI | [`src/app/[locale]/(app)/inventory`](src/app/%5Blocale%5D/%28app%29/inventory), [`src/components/inventory`](src/components/inventory) |
-| Dashboard and expenses | [`src/app/[locale]/(app)/dashboard`](src/app/%5Blocale%5D/%28app%29/dashboard), [`src/components/dashboard`](src/components/dashboard) |
-| Sales reports | [`src/app/[locale]/(app)/reports`](src/app/%5Blocale%5D/%28app%29/reports), [`src/lib/reports`](src/lib/reports), [`src/components/reports`](src/components/reports) |
-| Telegram report generation and delivery | [`src/lib/shift-reports`](src/lib/shift-reports), [`src/app/api/shift-reports`](src/app/api/shift-reports) |
-| Supabase schema history | [`supabase/migrations`](supabase/migrations) |
-| Automated checks | [`tests`](tests), [`.github/workflows`](.github/workflows) |
-
-The database is the shared source of truth for synchronized records. Local IndexedDB exists to support the active device's workflow and its pending queue; clearing browser storage removes that device's cached catalog and unsynchronized local work. Make sure queued work has synchronized before clearing site data or changing devices.
-
-## Data and security notes
-
-- Supabase Auth identifies the current user. Database Row Level Security and server-side authorization protect tenant data; application screens should not treat a client-provided business ID as proof of access.
-- `NEXT_PUBLIC_*` variables are public by design. Service-role credentials, encryption keys, and the Telegram bot token are server-only.
-- Offline records may remain on a device until synchronization succeeds. Keep POS devices controlled by the business and avoid clearing browser data while work is pending.
-- FIFO cost layers track receipt quantity and unit cost. Sale cost allocations are stored against sale items so later receipts do not rewrite the cost of older sales.
-
-## Quality checks and CI
-
-The frontend workflow installs dependencies, runs TypeScript, lint, and a production build. The database workflow validates the Supabase migration sequence. Run the checks locally before submitting a change:
+Before shipping a change, validate the affected area with the smallest relevant checks:
 
 ```bash
 npx tsc --noEmit
@@ -128,12 +205,24 @@ npm test
 npm run build
 ```
 
-If a change affects sales, stock, offline sync, tenant access, or shift delivery, include tests for the affected behavior and for relevant failure or retry paths. A passing build alone does not verify synchronization or tenant isolation.
+If the change affects sales, stock, offline sync, tenant access, or reporting, include tests covering the affected workflow and retry/failure paths.
 
-## Making changes
+---
 
-- Keep business and tenant authorization on the server/database boundary; UI visibility is not an access check.
-- Preserve idempotency when adding work to offline queues or external delivery, since clients and networks may retry requests.
-- Add database changes as reviewed migrations in `supabase/migrations` and keep generated types and application behavior aligned.
-- Prefer small, focused components and services with clear ownership. Keep report presentation separate from data loading and calculations.
-- Verify the smallest relevant test first, then run the broader checks when the change warrants it.
+## Development principles
+
+- Keep business authorization on the server and database boundary
+- Preserve idempotency in sync and outbound delivery flows
+- Prefer clear ownership for modules and services
+- Keep reports separate from calculation logic and presentation
+- Add schema changes as reviewed migrations in [supabase/migrations](supabase/migrations)
+
+---
+
+## Architecture companion
+
+A deeper system view is available in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). It expands on the runtime flow, data model, and operational architecture behind the app.
+
+## Summary
+
+Liyu POS is a practical, resilient commerce platform for Ethiopian businesses that need dependable daily operations, visible margins, and a mobile-first cashier experience. The project balances modern stack choices, local-first reliability, and business-focused UX to serve real-world retail and hospitality workflows.

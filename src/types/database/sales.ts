@@ -76,6 +76,7 @@ export interface SaleItem {
 
   unit_price: number
   cost_price: number
+  cost_total: number
 
   quantity: number
 

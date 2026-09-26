@@ -7,6 +7,9 @@ import type {ShiftLabel,ShiftStatus} from '../enum'
 export interface Shift {
   id: string
 
+  /** Stable local identifier for an idempotent shift report. */
+  report_id?: string
+
   business_id: string
 
   branch_id: string

@@ -11,6 +11,7 @@ interface POSSearchProps {
   placeholder?: string
   ariaLabel?: string
   className?: string
+  autoFocus?: boolean
 }
 
 export default function POSSearch({
@@ -22,11 +23,12 @@ export default function POSSearch({
   placeholder,
   ariaLabel,
   className = '',
+  autoFocus = false,
 }: POSSearchProps) {
   const hasSearch = value.trim().length > 0
 
   return (
-    <div className={`p-2.5 sm:p-3 ${className}`}>
+    <div className={`p-1.5 sm:p-2 ${className}`}>
       <div className="relative">
         <Search
           className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-coffee-400"
@@ -36,6 +38,7 @@ export default function POSSearch({
         <input
           type="search"
           value={value}
+          autoFocus={autoFocus}
           onChange={(event) =>
             onChange(event.target.value)
           }
@@ -51,7 +54,7 @@ export default function POSSearch({
               ? 'ምርት ይፈልጉ'
               : 'Search products')
           }
-          className="h-10 w-full rounded-xl border border-cream-300 bg-cream-100 pl-10 pr-10 text-sm font-bold text-coffee-800 outline-none transition placeholder:text-coffee-400 focus:border-berbere-400 focus:ring-2 focus:ring-berbere-100 sm:h-11"
+          className="h-10 w-full rounded-lg border border-cream-300 bg-cream-50 pl-10 pr-10 text-sm font-bold text-coffee-800 outline-none transition placeholder:text-coffee-400 focus:border-berbere-400 focus:ring-2 focus:ring-berbere-100 sm:h-11"
         />
 
         {hasSearch && (

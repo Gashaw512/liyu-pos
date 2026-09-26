@@ -20,9 +20,15 @@ export function useOnlineStatus() {
     window.addEventListener('online', goOnline)
     window.addEventListener('offline', goOffline)
 
+    // Hydrate a new device's reference catalog on its first online visit,
+    // even when there are no sales or inventory actions waiting to sync.
+    if (navigator.onLine) {
+      void syncEngine.syncAll()
+    }
+
     // Also poll every 30s when online to catch missed syncs
     const interval = setInterval(() => {
-      if (navigator.onLine) syncEngine.syncAll()
+      if (navigator.onLine) void syncEngine.syncAll()
     }, 30_000)
 
     return () => {

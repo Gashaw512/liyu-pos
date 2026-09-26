@@ -57,18 +57,18 @@ export default function POSTableSelector({
           COMPACT HEADER
       ============================================================ */}
 
-      <div className="mb-1.5 flex items-center justify-between gap-2">
+      <div className="mb-1 flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-1.5">
           <Table2
             className="h-4 w-4 shrink-0 text-berbere-500"
             aria-hidden="true"
           />
 
-          <span className="text-[10px] font-black uppercase tracking-wide text-coffee-600">
-            {isAm ? 'ጠረጴዛ' : 'Table'}
+          <span className="text-[10px] font-bold text-coffee-600">
+            {isAm ? 'ጠረጴዛ ይምረጡ' : 'Choose a table'}
           </span>
 
-          <span className="rounded-full bg-cream-200 px-1.5 py-0.5 text-[8px] font-black text-coffee-500">
+          <span className="rounded-full bg-cream-100 px-1.5 py-0.5 text-[8px] font-black text-coffee-500">
             {tables.length}
           </span>
         </div>
@@ -88,7 +88,7 @@ export default function POSTableSelector({
           />
 
           <span className="text-[8px] font-bold text-coffee-400">
-            {isAm ? 'ትዕዛዝ አለ' : 'Has order'}
+            {isAm ? 'ትዕዛዝ አለ' : 'Order open'}
           </span>
         </div>
       </div>
@@ -100,7 +100,7 @@ export default function POSTableSelector({
       <div
         className="
           flex
-          gap-1.5
+          gap-1
           overflow-x-auto
           pb-0.5
           subtle-scrollbar
@@ -131,7 +131,7 @@ export default function POSTableSelector({
               relative
               flex
               h-10
-              min-w-[78px]
+              min-w-[82px]
               shrink-0
               items-center
               justify-center
@@ -210,14 +210,14 @@ export default function POSTableSelector({
                   relative
                   flex
                   h-10
-                  min-w-[78px]
+                  min-w-[64px]
                   shrink-0
                   items-center
                   justify-center
                   rounded-lg
                   border
-                  px-2.5
-                  text-[11px]
+                  px-2
+                  text-[10px]
                   font-black
                   transition-all
                   duration-150

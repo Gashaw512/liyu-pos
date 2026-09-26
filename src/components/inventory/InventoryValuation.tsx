@@ -17,6 +17,12 @@ import type {
 interface ValuationProps {
   products: InventoryProduct[]
   liveStockMap: Record<string, LiveMetaData>
+  fifoCostByProduct: Record<string, { quantity: number; value: number }>
+  fifoCostDataAvailable: boolean
+  pendingReceiptCostByProduct: Record<
+    string,
+    { quantity: number; value: number }
+  >
   isAm: boolean
 }
 
@@ -39,6 +45,9 @@ const COLORS = {
 export default function InventoryValuation({
   products,
   liveStockMap,
+  fifoCostByProduct,
+  fifoCostDataAvailable,
+  pendingReceiptCostByProduct,
   isAm,
 }: ValuationProps) {
   const [isOpen, setIsOpen] = useState(false)
@@ -122,6 +131,38 @@ export default function InventoryValuation({
         Number.isFinite(costPrice) &&
         costPrice >= 0
 
+      const hasFifoCostValue =
+        fifoCostDataAvailable &&
+        !liveStock?.hasPendingTransactions &&
+        Object.prototype.hasOwnProperty.call(
+          fifoCostByProduct,
+          product.id,
+        )
+
+      const pendingReceipt =
+        pendingReceiptCostByProduct[product.id]
+
+      const hasPendingReceipt =
+        pendingReceipt !== undefined &&
+        pendingReceipt.quantity > 0
+
+      const stockBeforePendingReceipts = Math.max(
+        0,
+        currentStock - (pendingReceipt?.quantity ?? 0),
+      )
+
+      const existingStockCost = hasFifoCostValue
+        ? fifoCostByProduct[product.id].value
+        : hasValidCost
+          ? (hasPendingReceipt
+              ? stockBeforePendingReceipts
+              : currentStock) * costPrice
+          : 0
+
+      const costValue =
+        existingStockCost +
+        (hasPendingReceipt ? pendingReceipt.value : 0)
+
       const safeRetailPrice =
         Number.isFinite(retailPrice) &&
           retailPrice >= 0
@@ -130,10 +171,7 @@ export default function InventoryValuation({
 
       totalUnits += currentStock
 
-      if (hasValidCost) {
-        totalCostValue +=
-          currentStock * costPrice
-      }
+      totalCostValue += costValue
 
       totalRetailValue +=
         currentStock * safeRetailPrice
@@ -162,10 +200,7 @@ export default function InventoryValuation({
       categories[category].count +=
         currentStock
 
-      if (hasValidCost) {
-        categories[category].costValue +=
-          currentStock * costPrice
-      }
+      categories[category].costValue += costValue
 
       categories[category].retailValue +=
         currentStock * safeRetailPrice
@@ -202,6 +237,9 @@ export default function InventoryValuation({
   }, [
     products,
     liveStockMap,
+    fifoCostByProduct,
+    fifoCostDataAvailable,
+    pendingReceiptCostByProduct,
     isAm,
   ])
 

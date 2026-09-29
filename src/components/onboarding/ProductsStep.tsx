@@ -1,13 +1,14 @@
 'use client'
 
 import React, { useState } from 'react'
-import { ShoppingBag, Plus, Trash2 } from 'lucide-react'
+import { ShoppingBag, Plus, Sparkles, Trash2 } from 'lucide-react'
 import { TemplateProduct, TemplateCategory } from '../../lib/onboarding/templates'
 
 interface ProductsStepProps {
   isAm: boolean;
   categories?: TemplateCategory[];
   products?: TemplateProduct[];
+  starterProducts: TemplateProduct[];
   setProducts: React.Dispatch<React.SetStateAction<TemplateProduct[]>>;
   onNext: () => void;
   onBack: () => void;
@@ -19,6 +20,7 @@ export default function ProductsStep({
   isAm, 
   categories = [], 
   products = [], 
+  starterProducts,
   setProducts, 
   onNext, 
   onBack,
@@ -31,6 +33,16 @@ export default function ProductsStep({
   // Custom Product Creation Form State
   const [newItemName, setNewItemName] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>(categories[0]?.name || '')
+  const availableStarterProducts = starterProducts.filter(
+    starterProduct => categories.some(
+      category => category.name.trim().toLowerCase() === starterProduct.category_name.trim().toLowerCase(),
+    ),
+  )
+  const remainingStarterProducts = availableStarterProducts.filter(
+    starterProduct => !products.some(
+      product => product.name.trim().toLowerCase() === starterProduct.name.trim().toLowerCase(),
+    ),
+  ).length
 
   // Safely update product properties without corrupting numeric fields into NaN
   const updateProductValue = (
@@ -99,6 +111,19 @@ export default function ProductsStep({
     setProducts(prev => prev.filter((_, idx) => idx !== indexToRemove))
   }
 
+  const addStarterProducts = () => {
+    setProducts((currentProducts) => {
+      const existingNames = new Set(
+        currentProducts.map(product => product.name.trim().toLowerCase()),
+      )
+      const newProducts = availableStarterProducts.filter(
+        product => !existingNames.has(product.name.trim().toLowerCase()),
+      )
+
+      return [...currentProducts, ...newProducts]
+    })
+  }
+
   return (
     <div className="bg-white rounded-3xl shadow-xl border border-[#2B1E1A]/10 p-6 space-y-5 animate-fadeIn w-full max-w-2xl mx-auto">
       
@@ -115,6 +140,34 @@ export default function ProductsStep({
             ? 'አዳዲስ ምርቶችን ይጨምሩ፣ ወይም የእያንዳንዱን መሸጫ እና መግዣ ዋጋ ያስተካክሉ' 
             : 'Add custom items, or easily update your buying and selling prices below'}
         </p>
+      </div>
+
+      <div className="flex flex-col gap-3 border-y border-[#2B1E1A]/10 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-2">
+          <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-gold-500" />
+          <div>
+            <p className="text-xs font-bold text-[#2B1E1A]">
+              {isAm ? 'ምሳሌ ምርቶች አማራጭ ናቸው' : 'Example products are optional'}
+            </p>
+            <p className="mt-0.5 text-[11px] leading-4 text-[#7A6A67]">
+              {isAm
+                ? 'የምሳሌ ስሞችና ዋጋዎች ከተጨመሩ በኋላ እባክዎ ያርትዑ።'
+                : 'Examples are added only when you choose; review names and prices before saving.'}
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={addStarterProducts}
+          disabled={isSaving || remainingStarterProducts === 0}
+          className="min-h-10 shrink-0 rounded-lg border border-cream-300 px-3 text-xs font-bold text-coffee-700 hover:bg-cream-50 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {remainingStarterProducts === 0
+            ? availableStarterProducts.length === 0
+              ? isAm ? 'ለተመረጡት ምድቦች ምሳሌ የለም' : 'No examples match selected categories'
+              : isAm ? 'ምሳሌዎች ታክለዋል' : 'Examples added'
+            : isAm ? 'ምሳሌዎችን ጨምር' : 'Add examples'}
+        </button>
       </div>
 
       {/* Quick Add Custom Item Inline Bar */}

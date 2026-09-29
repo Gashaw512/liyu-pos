@@ -85,6 +85,7 @@ export default function DashboardClientContent({
   businessName,
 
   initialProductCount,
+  initialCategoryCount,
   categoryBreakdown,
   lowStockAlerts,
 
@@ -401,9 +402,36 @@ export default function DashboardClientContent({
               QUICK ACTIONS
           ================================================== */}
 
-          <OwnerActionHeader
+          {/* <OwnerActionHeader
             locale={locale}
-          />
+          /> */}
+
+          {initialProductCount === 0 && (
+            <section className="flex flex-col gap-3 rounded-xl border border-gold-200 bg-gold-50/70 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <h2 className="text-sm font-black text-coffee-900">
+                  {t('Add your first products', 'የመጀመሪያ ምርቶችዎን ያክሉ')}
+                </h2>
+                <p className="mt-1 text-xs leading-5 text-coffee-600">
+                  {t(
+                    'Your catalog is empty. Add your real products and prices whenever you are ready.',
+                    'የምርት ዝርዝርዎ ባዶ ነው። ሲዘጋጁ እውነተኛ ምርቶችዎንና ዋጋዎችን ያክሉ።',
+                  )}
+                </p>
+                <p className="mt-1 text-[10px] font-bold text-coffee-500">
+                  {t('Categories available', 'ያሉ ምድቦች')}: {formatNumber(initialCategoryCount)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => goTo('/management/products/new')}
+                className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-coffee-900 px-4 text-xs font-bold text-white transition hover:bg-coffee-800"
+              >
+                {t('Add product', 'ምርት ጨምር')}
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            </section>
+          )}
 
           {/* ==================================================
               MAIN BUSINESS SUMMARY

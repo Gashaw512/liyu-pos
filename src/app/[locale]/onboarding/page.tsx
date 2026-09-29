@@ -228,7 +228,7 @@ export default function OnboardingPage() {
         // ---------------------------------------------------------------------
 
         setCategories(sectorPackage.categories);
-        setProducts(sectorPackage.products);
+        setProducts([]);
       } catch (error) {
         console.error(
           "[ONBOARDING] Failed reading workspace context:",
@@ -255,28 +255,6 @@ export default function OnboardingPage() {
       cancelled = true;
     };
   }, [supabase, router, locale, isAm]);
-
-  // ---------------------------------------------------------------------------
-  // Sync templates when business type changes
-  //
-  // This only applies during first-time onboarding.
-  // ---------------------------------------------------------------------------
-
-  useEffect(() => {
-    if (loadingMetadata || !hasAccess) {
-      return;
-    }
-
-    const sectorPackage =
-      getSectorTemplatePackage(businessType);
-
-    setCategories(sectorPackage.categories);
-    setProducts(sectorPackage.products);
-  }, [
-    businessType,
-    loadingMetadata,
-    hasAccess,
-  ]);
 
   // ---------------------------------------------------------------------------
   // Normalize category names before sending to orchestrator
@@ -722,6 +700,7 @@ export default function OnboardingPage() {
               isAm={isAm}
               categories={categories}
               products={products}
+              starterProducts={getSectorTemplatePackage(businessType).products}
               setProducts={setProducts}
               onNext={handleNext}
               onBack={handleBack}

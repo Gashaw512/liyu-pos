@@ -41,7 +41,7 @@ export default function ReviewStep({
     hours: isAm ? 'የስራ ሰዓት' : 'Operating Hours',
     categories: isAm ? 'የምርት ምድቦች' : 'Product Categories',
     products: isAm ? 'የምርቶች ብዛት' : 'Total Products',
-    autoCategorized: isAm ? '*በምድብ የተከፋፈሉ' : '*Auto-categorized',
+    autoCategorized: isAm ? '*ምሳሌ ምርቶች አማራጭ ናቸው' : '*Example products are optional',
     unspecified: isAm ? 'አልተጠቀሰም' : 'Not specified',
     fixSetup: isAm ? 'ማስተካከያ' : 'Fix Setup',
     finish: isAm ? 'አዋቅርና ጨርስ' : 'Finish & Open',

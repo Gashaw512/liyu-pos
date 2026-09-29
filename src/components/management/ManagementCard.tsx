@@ -4,15 +4,17 @@
 import Link from 'next/link'
 import { ChevronRight } from 'lucide-react'
 import { Route } from 'next';
+import type { ReactNode } from 'react'
 
 interface ManagementCardProps {
   title: string;
   description: string;
+  icon?: ReactNode;
   // emoji: string;
   route: string;
 }
 
-export default function ManagementCard({ title, description,  route }: ManagementCardProps) {
+export default function ManagementCard({ title, description, icon, route }: ManagementCardProps) {
   return (
     <Link 
       href={route as Route}
@@ -20,7 +22,7 @@ export default function ManagementCard({ title, description,  route }: Managemen
     >
       <div className="flex items-center gap-3.5 min-w-0">
         <span className="text-2xl select-none shrink-0 group-hover:scale-110 transition-transform duration-200">
-    
+          {icon}
         </span>
         <div className="flex flex-col min-w-0">
           <span className="font-black text-xs text-coffee-900 tracking-tight">

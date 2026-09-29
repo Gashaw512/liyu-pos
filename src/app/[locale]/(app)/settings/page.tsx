@@ -4,6 +4,19 @@ import React from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 
+interface SettingsMenuItem {
+  name: string;
+  desc: string;
+  icon: string;
+  href: string;
+  isLanguageToggle?: boolean;
+}
+
+interface SettingsMenuGroup {
+  title: string;
+  items: SettingsMenuItem[];
+}
+
 export default function SettingsPage() {
   const params = useParams();
   const router = useRouter();
@@ -15,7 +28,7 @@ export default function SettingsPage() {
   const currentOperator = { name: "Abraham Kassa", role: "Manager" };
 
   // 🛠️ Simple actionable list matching system architecture requirements
-  const menuGroups = [
+  const menuGroups: SettingsMenuGroup[] = [
     {
       title: isAm ? "የመደብር መዋቅር" : "Business Configuration",
       items: [
@@ -28,7 +41,6 @@ export default function SettingsPage() {
       title: isAm ? "የደህንነት ቁጥጥር" : "Account & Security",
       items: [
         { name: isAm ? "ቋንቋ መቀየሪያ" : "Switch Language", desc: isAm ? "ወደ አማርኛ / English ይቀይሩ" : "Toggle system interface language", icon: "🌐", href: locale === "am" ? "/en/settings" : "/am/settings", isLanguageToggle: true },
-        { name: isAm ? "የይለፍ ቃል" : "Change Passcode", desc: isAm ? "ደህንነቱ የተጠበቀ መግቢያ ኮድ" : "Update your 4-digit quick terminal PIN", icon: "🔐", href: `/${locale}/settings/security` },
       ]
     }
   ];

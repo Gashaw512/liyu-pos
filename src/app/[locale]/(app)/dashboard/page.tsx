@@ -501,28 +501,44 @@ export default async function DashboardOverviewPage({
      6. GET DASHBOARD REPORT
      ========================================================== */
 
-  const report =
-    await getDashboardReport({
+  const [report, categoryResult, productResult] = await Promise.all([
+    getDashboardReport({
       businessId,
-      userId:
-        user.id,
-
-      /**
-       * PostgreSQL DATE range.
-       *
-       * Used by expenses.expense_date.
-       */
+      userId: user.id,
       fromDate,
       toDate,
-
-      /**
-       * PostgreSQL TIMESTAMP range.
-       *
-       * Used by sales.created_at.
-       */
       from,
       to,
-    })
+    }),
+    supabase
+      .from('categories')
+      .select('id', { count: 'exact', head: true })
+      .eq('business_id', businessId)
+      .eq('is_active', true)
+      .is('deleted_at', null),
+    supabase
+      .from('products')
+      .select('id', { count: 'exact', head: true })
+      .eq('business_id', businessId)
+      .eq('is_active', true)
+      .is('deleted_at', null),
+  ])
+
+  if (categoryResult.error) {
+    console.error('[DASHBOARD] Category count lookup failed:', categoryResult.error)
+  }
+
+  const categoryCount = categoryResult.error
+    ? report.inventory.totalCategories
+    : categoryResult.count ?? 0
+
+  if (productResult.error) {
+    console.error('[DASHBOARD] Product count lookup failed:', productResult.error)
+  }
+
+  const productCount = productResult.error
+    ? report.inventory.totalProducts
+    : productResult.count ?? 0
 
   /* ==========================================================
      7. BUSINESS NAME
@@ -596,13 +612,11 @@ export default async function DashboardOverviewPage({
       ------------------------------------------------------ */
 
       initialProductCount={
-        report.inventory
-          .totalProducts
+        productCount
       }
 
       initialCategoryCount={
-        report.inventory
-          .totalCategories
+        categoryCount
       }
 
       /* ------------------------------------------------------

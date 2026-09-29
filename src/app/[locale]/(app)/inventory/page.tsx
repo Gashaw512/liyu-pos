@@ -20,6 +20,7 @@ import { getDB } from "@/lib/offline/db";
 import { toast } from "@/lib/utils/toast";
 import { getLocalInventoryProducts } from "@/hooks/useInventoryData";
 import { useInventoryActions } from "@/hooks/useInventoryActions";
+import { syncEngine } from "@/lib/offline/syncEngine";
 import { computeLiveLocalStock } from "@/lib/calculations/stockCalculator";
 
 import { SearchInput } from "@/components/ui/SearchInput";
@@ -127,6 +128,9 @@ export default function InventoryPage() {
 
   // Receive stock
   const [showReceiveModal, setShowReceiveModal] =
+    useState(false);
+
+  const [isRefreshingReceiveCatalog, setIsRefreshingReceiveCatalog] =
     useState(false);
 
   const [receiveProductId, setReceiveProductId] =
@@ -1042,6 +1046,41 @@ export default function InventoryPage() {
       ],
     );
 
+  const handleOpenReceiveModal =
+    useCallback(async (): Promise<void> => {
+      setShowReceiveModal(true);
+
+      if (
+        typeof navigator === "undefined" ||
+        !navigator.onLine
+      ) {
+        return;
+      }
+
+      setIsRefreshingReceiveCatalog(true);
+
+      try {
+        const refreshed = await syncEngine.refreshCatalog();
+
+        if (refreshed) {
+          const latestProducts = await getLocalInventoryProducts();
+
+          if (mountedRef.current) {
+            setProducts(latestProducts);
+          }
+        }
+      } catch (error) {
+        console.warn(
+          "[InventoryPage] Could not refresh products for stock receipt; using the local catalog.",
+          error,
+        );
+      } finally {
+        if (mountedRef.current) {
+          setIsRefreshingReceiveCatalog(false);
+        }
+      }
+    }, []);
+
   // ==========================================================
   // LOADING
   // ==========================================================
@@ -1077,7 +1116,7 @@ export default function InventoryPage() {
           <div className="flex items-center gap-2">
             <Button
               onClick={() =>
-                setShowReceiveModal(true)
+                void handleOpenReceiveModal()
               }
             >
               <PlusCircle className="h-4 w-4" />
@@ -1253,6 +1292,7 @@ export default function InventoryPage() {
         }
         products={products}
         isAm={isAm}
+        isRefreshingProducts={isRefreshingReceiveCatalog}
         receiveProductId={
           receiveProductId
         }

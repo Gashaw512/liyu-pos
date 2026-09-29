@@ -97,6 +97,25 @@ const SHIFT_REPORT_STATUS_EVENT = 'liyu:shift-report-status'
 export class SyncEngine {
   private isSyncing = false
 
+  public async refreshCatalog(): Promise<boolean> {
+    if (
+      typeof window === 'undefined' ||
+      typeof navigator === 'undefined' ||
+      !navigator.onLine ||
+      this.isSyncing
+    ) {
+      return false
+    }
+
+    this.isSyncing = true
+
+    try {
+      return await this.pullLatestProducts()
+    } finally {
+      this.isSyncing = false
+    }
+  }
+
   // =========================================================
   // PUBLIC ENTRY POINT
   // =========================================================
@@ -1573,7 +1592,7 @@ export class SyncEngine {
   // PULL LATEST SERVER DATA
   // =========================================================
 
-  private async pullLatestProducts(): Promise<void> {
+  private async pullLatestProducts(): Promise<boolean> {
     try {
       console.log(
         '[SYNC] Pulling latest server catalog/inventory...'
@@ -1789,6 +1808,7 @@ export class SyncEngine {
       console.log(
         '[SYNC] Server catalog/inventory pull completed.'
       )
+      return true
     } catch (error) {
       /**
        * IMPORTANT:
@@ -1802,6 +1822,7 @@ export class SyncEngine {
         '[SYNC] Catalog pull failed:',
         error
       )
+      return false
     }
   }
 

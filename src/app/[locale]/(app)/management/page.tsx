@@ -3,12 +3,15 @@
 'use client'
 
 import { useParams } from 'next/navigation'
+import { KeyRound } from 'lucide-react'
+import type { ReactNode } from 'react'
 import ManagementCard from '@/components/management/ManagementCard'
 
 interface ManagementItem {
   title: string
   description: string
   route: string
+  icon?: ReactNode
 }
 
 interface ManagementSection {
@@ -66,6 +69,14 @@ export default function ManagementHubPage() {
             ? 'የተጠቃሚ ሚናዎችን እና ፈቃዶችን ያስተዳድሩ'
             : 'Manage roles and access permissions',
           route: `/${locale}/management/roles`,
+        },
+        {
+          title: isAm ? 'የይለፍ ቃል መመለሻ' : 'Password Recovery',
+          description: isAm
+            ? 'የይለፍ ቃልዎን ከረሱ የመመለሻ ኮድ ይፍጠሩ'
+            : 'Create and save a recovery code in case you forget your password',
+          route: `/${locale}/management/security`,
+          icon: <KeyRound className="h-5 w-5" />,
         },
         {
           title: isAm ? 'የስራ ፈረቃ' : 'Shifts',
@@ -185,6 +196,7 @@ export default function ManagementHubPage() {
                     <ManagementCard
                       title={item.title}
                       description={item.description}
+                      icon={item.icon}
                       route={item.route}
                     />
 

@@ -85,6 +85,7 @@ export default function DashboardClientContent({
   businessName,
 
   initialProductCount,
+  initialCategoryCount,
   categoryBreakdown,
   lowStockAlerts,
 
@@ -401,9 +402,49 @@ export default function DashboardClientContent({
               QUICK ACTIONS
           ================================================== */}
 
-          <OwnerActionHeader
+          {/* <OwnerActionHeader
             locale={locale}
-          />
+          /> */}
+
+          {(initialProductCount === 0 || initialCategoryCount === 0) && (
+            <section className="flex flex-col gap-3 rounded-xl border border-coffee-200 bg-coffee-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <h2 className="text-sm font-black text-coffee-900">
+                  {initialCategoryCount === 0
+                    ? t('Create your first category', 'የመጀመሪያ ምድብዎን ይፍጠሩ')
+                    : t('Add your first products', 'የመጀመሪያ ምርቶችዎን ያክሉ')}
+                </h2>
+                <p className="mt-1 text-xs leading-5 text-coffee-600">
+                  {initialCategoryCount === 0
+                    ? t(
+                      'Create a category first. You can add products to it next.',
+                      'መጀመሪያ ምድብ ይፍጠሩ። ከዚያ ምርቶችን ወደዚያ ማከል ይችላሉ።',
+                    )
+                    : t(
+                      'Your catalog has no products yet. Add real products and prices under one of your categories.',
+                      'የምርት ዝርዝርዎ ገና ባዶ ነው። በምድቦችዎ ስር እውነተኛ ምርቶችንና ዋጋዎችን ያክሉ።',
+                    )}
+                </p>
+                {initialCategoryCount > 0 && (
+                  <p className="mt-1 text-[10px] font-bold text-coffee-500">
+                    {t('Categories ready', 'የተዘጋጁ ምድቦች')}: {formatNumber(initialCategoryCount)}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => goTo(initialCategoryCount === 0
+                  ? '/management/categories/new'
+                  : '/management/products/new')}
+                className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-coffee-900 px-4 text-xs font-bold text-white transition hover:bg-coffee-800"
+              >
+                {initialCategoryCount === 0
+                  ? t('Create category', 'ምድብ ፍጠር')
+                  : t('Add product', 'ምርት ጨምር')}
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            </section>
+          )}
 
           {/* ==================================================
               MAIN BUSINESS SUMMARY

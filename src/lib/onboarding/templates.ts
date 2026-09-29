@@ -22,7 +22,7 @@ export interface TemplateProduct {
   name_am: string;     // Local Amharic name parameter
   cost_price: number;  // Standardized database snake_case naming columns
   retail_price: number;
-  unit_type: 'piece' | 'kg' | 'liter' | 'packet' | 'service';
+  unit_type: 'piece' | 'kg' | 'liter' | 'packet';
   low_stock_alert: number;
   track_inventory: boolean;
   category_name: string; // Relational anchor connecting back to the category name index
@@ -95,7 +95,7 @@ const SECTOR_PACKAGES: Record<BusinessType, OnboardingSectorPackage> = {
       { name: 'Services', name_am: 'አገልግሎቶች', icon: '🛎️', color: '#4B5563', sort_order: 1 }
     ],
     products: [
-      { name: 'Standard Service Charge', name_am: 'መደበኛ የአገልግሎት ክፍያ', cost_price: 0, retail_price: 200, unit_type: 'service', low_stock_alert: 0, track_inventory: false, category_name: 'Services' }
+      { name: 'Standard Service Charge', name_am: 'መደበኛ የአገልግሎት ክፍያ', cost_price: 0, retail_price: 200, unit_type: 'piece', low_stock_alert: 0, track_inventory: false, category_name: 'Services' }
     ]
   },
   other: {

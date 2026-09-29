@@ -1,8 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { SyncEngine } from '../lib/offline/syncEngine'
-
-const syncEngine = new SyncEngine()
+import { syncEngine } from '../lib/offline/syncEngine'
 
 export function useOnlineStatus() {
   const [isOnline, setIsOnline] = useState(

@@ -1,6 +1,6 @@
 "use client";
 
-import type { FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
@@ -11,6 +11,7 @@ interface Props {
   onClose: () => void;
 
   products: InventoryProduct[];
+  isRefreshingProducts: boolean;
 
   isAm: boolean;
 
@@ -34,6 +35,7 @@ export default function ReceiveStockModal({
   open,
   onClose,
   products,
+  isRefreshingProducts,
   isAm,
 
   receiveProductId,
@@ -48,6 +50,36 @@ export default function ReceiveStockModal({
   onSubmit,
   t,
 }: Props) {
+  const [selectedCategoryId, setSelectedCategoryId] = useState("");
+
+  const categories = useMemo(() => {
+    const categoryMap = new Map<string, string>();
+
+    for (const product of products) {
+      const categoryId = product.category_id ?? "uncategorized";
+      const categoryName = isAm
+        ? product.category_name_am || product.category_name
+        : product.category_name;
+
+      categoryMap.set(categoryId, categoryName);
+    }
+
+    return Array.from(categoryMap, ([id, name]) => ({ id, name }))
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }, [products, isAm]);
+
+  const activeCategoryId = categories.some(
+    category => category.id === selectedCategoryId,
+  )
+    ? selectedCategoryId
+    : "";
+
+  const visibleProducts = activeCategoryId
+    ? products.filter(
+        product => (product.category_id ?? "uncategorized") === activeCategoryId,
+      )
+    : products;
+
   return (
     <Modal
       open={open}
@@ -58,6 +90,36 @@ export default function ReceiveStockModal({
         onSubmit={onSubmit}
         className="space-y-5"
       >
+        {isRefreshingProducts && (
+          <p role="status" className="text-xs font-medium text-coffee-500">
+            {t("Refreshing products from your catalog…", "ምርቶችን ከዝርዝርዎ በማደስ ላይ…")}
+          </p>
+        )}
+
+        {categories.length > 0 && (
+          <div>
+            <label className="mb-2 block text-xs font-bold text-coffee-500">
+              {t("Product Category / Type", "የምርት ምድብ / ዓይነት")}
+            </label>
+            <select
+              value={activeCategoryId}
+              onChange={(event) => {
+                setSelectedCategoryId(event.target.value);
+                setReceiveProductId("");
+                setReceiveUnitCost(0);
+              }}
+              className="w-full min-h-[48px] rounded-xl border border-cream-300 bg-white px-4 text-sm outline-none focus:ring-2 focus:ring-coffee-300"
+            >
+              <option value="">{t("All categories", "ሁሉም ምድቦች")}</option>
+              {categories.map(category => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {/* Product */}
         <div>
           <label className="mb-2 block text-xs font-bold text-coffee-500">
@@ -92,7 +154,7 @@ export default function ReceiveStockModal({
               text-sm
               outline-none
               focus:ring-2
-              focus:ring-berbere-300
+              focus:ring-coffee-300
             "
           >
             <option value="">
@@ -102,17 +164,24 @@ export default function ReceiveStockModal({
               )}
             </option>
 
-            {products.map((product) => (
+            {visibleProducts.map((product) => (
               <option
                 key={product.id}
                 value={product.id}
               >
                 {isAm && product.name_am
                   ? product.name_am
-                  : product.name}
+                  : product.name} · {product.unit_type}
               </option>
             ))}
           </select>
+          {products.length === 0 && (
+            <p className="mt-2 text-xs text-coffee-500">
+              {isRefreshingProducts
+                ? t("Refreshing your product list…", "የምርት ዝርዝሩ በመታደስ ላይ ነው…")
+                : t("No products are available yet. Add a category and product first.", "ገና ምርት የለም። መጀመሪያ ምድብና ምርት ያክሉ።")}
+            </p>
+          )}
         </div>
 
         {/* Quantity */}
@@ -144,7 +213,7 @@ export default function ReceiveStockModal({
               font-mono
               outline-none
               focus:ring-2
-              focus:ring-berbere-300
+              focus:ring-coffee-300
             "
           />
         </div>
@@ -194,8 +263,8 @@ export default function ReceiveStockModal({
               className="
                 rounded-xl
                 border
-                border-berbere-100
-                bg-berbere-50
+                border-coffee-200
+                bg-coffee-50
                 p-4
               "
             >
@@ -207,7 +276,7 @@ export default function ReceiveStockModal({
                   )}
                 </span>
 
-                <span className="font-bold text-berbere-500">
+                <span className="font-bold text-coffee-900">
                   {(
                     receiveQty *
                     receiveUnitCost
@@ -232,6 +301,7 @@ export default function ReceiveStockModal({
           <Button
             type="submit"
             className="flex-1"
+            disabled={products.length === 0}
           >
             {t(
               "Receive Stock",

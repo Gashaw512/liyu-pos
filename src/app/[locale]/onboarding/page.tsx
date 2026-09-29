@@ -1,6 +1,8 @@
+
+// src/app/[locale]/onboarding/page.tsx
 "use client";
 
-import { useState, useEffect, useTransition, useCallback } from "react";
+import { useState, useEffect, useTransition, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import createClient from "@/lib/supabase/client";
 
@@ -74,6 +76,7 @@ export default function OnboardingPage() {
     useState<TemplateProduct[]>([]);
 
   const [isSaving, setIsSaving] = useState(false);
+  const savingRef = useRef(false);
 
   const [errorMessage, setErrorMessage] =
     useState<string | null>(null);
@@ -119,35 +122,20 @@ export default function OnboardingPage() {
 
   const resolveBusinessId = useCallback(
     async (userId: string): Promise<string> => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const { data: profileRow, error } = await supabase
+        .from("profiles")
+        .select("business_id")
+        .eq("id", userId)
+        .maybeSingle();
 
-      let businessId =
-        user?.user_metadata?.business_id ||
-        user?.app_metadata?.business_id;
-
-      if (!businessId || businessId === "undefined") {
-        const { data: profileRow, error } = await supabase
-          .from("profiles")
-          .select("business_id")
-          .eq("id", userId)
-          .maybeSingle();
-
-        if (error) {
-          throw error;
-        }
-
-        businessId = profileRow?.business_id;
-      }
-
-      if (!businessId) {
+      if (error) throw error;
+      if (!profileRow?.business_id) {
         throw new Error(
           "Missing active business identification context",
         );
       }
 
-      return businessId;
+      return profileRow.business_id;
     },
     [supabase],
   );
@@ -240,7 +228,7 @@ export default function OnboardingPage() {
         // ---------------------------------------------------------------------
 
         setCategories(sectorPackage.categories);
-        setProducts(sectorPackage.products);
+        setProducts([]);
       } catch (error) {
         console.error(
           "[ONBOARDING] Failed reading workspace context:",
@@ -269,28 +257,6 @@ export default function OnboardingPage() {
   }, [supabase, router, locale, isAm]);
 
   // ---------------------------------------------------------------------------
-  // Sync templates when business type changes
-  //
-  // This only applies during first-time onboarding.
-  // ---------------------------------------------------------------------------
-
-  useEffect(() => {
-    if (loadingMetadata || !hasAccess) {
-      return;
-    }
-
-    const sectorPackage =
-      getSectorTemplatePackage(businessType);
-
-    setCategories(sectorPackage.categories);
-    setProducts(sectorPackage.products);
-  }, [
-    businessType,
-    loadingMetadata,
-    hasAccess,
-  ]);
-
-  // ---------------------------------------------------------------------------
   // Normalize category names before sending to orchestrator
   // ---------------------------------------------------------------------------
 
@@ -314,15 +280,77 @@ export default function OnboardingPage() {
       .filter(Boolean);
   };
 
+  const saveOnboardingProgress = async (
+    businessId: string,
+    currentStep: string,
+  ) => {
+    const progress = {
+      is_completed: true,
+      current_step: currentStep,
+    };
+    const { data, error } = await supabase
+      .from("onboarding_progress")
+      .update(progress)
+      .eq("business_id", businessId)
+      .select("id");
+
+    if (error) throw error;
+    if (data?.length) return;
+
+    const { error: insertError } = await supabase
+      .from("onboarding_progress")
+      .insert({ business_id: businessId, ...progress });
+
+    if (insertError) throw insertError;
+  };
+
+  const completeOnboarding = async (
+    userId: string,
+    currentStep: string,
+    destination: "success" | "dashboard",
+  ) => {
+    const { data: profile, error } = await supabase
+      .from("profiles")
+      .update({ onboarding_completed: true })
+      .eq("id", userId)
+      .select("id,business_id")
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!profile) {
+      throw new Error(isAm
+        ? "መገለጫዎን ማዘመን አልተቻለም። የprofiles የማዘመን ፈቃድዎን ያረጋግጡ።"
+        : "Your profile could not be updated. Check the profiles update policy.");
+    }
+
+    if (profile.business_id) {
+      try {
+        await saveOnboardingProgress(profile.business_id, currentStep);
+      } catch (progressError) {
+        console.warn("[ONBOARDING] Progress tracking could not be saved:", progressError);
+      }
+    }
+
+    if (destination === "success") {
+      goToStep(5);
+      return;
+    }
+
+    startTransition(() => {
+      router.refresh();
+      router.replace(`/${locale}/dashboard`);
+    });
+  };
+
   // ---------------------------------------------------------------------------
   // Skip onboarding
   //
-  // "Skip" still provisions the workspace with the selected templates and
-  // marks onboarding complete. This is intentionally not a permanent bypass
-  // of the owner-only access rule.
+  // Skipping completes onboarding without seeding starter categories/products.
   // ---------------------------------------------------------------------------
 
   const handleSkipAll = async () => {
+    if (savingRef.current) return;
+    savingRef.current = true;
     setIsSaving(true);
     setErrorMessage(null);
 
@@ -337,55 +365,19 @@ export default function OnboardingPage() {
         return;
       }
 
-      const businessId = await resolveBusinessId(user.id);
-
-      await setupBusiness(supabase, {
-        businessType,
-        openTime,
-        closeTime,
-        categories: getNormalizedCategoryNames(),
-        products,
-      });
-
-      const { error: progressError } = await supabase
-        .from("onboarding_progress")
-        .upsert({
-          business_id: businessId,
-          is_completed: true,
-          current_step: "skipped",
-        });
-
-      if (progressError) {
-        throw progressError;
-      }
-
-      const { error: profileError } = await supabase
-        .from("profiles")
-        .update({
-          onboarding_completed: true,
-        })
-        .eq("id", user.id);
-
-      if (profileError) {
-        throw profileError;
-      }
-
-      startTransition(() => {
-        router.refresh();
-        router.replace(`/${locale}/dashboard`);
-      });
+      await completeOnboarding(user.id, "skipped", "dashboard");
     } catch (error) {
       console.error(
         "[ONBOARDING] Failed to skip onboarding:",
         error,
       );
 
-      setErrorMessage(
+      setErrorMessage(error instanceof Error ? error.message :
         isAm
           ? "ማቀናበሩን ማጠናቀቅ አልተሳካም። እባክዎ ድጋሚ ይሞክሩ።"
-          : "Could not complete setup. Please try again.",
-      );
+          : "Could not complete setup. Please try again.");
     } finally {
+      savingRef.current = false;
       setIsSaving(false);
     }
   };
@@ -395,6 +387,8 @@ export default function OnboardingPage() {
   // ---------------------------------------------------------------------------
 
   const handleSaveWorkspace = async () => {
+    if (savingRef.current) return;
+    savingRef.current = true;
     setIsSaving(true);
     setErrorMessage(null);
 
@@ -409,8 +403,6 @@ export default function OnboardingPage() {
         return;
       }
 
-      const businessId = await resolveBusinessId(user.id);
-
       await setupBusiness(supabase, {
         businessType,
         openTime,
@@ -419,42 +411,19 @@ export default function OnboardingPage() {
         products,
       });
 
-      const { error: progressError } = await supabase
-        .from("onboarding_progress")
-        .upsert({
-          business_id: businessId,
-          is_completed: true,
-          current_step: "completed",
-        });
-
-      if (progressError) {
-        throw progressError;
-      }
-
-      const { error: profileError } = await supabase
-        .from("profiles")
-        .update({
-          onboarding_completed: true,
-        })
-        .eq("id", user.id);
-
-      if (profileError) {
-        throw profileError;
-      }
-
-      goToStep(5);
+      await completeOnboarding(user.id, "completed", "success");
     } catch (error) {
       console.error(
         "[ONBOARDING] Failed saving workspace:",
         error,
       );
 
-      setErrorMessage(
+      setErrorMessage(error instanceof Error ? error.message :
         isAm
           ? "ማስቀመጥ አልተሳካም። እባክዎ የኢንተርኔት ግንኙነትዎን አረጋግጠው ድጋሚ ይሞክሩ።"
-          : "Could not complete setup. Please check your connection and try again.",
-      );
+          : "Could not complete setup. Please check your connection and try again.");
     } finally {
+      savingRef.current = false;
       setIsSaving(false);
     }
   };
@@ -466,6 +435,8 @@ export default function OnboardingPage() {
   const handleFinalizeAndRedirect = async (
     openingFloat?: number,
   ) => {
+    if (savingRef.current) return;
+    savingRef.current = true;
     setIsSaving(true);
     setErrorMessage(null);
 
@@ -480,68 +451,49 @@ export default function OnboardingPage() {
         return;
       }
 
-      const businessId = await resolveBusinessId(user.id);
-
-      const { data: primaryBranch, error: branchError } =
-        await supabase
+      try {
+        const businessId = await resolveBusinessId(user.id);
+        const { data: primaryBranch, error: branchError } = await supabase
           .from("branches")
           .select("id")
           .eq("business_id", businessId)
           .eq("is_main", true)
           .maybeSingle();
 
-      if (branchError) {
-        throw branchError;
-      }
+        if (branchError) throw branchError;
 
-      const branchId = primaryBranch?.id || null;
+        if (primaryBranch && openingFloat !== undefined) {
+          const { error: shiftError } = await supabase
+            .from("shifts")
+            .insert({
+              business_id: businessId,
+              branch_id: primaryBranch.id,
+              cashier_id: user.id,
+              opened_by: user.id,
+              opening_cash: Number(openingFloat || 0),
+              shift_label: "Morning",
+              status: "open",
+            });
 
-      // Opening shift is optional.
-      if (branchId && openingFloat !== undefined) {
-        const { error: shiftError } = await supabase
-          .from("shifts")
-          .insert({
-            business_id: businessId,
-            branch_id: branchId,
-            cashier_id: user.id,
-            opened_by: user.id,
-            opening_cash: Number(openingFloat || 0),
-            shift_label: "Morning",
-            status: "open",
-          });
-
-        if (shiftError) {
-          throw shiftError;
+          if (shiftError) throw shiftError;
         }
+      } catch (shiftError) {
+        console.warn("[ONBOARDING] Optional opening shift could not be created:", shiftError);
       }
 
-      const { error: profileError } = await supabase
-        .from("profiles")
-        .update({
-          onboarding_completed: true,
-        })
-        .eq("id", user.id);
-
-      if (profileError) {
-        throw profileError;
-      }
-
-      startTransition(() => {
-        router.refresh();
-        router.replace(`/${locale}/dashboard`);
-      });
+      await completeOnboarding(user.id, "completed", "dashboard");
     } catch (error) {
       console.error(
         "[ONBOARDING] Finalization failed:",
         error,
       );
 
-      setErrorMessage(
+      setErrorMessage(error instanceof Error ? error.message :
         isAm
           ? "ማጠናቀቁ አልተሳካም። እባክዎ ድጋሚ ይሞክሩ።"
-          : "Could not finish setup. Please try again.",
-      );
+          : "Could not finish setup. Please try again.");
     } finally {
+      savingRef.current = false;
       setIsSaving(false);
     }
   };
@@ -554,7 +506,7 @@ export default function OnboardingPage() {
   // user from briefly seeing onboarding before redirecting.
   // ---------------------------------------------------------------------------
 
-  if (loadingMetadata || !hasAccess) {
+  if (loadingMetadata || (!hasAccess && !errorMessage)) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center bg-cream-100 p-4">
         <div className="flex w-full max-w-sm flex-col items-center space-y-4 rounded-3xl border border-coffee-700/10 bg-white p-8 text-center shadow-elevated">
@@ -584,6 +536,24 @@ export default function OnboardingPage() {
     );
   }
 
+  if (!hasAccess && errorMessage) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-cream-100 p-4">
+        <div role="alert" className="w-full max-w-sm space-y-4 rounded-2xl border border-coffee-700/10 bg-white p-6 text-center shadow-elevated">
+          <AlertCircle className="mx-auto h-8 w-8 text-berbere-500" />
+          <p className="text-sm font-bold text-coffee-700">{errorMessage}</p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="min-h-11 rounded-lg bg-berbere-500 px-4 text-sm font-bold text-white hover:bg-berbere-600"
+          >
+            {isAm ? "እንደገና ሞክር" : "Try again"}
+          </button>
+        </div>
+      </main>
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // First-time owner onboarding
   // ---------------------------------------------------------------------------
@@ -595,8 +565,7 @@ export default function OnboardingPage() {
         {/* -----------------------------------------------------------------
             Interactive top header
         ------------------------------------------------------------------ */}
-        {step < 5 && (
-          <div className="space-y-3 rounded-2xl border border-coffee-700/10 bg-white p-4 shadow-elevated">
+        <div className="space-y-3 rounded-2xl border border-coffee-700/10 bg-white p-4 shadow-elevated">
             <div className="flex items-center justify-between gap-4">
               <div className="flex min-w-0 items-center gap-3">
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-berbere-500 text-xs font-black text-white shadow-sm">
@@ -616,17 +585,24 @@ export default function OnboardingPage() {
                 </div>
               </div>
 
-              {/* No edit mode and no dashboard bypass.
-                  This route is intentionally a first-time setup flow. */}
-              {isSaving || isPending ? (
-                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-berbere-500" />
-              ) : null}
+              <button
+                type="button"
+                onClick={() => void handleSkipAll()}
+                disabled={isSaving || isPending}
+                aria-busy={isSaving || isPending}
+                className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg border border-cream-300 px-3 text-xs font-bold text-coffee-700 hover:bg-cream-50 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 sm:text-sm"
+              >
+                {isSaving || isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                <span>{step === 5
+                  ? isAm ? "ወደ ዳሽቦርድ ሂድ" : "Go to Dashboard"
+                  : isAm ? "ማዋቀርን ዝለል / ዳሽቦርድ" : "Skip Setup / Go to Dashboard"}</span>
+              </button>
             </div>
 
             {/* -----------------------------------------------------------------
                 Clickable progress tracker
             ------------------------------------------------------------------ */}
-            <div className="grid grid-cols-5 gap-1.5 pt-1">
+            {step < 5 && <div className="grid grid-cols-5 gap-1.5 pt-1">
               {[0, 1, 2, 3, 4].map((index) => {
                 const isCurrent = index === step;
                 const isPassed = index < step;
@@ -658,9 +634,8 @@ export default function OnboardingPage() {
                   </button>
                 );
               })}
-            </div>
-          </div>
-        )}
+            </div>}
+        </div>
 
         {/* -----------------------------------------------------------------
             Error banner
@@ -681,6 +656,8 @@ export default function OnboardingPage() {
               isAm={isAm}
               businessName={businessName}
               onNext={handleNext}
+              onSkip={handleSkipAll}
+              isSaving={isSaving}
               categoriesCount={
                 Array.isArray(categories)
                   ? categories.length
@@ -714,6 +691,7 @@ export default function OnboardingPage() {
               onNext={handleNext}
               onBack={handleBack}
               onSkip={handleSkipAll}
+              isSaving={isSaving}
             />
           )}
 
@@ -722,10 +700,12 @@ export default function OnboardingPage() {
               isAm={isAm}
               categories={categories}
               products={products}
+              starterProducts={getSectorTemplatePackage(businessType).products}
               setProducts={setProducts}
               onNext={handleNext}
               onBack={handleBack}
               onSkip={handleSkipAll}
+              isSaving={isSaving}
             />
           )}
 

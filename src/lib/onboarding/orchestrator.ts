@@ -31,15 +31,21 @@ const ONBOARDING_CONFIG = {
 
 // Pipeline Step 1: Update operational hours
 const updateBusinessConfigurationStep: OnboardingStepHook = async (ctx) => {
-    const { error } = await ctx.supabase
+    const { data: updatedBusiness, error } = await ctx.supabase
         .from('businesses')
         .update({
             type: ctx.payload.businessType,
-            address: `Hours: ${ctx.payload.openTime} - ${ctx.payload.closeTime}`
+            open_time: ctx.payload.openTime,
+            close_time: ctx.payload.closeTime,
         })
-        .eq('id', ctx.businessId);
+        .eq('id', ctx.businessId)
+        .select('id')
+        .maybeSingle();
 
     if (error) throw new Error(`Business profile update failed: ${error.message}`);
+    if (!updatedBusiness) {
+        throw new Error('Business settings were not updated. Verify the business ID and apply migration 018_sync_existing_profile_roles.sql.');
+    }
     ctx.logs.push('Business configuration updated successfully.');
 };
 
@@ -201,19 +207,14 @@ export async function setupBusiness(supabase: SupabaseClient, payload: SetupPayl
     const { data: { user }, error: userErr } = await supabase.auth.getUser();
     if (userErr || !user) throw new Error('Unauthorized user instance configuration.');
 
-    let businessId = user.user_metadata?.business_id || user.app_metadata?.business_id;
+    const { data: profileRow, error: profileError } = await supabase
+        .from('profiles')
+        .select('business_id')
+        .eq('id', user.id)
+        .maybeSingle();
 
-    if (!businessId) {
-        const { data: profileRow } = await supabase
-            .from('profiles')
-            .select('business_id')
-            .eq('id', user.id)
-            .maybeSingle();
-
-        if (profileRow?.business_id) {
-            businessId = profileRow.business_id;
-        }
-    }
+    if (profileError) throw new Error(`Business profile lookup failed: ${profileError.message}`);
+    const businessId = profileRow?.business_id;
 
     if (!businessId) {
         throw new Error('Workspace Deadlock: Missing a valid business UUID for this profile.');

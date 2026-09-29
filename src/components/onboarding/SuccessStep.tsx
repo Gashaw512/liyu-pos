@@ -5,20 +5,24 @@ import { PartyPopper, Coins, ArrowRight, Loader2 } from 'lucide-react'
 
 interface SuccessStepProps {
   isAm: boolean;
-  onFinalize: (openingFloat: number) => void;
+  onFinalize: (openingFloat: number) => Promise<void>;
 }
 
 export default function SuccessStep({ isAm, onFinalize }: SuccessStepProps) {
   const [cashFloat, setCashFloat] = useState<string>('1000')
   const [submitting, setSubmitting] = useState<boolean>(false)
 
-  const handleSubmit = (e?: React.FormEvent) => {
+  const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
     if (submitting) return
 
     setSubmitting(true)
     const floatNum = Math.max(0, parseFloat(cashFloat) || 0)
-    onFinalize(floatNum)
+    try {
+      await onFinalize(floatNum)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (

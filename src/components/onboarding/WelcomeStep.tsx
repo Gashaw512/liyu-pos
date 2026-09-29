@@ -1,13 +1,13 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
 import { CheckCircle2, Clock, Layers, ShoppingBag, ArrowRight } from 'lucide-react'
 
 interface WelcomeStepProps {
   isAm: boolean;
   businessName: string;
   onNext: () => void;
-  onSkip?: () => void;
+  onSkip: () => void;
+  isSaving: boolean;
   categoriesCount: number;
   productsCount: number;
   isOnboarding?: boolean;
@@ -18,20 +18,11 @@ export default function WelcomeStep({
   businessName, 
   onNext, 
   onSkip,
+  isSaving,
   categoriesCount, 
   productsCount,
   isOnboarding = true
 }: WelcomeStepProps) {
-  const router = useRouter();
-
-  const handleSkipAction = () => {
-    if (onSkip) {
-      onSkip();
-    } else {
-      router.push('/dashboard');
-    }
-  };
-
   return (
     <div className="w-full max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl mx-auto bg-white rounded-2xl md:rounded-3xl shadow-xl border border-cream-200 overflow-hidden transition-all">
       {/* Header Banner - Responsive Padding */}
@@ -139,6 +130,7 @@ export default function WelcomeStep({
           <button 
             type="button"
             onClick={onNext}
+            disabled={isSaving}
             className="w-full py-3.5 md:py-4 px-6 bg-[#8B2635] hover:bg-berbere-700 text-white font-black rounded-xl md:rounded-2xl shadow-md active:scale-[0.99] transition-all text-xs sm:text-sm md:text-base tracking-wide flex items-center justify-center gap-2 group cursor-pointer"
           >
             <span>
@@ -151,7 +143,8 @@ export default function WelcomeStep({
 
           <button
             type="button"
-            onClick={handleSkipAction}
+            onClick={onSkip}
+            disabled={isSaving}
             className="w-full py-2 text-xs sm:text-sm font-bold text-coffee-500 hover:text-coffee-900 transition-colors text-center block underline underline-offset-4 cursor-pointer"
           >
             {isOnboarding 

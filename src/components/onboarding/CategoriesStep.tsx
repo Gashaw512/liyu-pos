@@ -11,6 +11,7 @@ interface CategoriesStepProps {
   onNext: () => void;
   onBack: () => void;
   onSkip?: () => void;
+  isSaving: boolean;
 }
 
 export default function CategoriesStep({ 
@@ -19,7 +20,8 @@ export default function CategoriesStep({
   setCategories, 
   onNext, 
   onBack,
-  onSkip
+  onSkip,
+  isSaving,
 }: CategoriesStepProps) {
   const [newCat, setNewCat] = useState('')
 
@@ -114,6 +116,7 @@ export default function CategoriesStep({
         <div className="flex gap-3">
           <button 
             type="button"
+            disabled={isSaving}
             onClick={onBack}
             className="w-1/3 py-3.5 font-bold text-sm rounded-xl text-[#7A6A67] hover:bg-gray-100 transition-colors cursor-pointer"
           >
@@ -121,7 +124,7 @@ export default function CategoriesStep({
           </button>
           <button 
             type="button"
-            disabled={categories.length === 0}
+            disabled={categories.length === 0 || isSaving}
             onClick={onNext}
             className="w-2/3 py-3.5 bg-[#8B2635] hover:bg-[#7a1f2d] disabled:opacity-50 text-white font-bold rounded-xl shadow-md transition-all active:scale-[0.99] cursor-pointer"
           >
@@ -132,6 +135,7 @@ export default function CategoriesStep({
         {onSkip && (
           <button
             type="button"
+            disabled={isSaving}
             onClick={onSkip}
             className="text-xs text-center text-[#7A6A67] hover:text-[#2B1E1A] font-bold underline underline-offset-2 mt-1 cursor-pointer"
           >

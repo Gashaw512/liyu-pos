@@ -12,6 +12,7 @@ interface ProductsStepProps {
   onNext: () => void;
   onBack: () => void;
   onSkip?: () => void;
+  isSaving: boolean;
 }
 
 export default function ProductsStep({ 
@@ -21,7 +22,8 @@ export default function ProductsStep({
   setProducts, 
   onNext, 
   onBack,
-  onSkip
+  onSkip,
+  isSaving,
 }: ProductsStepProps) {
 
   const [bonoPrices, setBonoPrices] = useState<Record<string, string>>({})
@@ -276,6 +278,7 @@ export default function ProductsStep({
       <div className="flex items-center justify-between pt-2 border-t border-[#2B1E1A]/10 text-xs">
         <button
           type="button"
+          disabled={isSaving}
           onClick={onBack}
           className="px-4 py-2 font-bold text-[#7A6A67] hover:text-[#2B1E1A] transition-colors cursor-pointer"
         >
@@ -286,6 +289,7 @@ export default function ProductsStep({
           {onSkip && (
             <button
               type="button"
+              disabled={isSaving}
               onClick={onSkip}
               className="px-4 py-2 font-semibold text-gray-400 hover:text-[#2B1E1A] transition-colors cursor-pointer"
             >
@@ -294,6 +298,7 @@ export default function ProductsStep({
           )}
           <button
             type="button"
+            disabled={isSaving}
             onClick={onNext}
             className="bg-[#2B1E1A] hover:bg-[#1f1512] text-white px-5 py-2.5 rounded-xl font-bold transition-all active:scale-[0.99] shadow-sm cursor-pointer"
           >

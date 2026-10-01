@@ -13,6 +13,14 @@ export const dynamic = 'force-dynamic'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
+function isTableOrdersMigrationMissing(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const candidate = error as { code?: unknown; message?: unknown }
+  return candidate.code === 'PGRST205' &&
+    typeof candidate.message === 'string' &&
+    candidate.message.includes('open_table_orders')
+}
+
 function parseItems(value: unknown): TableOrderLine[] | null {
   if (!Array.isArray(value)) return null
 
@@ -79,6 +87,13 @@ export async function GET() {
       })),
     })
   } catch (error) {
+    if (isTableOrdersMigrationMissing(error)) {
+      return NextResponse.json({
+        success: false,
+        code: 'TABLE_ORDERS_NOT_CONFIGURED',
+        error: 'Shared table orders are not configured for this database.',
+      }, { status: 503 })
+    }
     console.error('[TABLE ORDERS] Failed to load shared orders:', error)
     return NextResponse.json({ error: 'Could not load table orders.' }, { status: 500 })
   }
@@ -194,6 +209,13 @@ export async function PUT(request: Request) {
 
     return NextResponse.json({ error: 'Order changed on another device. It will retry with the latest order.' }, { status: 409 })
   } catch (error) {
+    if (isTableOrdersMigrationMissing(error)) {
+      return NextResponse.json({
+        success: false,
+        code: 'TABLE_ORDERS_NOT_CONFIGURED',
+        error: 'Shared table orders are not configured for this database.',
+      }, { status: 503 })
+    }
     console.error('[TABLE ORDERS] Failed to save shared order:', error)
     return NextResponse.json({ error: 'Could not save the table order.' }, { status: 500 })
   }

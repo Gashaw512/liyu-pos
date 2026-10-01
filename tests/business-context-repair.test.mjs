@@ -9,6 +9,7 @@ import {
 } from '../src/lib/offline/shiftContext.ts'
 import {
   mergeTableOrderChanges,
+  isPersistedTableId,
   removeCompletedTableOrderItems,
 } from '../src/lib/offline/tableOrderSync.ts'
 import { toLocalHistoricalSale } from '../src/lib/offline/saleHistory.ts'
@@ -129,6 +130,11 @@ test('completing the previously saved part of a table order leaves newer concurr
 
   assert.equal(remaining.length, 1)
   assert.equal(remaining[0].quantity, 1)
+})
+
+test('device-only fallback table IDs are never treated as shared database tables', () => {
+  assert.equal(isPersistedTableId('fallback_1'), false)
+  assert.equal(isPersistedTableId('11111111-1111-4111-8111-111111111111'), true)
 })
 
 test('completed local receipt history retains sale items and payment details after outbox acknowledgement', () => {

@@ -4,6 +4,7 @@ import { getDB } from './db'
 import type { Shift } from '@/types/database/operations'
 import type { LocalPendingTableOrder } from '@/types/models/pos-cart'
 import { toLocalHistoricalSale } from './saleHistory'
+import { isPersistedTableId } from './tableOrderSync'
 
 /**
  * Liyu POS Offline Synchronization Engine
@@ -102,6 +103,7 @@ const SALE_SYNC_STATUS_EVENT = 'liyu:sale-sync-status'
 
 export class SyncEngine {
   private isSyncing = false
+  private tableOrdersUnavailable = false
 
   public async refreshCatalog(): Promise<boolean> {
     if (
@@ -322,6 +324,8 @@ export class SyncEngine {
   private async syncPendingTableOrderEvents(
     operation: 'save' | 'complete' | 'cancel',
   ): Promise<void> {
+    if (this.tableOrdersUnavailable) return
+
     const db = await getDB()
     if (operation === 'save') {
       await this.queueLegacyOpenTabs(db)
@@ -333,6 +337,13 @@ export class SyncEngine {
 
     for (const orderEvent of events) {
       if (orderEvent.operation !== operation) continue
+
+      // Fallback tables are device-only placeholders, not database table IDs.
+      // Drop only their unusable outbox entry; keep any local open-tab data.
+      if (!isPersistedTableId(orderEvent.tableId)) {
+        await db.delete('pending_table_orders', orderEvent.localId)
+        continue
+      }
 
       if (operation === 'complete' && orderEvent.saleId && pendingSaleIds.has(orderEvent.saleId)) {
         continue
@@ -376,9 +387,15 @@ export class SyncEngine {
             status: 'open' | 'completed'
           } | null
           error?: string
+          code?: string
         } | null
 
         if (!response.ok || !result?.success) {
+          if (result?.code === 'TABLE_ORDERS_NOT_CONFIGURED') {
+            this.tableOrdersUnavailable = true
+            console.warn('[SYNC] Shared table orders are paused until their database migration is applied.')
+            return
+          }
           throw new Error(result?.error || `HTTP ${response.status}`)
         }
 
@@ -511,10 +528,18 @@ export class SyncEngine {
           updated_at: string
         }>
         error?: string
+        code?: string
       } | null
       if (!response.ok || !result?.success || !result.businessId || !result.branchId || !Array.isArray(result.orders)) {
+        if (result?.code === 'TABLE_ORDERS_NOT_CONFIGURED') {
+          this.tableOrdersUnavailable = true
+          console.warn('[SYNC] Shared table orders are paused until their database migration is applied.')
+          return
+        }
         throw new Error(result?.error || `HTTP ${response.status}`)
       }
+
+      this.tableOrdersUnavailable = false
 
       const db = await getDB()
       const transaction = db.transaction(['open_tabs', 'pending_table_orders'], 'readwrite')

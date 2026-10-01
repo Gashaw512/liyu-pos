@@ -19,7 +19,6 @@ interface POSHeaderProps {
   selectedTable: POSTable | null
   totalItems: number
   totalBill: number
-  cartSummary: string
   onCloseShift: () => Promise<void>
   closingShift: boolean
   cartHasItems: boolean
@@ -40,7 +39,6 @@ export default function POSHeader({
   selectedTable,
   totalItems,
   totalBill,
-  cartSummary,
   onCloseShift,
   closingShift,
   cartHasItems,
@@ -138,8 +136,8 @@ export default function POSHeader({
         >
           {totalItems}
         </span>
-        <span className="min-w-0 flex-1 truncate text-xs font-bold text-coffee-700">
-          {cartSummary}
+        <span className="min-w-0 flex-1 truncate text-xs font-bold text-coffee-600">
+          {isAm ? 'ዕቃዎች' : totalItems === 1 ? 'item' : 'items'}
         </span>
         <span className="shrink-0 font-mono text-xs font-black text-coffee-900">
           {totalBill.toLocaleString()} ETB
@@ -148,9 +146,10 @@ export default function POSHeader({
           type="button"
           onClick={onToggleBill}
           aria-expanded={billOpen}
+          aria-label={isAm ? 'ትዕዛዙን ይመልከቱ' : 'View order'}
           className="flex h-9 shrink-0 items-center rounded-lg px-2 text-xs font-black text-berbere-600 hover:bg-berbere-50"
         >
-          {isAm ? 'ትዕዛዝ' : 'Order'}
+          {isAm ? 'ትዕዛዝ' : 'View order'}
         </button>
       </div>
     )}

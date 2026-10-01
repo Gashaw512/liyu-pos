@@ -1504,10 +1504,6 @@ export default function SalesPage() {
           selectedTable={selectedTable}
           totalItems={totalItems}
           totalBill={totalBill}
-          cartSummary={[
-            ...cart.slice(0, 2).map((item) => `${isAm ? item.name_am?.trim() || item.name : item.name} x${item.quantity}`),
-            ...(cart.length > 2 ? [isAm ? `እና ${cart.length - 2} ተጨማሪ` : `+${cart.length - 2} more`] : []),
-          ].join(', ')}
           onCloseShift={handleCloseShift}
           closingShift={closingShift}
           cartHasItems={cartHasItems}

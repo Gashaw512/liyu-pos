@@ -10,6 +10,9 @@ export interface Shift {
   /** Stable local identifier for an idempotent shift report. */
   report_id?: string
 
+  /** The persisted Supabase shift ID; local active shifts use id="current". */
+  real_database_id?: string | null
+
   business_id: string
 
   branch_id: string

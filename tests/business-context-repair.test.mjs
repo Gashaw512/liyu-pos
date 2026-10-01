@@ -5,6 +5,7 @@ import {
   sanitizeActiveShiftContext,
   isSameOpenShiftInstance,
   isDuplicateShiftClosure,
+  toLocalActiveShift,
 } from '../src/lib/offline/shiftContext.ts'
 
 test('legacy placeholder IDs are repaired to the current business context before a sale is finalized', () => {
@@ -77,4 +78,15 @@ test('duplicate shift closings are identified by the same shift identity so a re
   }
 
   assert.equal(isDuplicateShiftClosure(queuedClosure, shift), true)
+})
+
+test('server shifts are stored in the active slot without losing their database ID', () => {
+  const shift = toLocalActiveShift({
+    id: '44444444-4444-4444-8444-444444444444',
+    status: 'open',
+  })
+
+  assert.equal(shift.id, 'current')
+  assert.equal(shift.report_id, '44444444-4444-4444-8444-444444444444')
+  assert.equal(shift.real_database_id, '44444444-4444-4444-8444-444444444444')
 })

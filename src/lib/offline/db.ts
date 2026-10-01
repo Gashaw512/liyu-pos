@@ -95,6 +95,18 @@ export interface LocalPendingShiftClosure {
   lastError?: string
 }
 
+export interface LocalPendingShiftOpening {
+  reportId: string
+  businessId: string
+  branchId: string
+  cashierId: string
+  openedAt: string
+  openingCash: number
+  shiftLabel: Shift['shift_label']
+  attempts: number
+  lastError?: string
+}
+
 /* =========================================================
  * LOCAL STOCK RECONCILIATION
  * ========================================================= */
@@ -265,6 +277,11 @@ interface LiyuPOSDBSchema extends DBSchema {
     value: LocalPendingShiftClosure
   }
 
+  pending_shift_openings: {
+    key: string
+    value: LocalPendingShiftOpening
+  }
+
   /* -------------------------------------------------------
    * SALES HISTORY
    * ------------------------------------------------------- */
@@ -352,13 +369,9 @@ interface LiyuPOSDBSchema extends DBSchema {
 const DB_NAME = 'liyu-pos-core'
 
 /**
- * Keep version 10.
- *
- * The upgrade code is additive and checks whether each
- * object store already exists, so existing local data
- * is preserved.
+ * Store upgrades are additive so existing local data is preserved.
  */
-const DB_VERSION = 13
+const DB_VERSION = 14
 
 /* =========================================================
  * DATABASE INITIALIZATION
@@ -561,6 +574,10 @@ export const getDB = (): Promise<
 
         if (!db.objectStoreNames.contains('pending_shift_closures')) {
           db.createObjectStore('pending_shift_closures', { keyPath: 'reportId' })
+        }
+
+        if (!db.objectStoreNames.contains('pending_shift_openings')) {
+          db.createObjectStore('pending_shift_openings', { keyPath: 'reportId' })
         }
 
         /* ===================================================

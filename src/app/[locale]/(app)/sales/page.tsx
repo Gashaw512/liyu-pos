@@ -17,6 +17,7 @@ import {
   sanitizeActiveShiftContext,
   isSameOpenShiftInstance,
   isDuplicateShiftClosure,
+  toLocalActiveShift,
 } from '@/lib/offline/shiftContext'
 import { useBusinessContext } from '@/lib/auth/useBusinessContext'
 import createClient from '@/lib/supabase/client'
@@ -286,9 +287,10 @@ export default function SalesPage() {
         }
 
         const db = await getDB()
-        await db.put('active_shift', normalized)
+        const localShift = toLocalActiveShift(normalized)
+        await db.put('active_shift', localShift)
 
-        return normalized
+        return localShift
       } catch (error) {
         console.warn('[POS] Shared shift lookup failed:', error)
         return null
@@ -335,6 +337,33 @@ export default function SalesPage() {
 
           currentShift =
             repairedShift
+        }
+
+        if (
+          currentShift &&
+          !currentShift.real_database_id &&
+          currentShift.report_id &&
+          currentShift.business_id &&
+          currentShift.branch_id &&
+          currentShift.cashier_id
+        ) {
+          const queuedShift = {
+            ...currentShift,
+            id: 'current',
+            real_database_id: currentShift.report_id,
+          }
+          await db.put('active_shift', queuedShift)
+          await db.put('pending_shift_openings', {
+            reportId: currentShift.report_id,
+            businessId: currentShift.business_id,
+            branchId: currentShift.branch_id,
+            cashierId: currentShift.cashier_id,
+            openedAt: currentShift.opened_at,
+            openingCash: Number(currentShift.opening_cash) || 0,
+            shiftLabel: currentShift.shift_label,
+            attempts: 0,
+          })
+          currentShift = queuedShift
         }
 
         const data =
@@ -732,10 +761,14 @@ export default function SalesPage() {
       const now =
         new Date().toISOString()
 
+      const reportId = crypto.randomUUID()
+
       const newShift: Shift = {
         id: 'current',
 
-        report_id: crypto.randomUUID(),
+        report_id: reportId,
+
+        real_database_id: reportId,
 
         business_id:
           businessId,
@@ -753,7 +786,7 @@ export default function SalesPage() {
           null,
 
         shift_label:
-          `Shift-${new Date().toLocaleDateString()}` as Shift['shift_label'],
+          'Full Day',
 
         opened_at:
           now,
@@ -811,6 +844,16 @@ export default function SalesPage() {
         'active_shift',
         newShift,
       )
+      await db.put('pending_shift_openings', {
+        reportId,
+        businessId,
+        branchId,
+        cashierId: userId,
+        openedAt: now,
+        openingCash,
+        shiftLabel: newShift.shift_label,
+        attempts: 0,
+      })
 
       setClosedShiftFeedback(null)
       setActualCashCount('')
@@ -843,6 +886,11 @@ export default function SalesPage() {
           : 'Shift opened successfully.',
         'success',
       )
+
+      if (typeof navigator !== 'undefined' && navigator.onLine) {
+        const { syncEngine } = await import('@/lib/offline/syncEngine')
+        void syncEngine.syncAll()
+      }
     } catch (error) {
       console.error(
         '[POS] Failed to open shift:',
@@ -924,7 +972,7 @@ export default function SalesPage() {
           return
         }
 
-        const reportId = activeShift.report_id || crypto.randomUUID()
+        const reportId = activeShift.report_id || activeShift.real_database_id || crypto.randomUUID()
         await db.put('pending_shift_closures', {
           reportId,
           businessId: activeShift.business_id,

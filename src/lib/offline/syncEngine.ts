@@ -1,6 +1,7 @@
 // src/lib/offline/syncEngine.ts
 
 import { getDB } from './db'
+import type { Shift } from '@/types/database/operations'
 
 /**
  * Liyu POS Offline Synchronization Engine
@@ -9,7 +10,7 @@ import { getDB } from './db'
  *   ↓
  * IndexedDB pending queues
  *   ↓
- * POST /api/sync
+ * POST /api/shifts/open, then /api/sync
  *   ↓
  * Next.js Server
  *   ↓
@@ -37,6 +38,7 @@ import { getDB } from './db'
  *   sale
  *   inventory_count
  *   inventory_receive
+ *   shift openings are synchronized before sales
  */
 
 /* =========================================================
@@ -151,6 +153,14 @@ export class SyncEngine {
         '[SYNC] Starting synchronization...'
       )
 
+      const shiftOpeningsSynced =
+        await this.syncPendingShiftOpenings()
+
+      if (!shiftOpeningsSynced) {
+        console.warn('[SYNC] Sales are waiting for their shift to sync.')
+        return
+      }
+
       // ======================================================
       // 1. PUSH OUTBOUND TRANSACTIONS
       // ======================================================
@@ -210,6 +220,97 @@ export class SyncEngine {
     } finally {
       this.isSyncing = false
     }
+  }
+
+  private async syncPendingShiftOpenings(): Promise<boolean> {
+    const db = await getDB()
+    const pending = (await db.getAll('pending_shift_openings'))
+      .sort((first, second) => first.openedAt.localeCompare(second.openedAt))
+    let allSynced = true
+
+    for (const opening of pending) {
+      try {
+        const pendingClosures = await db.getAll('pending_shift_closures')
+        const closure = pendingClosures.find((entry) => entry.reportId === opening.reportId)
+        const response = await fetch('/api/shifts/open', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          cache: 'no-store',
+          signal: AbortSignal.timeout(30_000),
+          body: JSON.stringify({
+            reportId: opening.reportId,
+            openedAt: opening.openedAt,
+            openingCash: opening.openingCash,
+            shiftLabel: opening.shiftLabel,
+            closedAt: closure?.closedAt ?? null,
+            actualCash: closure?.actualCash ?? null,
+          }),
+        })
+        const result = await response.json().catch(() => null) as {
+          success?: boolean
+          shift?: Shift
+          error?: string
+        } | null
+
+        if (!response.ok || !result?.success || !result.shift?.id) {
+          throw new Error(result?.error || `HTTP ${response.status}`)
+        }
+
+        const serverShift = result.shift
+        const transaction = db.transaction(
+          ['active_shift', 'pending_sales', 'pending_shift_closures', 'pending_shift_openings'],
+          'readwrite',
+        )
+        const activeShiftStore = transaction.objectStore('active_shift')
+        const currentShift = await activeShiftStore.get('current')
+
+        if (currentShift?.report_id === opening.reportId) {
+          await activeShiftStore.put({
+            ...serverShift,
+            id: 'current',
+            report_id: serverShift.id,
+            real_database_id: serverShift.id,
+          })
+        }
+
+        const salesStore = transaction.objectStore('pending_sales')
+        const pendingSales = await salesStore.getAll()
+        for (const sale of pendingSales) {
+          if (sale.shift_id === opening.reportId) {
+            await salesStore.put({ ...sale, shift_id: serverShift.id })
+          }
+        }
+
+        const closureStore = transaction.objectStore('pending_shift_closures')
+        const matchingClosure = await closureStore.get(opening.reportId)
+        if (matchingClosure) {
+          await closureStore.delete(opening.reportId)
+          await closureStore.put({
+            ...matchingClosure,
+            reportId: serverShift.id,
+            openedAt: serverShift.opened_at,
+            openingCash: Number(serverShift.opening_cash) || 0,
+          })
+        }
+
+        await transaction.objectStore('pending_shift_openings').delete(opening.reportId)
+        await transaction.done
+      } catch (error) {
+        allSynced = false
+        const lastError = error instanceof Error ? error.message.slice(0, 300) : 'Shift sync failed'
+        await db.put('pending_shift_openings', {
+          ...opening,
+          attempts: opening.attempts + 1,
+          lastError,
+        })
+        console.warn('[SYNC] Shift opening remains queued for retry.', {
+          reportId: opening.reportId,
+          lastError,
+        })
+      }
+    }
+
+    return allSynced
   }
 
   // =========================================================

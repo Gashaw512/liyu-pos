@@ -15,6 +15,15 @@ export function isLegacyContextValue(value: unknown): boolean {
   return LEGACY_CONTEXT_PLACEHOLDERS.has(value.trim())
 }
 
+export function toLocalActiveShift<T extends { id: string }>(shift: T) {
+  return {
+    ...shift,
+    id: 'current',
+    report_id: shift.id,
+    real_database_id: shift.id,
+  }
+}
+
 export function sanitizeActiveShiftContext<T extends {
   business_id?: string | null
   branch_id?: string | null

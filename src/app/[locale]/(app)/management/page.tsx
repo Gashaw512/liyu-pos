@@ -3,7 +3,7 @@
 'use client'
 
 import { useParams } from 'next/navigation'
-import { KeyRound } from 'lucide-react'
+import { KeyRound, Settings2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import ManagementCard from '@/components/management/ManagementCard'
 
@@ -64,13 +64,6 @@ export default function ManagementHubPage() {
           route: `/${locale}/management/staff`,
         },
         {
-          title: isAm ? 'ሚናዎች እና ፈቃዶች' : 'Roles & Access',
-          description: isAm
-            ? 'የተጠቃሚ ሚናዎችን እና ፈቃዶችን ያስተዳድሩ'
-            : 'Manage roles and access permissions',
-          route: `/${locale}/management/roles`,
-        },
-        {
           title: isAm ? 'የይለፍ ቃል መመለሻ' : 'Password Recovery',
           description: isAm
             ? 'የይለፍ ቃልዎን ከረሱ የመመለሻ ኮድ ይፍጠሩ'
@@ -78,76 +71,36 @@ export default function ManagementHubPage() {
           route: `/${locale}/management/security`,
           icon: <KeyRound className="h-5 w-5" />,
         },
-        {
-          title: isAm ? 'የስራ ፈረቃ' : 'Shifts',
-          description: isAm
-            ? 'የስራ ፈረቃዎችን ያዘጋጁ እና ይቆጣጠሩ'
-            : 'Set up and manage work shifts',
-          route: `/${locale}/management/shifts`,
-        },
       ],
     },
 
     {
-      title: isAm ? 'የንግድ ቅንብር' : 'Business Setup',
+      title: isAm ? 'ማሳወቂያዎች' : 'Notifications',
       items: [
         {
-          title: isAm ? 'ጠረጴዛዎች' : 'Tables',
-          description: isAm
-            ? 'የጠረጴዛ እና የመቀመጫ አቀማመጥ'
-            : 'Manage tables and seating',
-          route: `/${locale}/management/tables`,
-        },
-        {
-          title: isAm ? 'የንግድ መረጃ' : 'Business Profile',
-          description: isAm
-            ? 'የንግድዎን መረጃ ያስተዳድሩ'
-            : 'Manage your business information',
-          route: `/${locale}/management/profile`,
-        },
-        {
-          title: isAm ? 'የሪፖርት መልዕክቶች' : 'Shift Report Messages',
+          title: isAm ? 'የሪፖርት መልዕክቶች' : 'Telegram shift reports',
           description: isAm
             ? 'የፈረቃ PDF ሪፖርትን በቴሌግራም ያዋቅሩ'
-            : 'Configure Telegram shift report delivery',
+            : "Send shift reports to the owner's Telegram recipients",
           route: `/${locale}/management/notifications`,
-        },
-        {
-          title: isAm ? 'ፕሪንተሮች' : 'Printers',
-          description: isAm
-            ? 'የህትመት እና ፕሪንተር ቅንብሮች'
-            : 'Configure printers and printing',
-          route: `/${locale}/management/printers`,
         },
       ],
     },
 
     {
-      title: isAm ? 'ስርዓት' : 'System',
+      title: isAm ? 'የንግድ እና መለያ' : 'Business & Account',
       items: [
         {
-          title: isAm ? 'ቅንብሮች' : 'Settings',
+          title: isAm ? 'ቅንብሮች' : 'Business & account settings',
           description: isAm
-            ? 'የስርዓቱን አጠቃላይ ቅንብሮች ያስተዳድሩ'
-            : 'Manage general system settings',
+            ? 'ስም፣ የንግድ መረጃ እና የይለፍ ቃል ይቀይሩ'
+            : 'Change your name, business details, and password',
           route: `/${locale}/settings`,
-        },
-        {
-          title: isAm ? 'የእንቅስቃሴ መዝገብ' : 'Activity Log',
-          description: isAm
-            ? 'የስርዓቱን እንቅስቃሴ ይመልከቱ'
-            : 'Review system activity and history',
-          route: `/${locale}/management/activity-log`,
-        },
-        {
-          title: isAm ? 'ምትኬ እና ማመሳሰል' : 'Backup & Sync',
-          description: isAm
-            ? 'የውሂብ ምትኬ እና ማመሳሰልን ያስተዳድሩ'
-            : 'Manage data backup and synchronization',
-          route: `/${locale}/management/backup`,
+          icon: <Settings2 className="h-5 w-5" />,
         },
       ],
     },
+
   ]
 
   return (
@@ -169,7 +122,7 @@ export default function ManagementHubPage() {
                 <p className="mt-1 max-w-2xl text-xs leading-5 text-coffee-500 sm:text-sm">
                   {isAm
                     ? 'የንግድዎን ምርቶች፣ ሰራተኞች እና የስርዓት ቅንብሮች ከዚህ ያስተዳድሩ።'
-                    : 'Manage your products, staff, business setup, and system settings.'}
+                    : 'Manage products, prices, staff, and shift reports.'}
                 </p>
               </div>
             </div>

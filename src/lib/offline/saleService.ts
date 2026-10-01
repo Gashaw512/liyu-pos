@@ -1,6 +1,7 @@
 // src/lib/offline/saleService.ts
 
 import { getDB } from './db'
+import { isLegacyContextValue } from './shiftContext'
 
 export interface FinalizeSaleInput {
   splitPayments: {
@@ -14,6 +15,7 @@ export interface FinalizeSaleInput {
 
   activeShift?: {
     real_database_id?: string | null
+    report_id?: string | null
     branch_id?: string | null
     cashier_id?: string | null
     business_id?: string | null
@@ -74,6 +76,25 @@ export async function finalizeSale(
   const subtotal =
     Number(input.totalBill) || 0
 
+  const safeBusinessId =
+    input.activeShift?.business_id && !isLegacyContextValue(input.activeShift.business_id)
+      ? input.activeShift.business_id
+      : null
+
+  const safeBranchId =
+    input.activeShift?.branch_id && !isLegacyContextValue(input.activeShift.branch_id)
+      ? input.activeShift.branch_id
+      : null
+
+  const safeCashierId =
+    input.activeShift?.cashier_id && !isLegacyContextValue(input.activeShift.cashier_id)
+      ? input.activeShift.cashier_id
+      : null
+
+  if (!safeBusinessId || !safeBranchId || !safeCashierId) {
+    throw new Error('Missing a valid active-shift context for this sale.')
+  }
+
   const totalAmount =
     subtotal + parsedTip
 
@@ -115,22 +136,17 @@ export async function finalizeSale(
     shift_id:
       input.activeShift
         ?.real_database_id ??
+      input.activeShift?.report_id ??
       null,
 
     branch_id:
-      input.activeShift
-        ?.branch_id ??
-      'branch_main',
+      safeBranchId,
 
     cashier_id:
-      input.activeShift
-        ?.cashier_id ??
-      'cashier_default',
+      safeCashierId,
 
     business_id:
-      input.activeShift
-        ?.business_id ??
-      'biz_active',
+      safeBusinessId,
 
     table_number:
       input.selectedTable?.name ??

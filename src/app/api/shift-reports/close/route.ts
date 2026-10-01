@@ -25,8 +25,6 @@ export async function POST(request: Request) {
     const { data: prior, error: priorError } = await admin.from('shift_report_deliveries').select('shift_report_id,status,attempts,updated_at').eq('business_id', auth.profile!.business_id).eq('cashier_id', auth.user!.id).eq('opened_at', openedAt.toISOString()).maybeSingle()
     if (priorError) throw priorError
     if (prior && prior.shift_report_id !== body.reportId) return NextResponse.json({ success: true, duplicate: true, status: prior.status })
-    if (prior?.status === 'sent' || prior?.status === 'disabled') return NextResponse.json({ success: true, duplicate: true, status: prior.status })
-    if (prior?.status === 'sending' && Date.now() - Date.parse(prior.updated_at ?? '') < 5 * 60_000) return NextResponse.json({ success: true, duplicate: true, status: 'sending' })
 
     // Scope the privileged report reads with identifiers resolved from the
     // authenticated profile. Session RLS claims can be stale and may otherwise
@@ -61,6 +59,72 @@ export async function POST(request: Request) {
     const expectedCash = openingCash + (payments.get('cash') ?? 0)
     const grossProfit = itemRevenue - cogs
     const netProfit = grossProfit - expenseTotal
+
+    const actualCashReported = actualCash
+    const shiftValues = {
+      status: 'closed' as const,
+      closed_at: closedAt.toISOString(),
+      closed_by: auth.user!.id,
+      opening_cash: openingCash,
+      opening_float: openingCash,
+      expected_cash: expectedCash,
+      actual_cash_reported: actualCashReported,
+      actual_cash: actualCashReported,
+      closing_float: actualCashReported,
+      total_sales: revenue,
+      total_transactions: sales?.length ?? 0,
+      difference: actualCashReported == null ? null : actualCashReported - expectedCash,
+    }
+    const { data: closedShift, error: closeShiftError } = await admin
+      .from('shifts')
+      .update(shiftValues)
+      .eq('id', body.reportId)
+      .eq('business_id', auth.profile!.business_id)
+      .eq('branch_id', auth.profile!.branch_id)
+      .eq('cashier_id', auth.user!.id)
+      .select('id')
+      .maybeSingle()
+    if (closeShiftError) throw closeShiftError
+
+    if (!closedShift) {
+      const { data: existingShift, error: shiftLookupError } = await admin
+        .from('shifts')
+        .select('id')
+        .eq('business_id', auth.profile!.business_id)
+        .eq('branch_id', auth.profile!.branch_id)
+        .eq('cashier_id', auth.user!.id)
+        .eq('opened_at', openedAt.toISOString())
+        .maybeSingle()
+      if (shiftLookupError) throw shiftLookupError
+
+      if (existingShift) {
+        const { error } = await admin
+          .from('shifts')
+          .update(shiftValues)
+          .eq('id', existingShift.id)
+          .eq('business_id', auth.profile!.business_id)
+        if (error) throw error
+      } else {
+        const { error } = await admin.from('shifts').insert({
+          id: body.reportId,
+          business_id: auth.profile!.business_id,
+          branch_id: auth.profile!.branch_id,
+          cashier_id: auth.user!.id,
+          opened_by: auth.user!.id,
+          shift_label: 'Full Day',
+          opened_at: openedAt.toISOString(),
+          ...shiftValues,
+        })
+        if (error) throw error
+      }
+    }
+
+    if (prior?.status === 'sent' || prior?.status === 'disabled') {
+      return NextResponse.json({ success: true, duplicate: true, status: prior.status })
+    }
+    if (prior?.status === 'sending' && Date.now() - Date.parse(prior.updated_at ?? '') < 5 * 60_000) {
+      return NextResponse.json({ success: true, duplicate: true, status: 'sending' })
+    }
 
     const { data: settings, error: settingsError } = await admin.from('business_notification_settings').select('business_id,telegram_enabled').eq('business_id', auth.profile!.business_id).maybeSingle()
     if (settingsError) throw settingsError

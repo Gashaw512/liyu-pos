@@ -1,6 +1,7 @@
 'use client'
 
 import { Check, Coins, Loader2, X } from 'lucide-react'
+import { createPortal } from 'react-dom'
 
 interface CloseShiftDialogProps {
   open: boolean
@@ -27,18 +28,18 @@ export default function CloseShiftDialog({
   onCancel,
   onConfirm,
 }: CloseShiftDialogProps) {
-  if (!open) return null
+  if (!open || typeof document === 'undefined') return null
 
-  return (
+  return createPortal((
     <div
-      className="fixed inset-0 z-[10000] flex items-end justify-center overflow-y-auto bg-coffee-900/50 p-0 pt-[env(safe-area-inset-top)] backdrop-blur-[2px] sm:items-center sm:p-4"
+      className="fixed inset-x-0 top-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-[10000] flex items-end justify-center overflow-y-auto bg-coffee-900/50 p-0 pt-[env(safe-area-inset-top)] backdrop-blur-[2px] sm:inset-0 sm:items-center sm:p-4"
       onClick={busy ? undefined : onCancel}
     >
       <section
         role="dialog"
         aria-modal="true"
         aria-labelledby="close-shift-title"
-        className="flex max-h-[calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom))] min-h-0 w-full max-w-md flex-col overflow-hidden rounded-t-3xl border border-cream-200 bg-cream-50 shadow-modal sm:rounded-3xl"
+        className="flex max-h-full min-h-0 w-full max-w-md flex-col overflow-hidden rounded-t-3xl border border-cream-200 bg-cream-50 shadow-modal sm:rounded-3xl"
         onClick={(event) => event.stopPropagation()}
       >
         <header className="flex shrink-0 items-start gap-3 bg-coffee-900 p-5 text-white sm:p-6">
@@ -103,7 +104,7 @@ export default function CloseShiftDialog({
           </div>
         </div>
 
-        <footer className="flex shrink-0 gap-2 border-t border-cream-200 bg-cream-100/70 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:p-4">
+        <footer className="flex shrink-0 gap-2 border-t border-cream-200 bg-cream-100/70 p-3 sm:p-4">
           <button
             type="button"
             onClick={onCancel}
@@ -125,5 +126,5 @@ export default function CloseShiftDialog({
         </footer>
       </section>
     </div>
-  )
+  ), document.body)
 }

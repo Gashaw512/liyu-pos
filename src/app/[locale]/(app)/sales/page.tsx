@@ -1176,7 +1176,7 @@ export default function SalesPage() {
 
   if (!activeShift) {
     return (
-      <div className="flex min-h-dvh items-center justify-center overflow-y-auto bg-coffee-900 p-4">
+      <div className="flex min-h-full items-start justify-center overflow-y-auto bg-coffee-900 px-3 pb-[calc(5rem+env(safe-area-inset-bottom))] pt-4 sm:items-center sm:p-4">
         <div className="w-full max-w-sm overflow-hidden rounded-3xl bg-cream-50 shadow-elevated">
           <div className="bg-coffee-900 px-6 py-7 text-center text-white">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-gold-400/15">

@@ -13,7 +13,13 @@ import { CheckCircle2, Clock3, Coins, LayoutGrid, Loader2, Search, Send, WifiOff
 import { getDB } from '../../../../lib/offline/db'
 import type { Shift } from '../../../../types/database/operations'
 import { finalizeSale } from '@/lib/offline/saleService'
+import {
+  sanitizeActiveShiftContext,
+  isSameOpenShiftInstance,
+  isDuplicateShiftClosure,
+} from '@/lib/offline/shiftContext'
 import { useBusinessContext } from '@/lib/auth/useBusinessContext'
+import createClient from '@/lib/supabase/client'
 
 import POSHeader from '../../../../components/pos/POSHeader'
 import POSBillDropdown from '@/components/pos/POSBillDropdown'
@@ -160,24 +166,24 @@ export default function SalesPage() {
         return null
       }
 
-      /*
-       * We only repair the old placeholder identities
-       * created by the previous POS implementation.
-       *
-       * We do NOT blindly overwrite legitimate shift
-       * business/branch/cashier IDs.
-       */
+      const repairedShift = sanitizeActiveShiftContext(shift, {
+        businessId,
+        branchId,
+        userId,
+      })
+
+      if (!repairedShift) {
+        return null
+      }
+
       const hasLegacyBusinessId =
-        shift.business_id ===
-        'biz_active'
+        shift.business_id === 'biz_active' || !shift.business_id
 
       const hasLegacyBranchId =
-        shift.branch_id ===
-        'branch_main'
+        shift.branch_id === 'branch_main' || !shift.branch_id
 
       const hasLegacyCashierId =
-        shift.cashier_id ===
-        'cashier_default'
+        shift.cashier_id === 'cashier_default' || !shift.cashier_id
 
       if (
         !hasLegacyBusinessId &&
@@ -204,56 +210,91 @@ export default function SalesPage() {
         return shift
       }
 
-      const repairedShift: Shift = {
-        ...shift,
-
-        business_id:
-          businessId,
-
-        branch_id:
-          branchId,
-
-        cashier_id:
-          userId,
-
+      const finalShift: Shift = {
+        ...repairedShift,
+        business_id: repairedShift.business_id ?? businessId,
+        branch_id: repairedShift.branch_id ?? branchId,
+        cashier_id: repairedShift.cashier_id ?? userId,
         opened_by:
-          shift.opened_by ===
-            'cashier_default'
+          shift.opened_by === 'cashier_default' || !shift.opened_by
             ? userId
             : shift.opened_by,
-
-        updated_at:
-          new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       }
 
       const db = await getDB()
 
       await db.put(
         'active_shift',
-        repairedShift,
+        finalShift,
       )
 
       console.log(
         '[POS] Repaired legacy active shift context:',
         {
-          businessId:
-            repairedShift.business_id,
-
-          branchId:
-            repairedShift.branch_id,
-
-          cashierId:
-            repairedShift.cashier_id,
+          businessId: finalShift.business_id,
+          branchId: finalShift.branch_id,
+          cashierId: finalShift.cashier_id,
         },
       )
 
-      return repairedShift
+      return finalShift
     },
     [
       businessId,
       branchId,
       userId,
     ],
+  )
+
+  const resolveExistingOpenShift = useCallback(
+    async (): Promise<Shift | null> => {
+      if (!businessId || !branchId || !userId) {
+        return null
+      }
+
+      try {
+        const supabase = createClient()
+        const { data, error } = await supabase
+          .from('shifts')
+          .select('*')
+          .eq('business_id', businessId)
+          .eq('branch_id', branchId)
+          .eq('cashier_id', userId)
+          .eq('status', 'open')
+          .order('opened_at', { ascending: false })
+          .limit(1)
+
+        if (error) {
+          console.warn('[POS] Failed to resolve remote open shift:', error)
+          return null
+        }
+
+        const remoteShift = Array.isArray(data) && data.length > 0 ? data[0] : null
+        if (!remoteShift) {
+          return null
+        }
+
+        const normalized = sanitizeActiveShiftContext(remoteShift, {
+          businessId,
+          branchId,
+          userId,
+        })
+
+        if (!normalized) {
+          return null
+        }
+
+        const db = await getDB()
+        await db.put('active_shift', normalized)
+
+        return normalized
+      } catch (error) {
+        console.warn('[POS] Shared shift lookup failed:', error)
+        return null
+      }
+    },
+    [businessId, branchId, userId],
   )
 
   // ==========================================================
@@ -269,6 +310,15 @@ export default function SalesPage() {
             'active_shift',
             'current',
           )) || null
+
+        if (businessId && branchId && userId) {
+          const remoteOpenShift = await resolveExistingOpenShift()
+          if (remoteOpenShift) {
+            if (!currentShift || !isSameOpenShiftInstance(currentShift, remoteOpenShift)) {
+              currentShift = remoteOpenShift
+            }
+          }
+        }
 
         /*
          * Repair the legacy shift before loading
@@ -321,6 +371,10 @@ export default function SalesPage() {
       }
     },
     [
+      businessId,
+      branchId,
+      resolveExistingOpenShift,
+      userId,
       normalizeActiveShiftContext,
     ],
   )
@@ -596,6 +650,17 @@ export default function SalesPage() {
   const handleOpenShift = async () => {
     if (openingShift) return
 
+    if (activeShift) {
+      toast(
+        isAm
+          ? 'አሁን ተከፍቷል ፈረቃ አለ። እባክዎ አስተካክል ወይም መዝጋት ይፈልጋሉ።'
+          : 'A shift is already active for this cashier. Use the current open shift instead of reopening it.',
+        'info',
+      )
+
+      return
+    }
+
     if (
       businessContextLoading
     ) {
@@ -632,6 +697,26 @@ export default function SalesPage() {
       )
 
       return
+    }
+
+    try {
+      const sharedOpenShift = await resolveExistingOpenShift()
+      if (sharedOpenShift) {
+        setActiveShift(sharedOpenShift)
+        setClosedShiftFeedback(null)
+        setActualCashCount('')
+
+        toast(
+          isAm
+            ? 'አሁን በሌላ መሣሪያ የተከፈተ ፈረቃ እየሰራ ነው። ያለውን ፈረቃ ተጠቀም።'
+            : 'There is already an open shift for this cashier on another device. Reusing the active shift.',
+          'info',
+        )
+
+        return
+      }
+    } catch (error) {
+      console.warn('[POS] Shared shift resolution failed before opening a new shift.', error)
     }
 
     setOpeningShift(true)
@@ -803,6 +888,42 @@ export default function SalesPage() {
       const db = await getDB()
 
       if (activeShift) {
+        const pendingClosures = await db.getAll('pending_shift_closures')
+        const existingQueuedClosure = pendingClosures.find((closure) =>
+          isDuplicateShiftClosure(closure, activeShift),
+        )
+
+        if (existingQueuedClosure) {
+          console.warn('[POS] Prevented duplicate shift-close report for the same shared shift.', {
+            reportId: existingQueuedClosure.reportId,
+            businessId: activeShift.business_id,
+            branchId: activeShift.branch_id,
+            cashierId: activeShift.cashier_id,
+            openedAt: activeShift.opened_at,
+          })
+
+          await db.delete('active_shift', 'current')
+          setActiveShift(null)
+          setCloseShiftDialogOpen(false)
+          setActualCashCount('')
+          setCart([])
+          setSelectedTable(null)
+          setSavedCartSnapshot(EMPTY_CART_SNAPSHOT)
+          setHasUnsavedChanges(false)
+          setShowCheckout(false)
+          setManualTip('')
+          setBillOpen(false)
+
+          toast(
+            isAm
+              ? 'ይህ ፈረቃ በሌላ መሣሪያ አስቀድሞ ተዘግቷል። ሪፖርቱ እንደገና አይላክም።'
+              : 'This shift has already been closed elsewhere; the report is not being sent twice.',
+            'info',
+          )
+
+          return
+        }
+
         const reportId = activeShift.report_id || crypto.randomUUID()
         await db.put('pending_shift_closures', {
           reportId,
@@ -952,10 +1073,22 @@ export default function SalesPage() {
     if (!activeShift || cart.length === 0) return
 
     try {
+      const safeShift = await normalizeActiveShiftContext(activeShift)
+
+      if (!safeShift || !safeShift.business_id || !safeShift.branch_id || !safeShift.cashier_id) {
+        toast(
+          isAm
+            ? 'የሽያጭ ሂደት ለአሁኑ ንግድ ሁኔታ አልተዘጋጀም። እባክዎ እንደገና ይግቡ።'
+            : 'This sale is missing a valid business context. Please refresh and try again.',
+          'error',
+        )
+        return
+      }
+
       const sale = await finalizeSale({
         splitPayments,
         manualTip,
-        activeShift,
+        activeShift: safeShift,
         selectedTable,
         cart,
         totalBill,

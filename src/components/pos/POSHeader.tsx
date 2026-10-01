@@ -3,8 +3,6 @@
 import { useState, type ReactNode } from 'react'
 import {
   BarChart3,
-  ChevronDown,
-  ChevronUp,
   Coins,
   Loader2,
   LogOut,
@@ -105,27 +103,6 @@ export default function POSHeader({
             type="button"
             onClick={() => {
               setShowTodayReport(false)
-              onToggleBill()
-            }}
-            aria-expanded={billOpen}
-            aria-label={isAm ? 'ትዕዛዙን ይመልከቱ' : 'View current order'}
-            title={isAm ? 'ትዕዛዙን ይመልከቱ' : 'View current order'}
-            className={`${controlClass} min-w-14 gap-1 bg-cream-200 px-2 text-xs font-black text-coffee-800 hover:bg-cream-300`}
-          >
-            <ShoppingBag className="h-3.5 w-3.5" />
-            <span>{isAm ? 'ትዕዛዝ' : 'Order'}</span>
-            <span>{totalItems}</span>
-            {billOpen
-              ? <ChevronUp className="h-3 w-3" />
-              : <ChevronDown className="h-3 w-3" />}
-          </button>
-        )}
-
-        {cartHasItems && (
-          <button
-            type="button"
-            onClick={() => {
-              setShowTodayReport(false)
               onCheckout()
             }}
             className={`${controlClass} gap-1.5 bg-berbere-500 px-2.5 text-[11px] font-black text-white shadow-sm hover:bg-berbere-600 sm:px-3`}
@@ -155,6 +132,12 @@ export default function POSHeader({
     {cartHasItems && (
       <div className="flex h-10 items-center gap-2 border-b border-cream-200 bg-white px-2 sm:px-3">
         <ShoppingBag className="h-4 w-4 shrink-0 text-berbere-500" aria-hidden="true" />
+        <span
+          className="shrink-0 rounded-full bg-cream-100 px-1.5 py-0.5 font-mono text-[10px] font-black text-coffee-700"
+          title={isAm ? `ጠቅላላ ${totalItems} ዕቃዎች` : `${totalItems} total items`}
+        >
+          {totalItems}
+        </span>
         <span className="min-w-0 flex-1 truncate text-xs font-bold text-coffee-700">
           {cartSummary}
         </span>

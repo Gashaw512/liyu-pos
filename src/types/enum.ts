@@ -15,7 +15,10 @@ export type StaffRole =
   export type PaymentMethod =
   | 'cash'
   | 'telebirr'
-  | 'cbe_birr';
+  | 'cbe_birr'
+  | 'awash_bank'
+  | 'bank_transfer'
+  | 'credit';
   export type BusinessVertical =
   | 'retail'
   | 'restaurant'

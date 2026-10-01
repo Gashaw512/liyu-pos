@@ -209,8 +209,8 @@ const isPOSPage =
 
             <span>
               {isAm
-                ? 'ግንኙነት ተቋርጧል! የሽያጭ መረጃዎች በአገር ውስጥ (Offline) እየተቀመጡ ነው።'
-                : 'Offline Mode Active! Transactions are currently caching safely inside local atomic browser state.'}
+                ? 'ኢንተርኔት የለም። ሽያጮችና ትዕዛዞች በዚህ መሣሪያ ይቀመጣሉ።'
+                : 'Offline. Sales and orders are saved on this device and will sync when online.'}
             </span>
           </div>
         )}

@@ -22,6 +22,8 @@ interface POSBillDropdownProps {
     id: string,
   ) => void
 
+  onRestoreItem: (item: POSCartItem) => void
+
   onClearItem: (
     id: string,
   ) => void
@@ -29,6 +31,8 @@ interface POSBillDropdownProps {
   onSaveTab: () => Promise<void>
 
   onCheckout: () => void
+
+  onClearCart: () => void
 
   onClose: () => void
 
@@ -42,9 +46,11 @@ export default function POSBillDropdown({
   savingTab,
   onIncrease,
   onDecrease,
+  onRestoreItem,
   onClearItem,
   onSaveTab,
   onCheckout,
+  onClearCart,
   onClose,
   isAm,
 }: POSBillDropdownProps) {
@@ -86,9 +92,11 @@ export default function POSBillDropdown({
           savingTab={savingTab}
           onIncrease={onIncrease}
           onDecrease={onDecrease}
+          onRestoreItem={onRestoreItem}
           onClearItem={onClearItem}
           onSaveTab={onSaveTab}
           onCheckout={onCheckout}
+          onClearCart={onClearCart}
           onClose={onClose}
           isAm={isAm}
           hideHeader

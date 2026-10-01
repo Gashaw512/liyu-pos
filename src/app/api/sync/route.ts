@@ -728,7 +728,7 @@ function buildPayments(
           'cash',
         ),
 
-      status: 'completed',
+      status: payment.status === 'pending' ? 'pending' : 'completed',
 
       created_at:
         timestamp,

@@ -31,17 +31,17 @@ export default function CloseShiftDialog({
 
   return (
     <div
-      className="fixed inset-0 z-[10000] flex items-end justify-center bg-coffee-900/50 p-0 backdrop-blur-[2px] sm:items-center sm:p-4"
+      className="fixed inset-0 z-[10000] flex items-end justify-center overflow-y-auto bg-coffee-900/50 p-0 pt-[env(safe-area-inset-top)] backdrop-blur-[2px] sm:items-center sm:p-4"
       onClick={busy ? undefined : onCancel}
     >
       <section
         role="dialog"
         aria-modal="true"
         aria-labelledby="close-shift-title"
-        className="w-full max-w-md overflow-hidden rounded-t-3xl border border-cream-200 bg-cream-50 shadow-modal sm:rounded-3xl"
+        className="flex max-h-[calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom))] min-h-0 w-full max-w-md flex-col overflow-hidden rounded-t-3xl border border-cream-200 bg-cream-50 shadow-modal sm:rounded-3xl"
         onClick={(event) => event.stopPropagation()}
       >
-        <header className="flex items-start gap-3 bg-coffee-900 p-5 text-white sm:p-6">
+        <header className="flex shrink-0 items-start gap-3 bg-coffee-900 p-5 text-white sm:p-6">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gold-400/15 text-gold-400">
             <Coins className="h-5 w-5" />
           </div>
@@ -66,7 +66,7 @@ export default function CloseShiftDialog({
           </button>
         </header>
 
-        <div className="space-y-4 p-4 sm:p-5">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-4 sm:p-5">
           <div className="flex items-center justify-between rounded-2xl border border-cream-200 bg-white px-4 py-3">
             <span className="text-xs font-bold text-coffee-500">
               {isAm ? 'የመነሻ ካሽ' : 'Opening cash'}
@@ -103,7 +103,7 @@ export default function CloseShiftDialog({
           </div>
         </div>
 
-        <footer className="flex gap-2 border-t border-cream-200 bg-cream-100/70 p-3 sm:p-4">
+        <footer className="flex shrink-0 gap-2 border-t border-cream-200 bg-cream-100/70 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:p-4">
           <button
             type="button"
             onClick={onCancel}

@@ -26,6 +26,7 @@ interface POSCheckoutProps {
     splitPayments: PaymentSplit,
   ) => Promise<void>
   isAm: boolean
+  isSubmitting?: boolean
 }
 
 export default function POSCheckout({
@@ -37,7 +38,10 @@ export default function POSCheckout({
   onBack,
   onConfirmPayment,
   isAm,
+  isSubmitting = false,
 }: POSCheckoutProps) {
+  const amountDue = totalBill + (Number(manualTip) || 0)
+
   const totalItems = cart.reduce(
     (sum, item) =>
       sum + Number(item.quantity || 0),
@@ -184,7 +188,7 @@ export default function POSCheckout({
                 text-berbere-500
               "
             >
-              {totalBill.toLocaleString()}
+              {amountDue.toLocaleString()}
             </div>
 
             <span
@@ -335,9 +339,10 @@ export default function POSCheckout({
         </div>
 
         <PaymentSelector
-          totalBill={totalBill}
+          totalBill={amountDue}
           onConfirmPayment={onConfirmPayment}
           isAm={isAm}
+          isSubmitting={isSubmitting}
         />
       </section>
     </div>

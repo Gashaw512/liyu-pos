@@ -2,6 +2,8 @@
 
 import { getDB } from './db'
 import type { Shift } from '@/types/database/operations'
+import type { LocalPendingTableOrder } from '@/types/models/pos-cart'
+import { toLocalHistoricalSale } from './saleHistory'
 
 /**
  * Liyu POS Offline Synchronization Engine
@@ -91,6 +93,8 @@ const CATALOG_REFRESH_INTERVAL_MS = 5 * 60 * 1000
 const SYNC_COMPLETE_EVENT = 'liyu:sync-complete'
 const INVENTORY_CHANNEL_NAME = 'liyu-pos-inventory'
 const SHIFT_REPORT_STATUS_EVENT = 'liyu:shift-report-status'
+const TABLE_ORDERS_UPDATED_EVENT = 'liyu:table-orders-updated'
+const SALE_SYNC_STATUS_EVENT = 'liyu:sale-sync-status'
 
 /* =========================================================
  * SYNC ENGINE
@@ -161,6 +165,8 @@ export class SyncEngine {
         return
       }
 
+      await this.syncPendingTableOrderEvents('save')
+
       // ======================================================
       // 1. PUSH OUTBOUND TRANSACTIONS
       // ======================================================
@@ -187,7 +193,11 @@ export class SyncEngine {
         return
       }
 
+      await this.syncPendingTableOrderEvents('complete')
+      await this.syncPendingTableOrderEvents('cancel')
+      await this.syncPendingTableOrderEvents('save')
       await this.syncPendingShiftClosures()
+      await this.pullOpenTableOrders()
 
       // ======================================================
       // 4. PULL SERVER SNAPSHOT WHEN NEEDED
@@ -230,8 +240,6 @@ export class SyncEngine {
 
     for (const opening of pending) {
       try {
-        const pendingClosures = await db.getAll('pending_shift_closures')
-        const closure = pendingClosures.find((entry) => entry.reportId === opening.reportId)
         const response = await fetch('/api/shifts/open', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -242,8 +250,6 @@ export class SyncEngine {
             openedAt: opening.openedAt,
             openingCash: opening.openingCash,
             shiftLabel: opening.shiftLabel,
-            closedAt: closure?.closedAt ?? null,
-            actualCash: closure?.actualCash ?? null,
           }),
         })
         const result = await response.json().catch(() => null) as {
@@ -311,6 +317,254 @@ export class SyncEngine {
     }
 
     return allSynced
+  }
+
+  private async syncPendingTableOrderEvents(
+    operation: 'save' | 'complete' | 'cancel',
+  ): Promise<void> {
+    const db = await getDB()
+    if (operation === 'save') {
+      await this.queueLegacyOpenTabs(db)
+    }
+    const events = (await db.getAll('pending_table_orders'))
+      .sort((first, second) => first.createdAt.localeCompare(second.createdAt))
+    const pendingSales = await db.getAll('pending_sales')
+    const pendingSaleIds = new Set(pendingSales.map((sale) => sale.localId))
+
+    for (const orderEvent of events) {
+      if (orderEvent.operation !== operation) continue
+
+      if (operation === 'complete' && orderEvent.saleId && pendingSaleIds.has(orderEvent.saleId)) {
+        continue
+      }
+
+      if (operation === 'save' && events.some((event) =>
+        event.tableId === orderEvent.tableId &&
+        event.operation !== 'save' &&
+        event.createdAt < orderEvent.createdAt,
+      )) {
+        continue
+      }
+
+      try {
+        const response = await fetch('/api/table-orders', {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          cache: 'no-store',
+          signal: AbortSignal.timeout(30_000),
+          body: JSON.stringify({
+            tableId: orderEvent.tableId,
+            tableNumber: orderEvent.tableNumber,
+            operation: orderEvent.operation,
+            baseItems: orderEvent.baseItems,
+            items: orderEvent.items,
+          }),
+        })
+        const result = await response.json().catch(() => null) as {
+          success?: boolean
+          order?: {
+            id: string
+            table_id: string
+            table_number?: string
+            business_id: string
+            branch_id: string
+            cashier_id: string
+            items: LocalPendingTableOrder['items']
+            total_amount: number
+            revision: number
+            updated_at: string
+            status: 'open' | 'completed'
+          } | null
+          error?: string
+        } | null
+
+        if (!response.ok || !result?.success) {
+          throw new Error(result?.error || `HTTP ${response.status}`)
+        }
+
+        const transaction = db.transaction(
+          ['open_tabs', 'pending_table_orders'],
+          'readwrite',
+        )
+        const eventStore = transaction.objectStore('pending_table_orders')
+        const currentEvent = await eventStore.get(orderEvent.localId)
+        if (!currentEvent) {
+          await transaction.done
+          continue
+        }
+
+        await eventStore.delete(orderEvent.localId)
+        const remainingEvents = await eventStore.index('by-table').getAll(orderEvent.tableId)
+        const hasNewerSave = remainingEvents.some((event) => event.operation === 'save')
+        if (!hasNewerSave) {
+          const tabsStore = transaction.objectStore('open_tabs')
+          if (result.order?.status === 'open') {
+            await tabsStore.put({
+              id: result.order.table_id,
+              table_id: result.order.table_id,
+              table_number: result.order.table_number || orderEvent.tableNumber,
+              business_id: result.order.business_id,
+              branch_id: result.order.branch_id,
+              cashier_id: result.order.cashier_id,
+              revision: result.order.revision,
+              items: result.order.items,
+              total_accumulated: Number(result.order.total_amount) || 0,
+              updated_at: result.order.updated_at,
+            })
+          } else {
+            await tabsStore.delete(orderEvent.tableId)
+          }
+        }
+
+        await transaction.done
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event(TABLE_ORDERS_UPDATED_EVENT))
+        }
+      } catch (error) {
+        const lastError = error instanceof Error ? error.message.slice(0, 300) : 'Table order sync failed'
+        await db.put('pending_table_orders', {
+          ...orderEvent,
+          attempts: orderEvent.attempts + 1,
+          lastError,
+        })
+        console.warn('[SYNC] Table order remains queued for retry.', {
+          tableId: orderEvent.tableId,
+          lastError,
+        })
+      }
+    }
+  }
+
+  private async queueLegacyOpenTabs(
+    db: Awaited<ReturnType<typeof getDB>>,
+  ): Promise<void> {
+    if (
+      !db.objectStoreNames.contains('tables') ||
+      !db.objectStoreNames.contains('open_tabs')
+    ) return
+
+    const [activeShift, tables, openTabs, pendingOrders] = await Promise.all([
+      db.get('active_shift', 'current'),
+      db.getAll('tables'),
+      db.getAll('open_tabs'),
+      db.getAll('pending_table_orders'),
+    ])
+    if (!activeShift?.business_id || !activeShift.branch_id || !activeShift.cashier_id) return
+
+    const configuredTableIds = new Set(tables.map((table) => table.id))
+    const pendingTableIds = new Set(pendingOrders.map((order) => order.tableId))
+    const tableIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+    for (const tab of openTabs) {
+      const tableId = tab.table_id || tab.id
+      if (
+        !tableIdPattern.test(tableId) ||
+        !configuredTableIds.has(tableId) ||
+        pendingTableIds.has(tableId) ||
+        !Array.isArray(tab.items) ||
+        tab.items.length === 0
+      ) continue
+
+      await db.put('pending_table_orders', {
+        localId: this.createId(),
+        tableId,
+        tableNumber: tab.table_number || tableId,
+        businessId: activeShift.business_id,
+        branchId: activeShift.branch_id,
+        cashierId: activeShift.cashier_id,
+        operation: 'save',
+        baseItems: tab.items,
+        items: tab.items,
+        totalAmount: Number(tab.total_accumulated) || 0,
+        createdAt: tab.updated_at || new Date().toISOString(),
+        attempts: 0,
+      })
+    }
+  }
+
+  public async refreshOpenTableOrders(): Promise<void> {
+    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      await this.pullOpenTableOrders()
+    }
+  }
+
+  private async pullOpenTableOrders(): Promise<void> {
+    try {
+      const response = await fetch('/api/table-orders', {
+        method: 'GET',
+        cache: 'no-store',
+        signal: AbortSignal.timeout(30_000),
+      })
+      const result = await response.json().catch(() => null) as {
+        success?: boolean
+        businessId?: string
+        branchId?: string
+        orders?: Array<{
+          table_id: string
+          table_number?: string
+          business_id: string
+          branch_id: string
+          cashier_id: string
+          items: LocalPendingTableOrder['items']
+          total_amount: number
+          revision: number
+          updated_at: string
+        }>
+        error?: string
+      } | null
+      if (!response.ok || !result?.success || !result.businessId || !result.branchId || !Array.isArray(result.orders)) {
+        throw new Error(result?.error || `HTTP ${response.status}`)
+      }
+
+      const db = await getDB()
+      const transaction = db.transaction(['open_tabs', 'pending_table_orders'], 'readwrite')
+      const tabsStore = transaction.objectStore('open_tabs')
+      const pendingStore = transaction.objectStore('pending_table_orders')
+      const [localTabs, pendingEvents] = await Promise.all([
+        tabsStore.getAll(),
+        pendingStore.getAll(),
+      ])
+      const pendingTableIds = new Set(
+        pendingEvents
+          .filter((event) => !event.branchId || event.branchId === result.branchId)
+          .map((event) => event.tableId),
+      )
+      const serverTableIds = new Set(result.orders.map((order) => order.table_id))
+
+      for (const order of result.orders) {
+        if (pendingTableIds.has(order.table_id)) continue
+        await tabsStore.put({
+          id: order.table_id,
+          table_id: order.table_id,
+          table_number: order.table_number || order.table_id,
+          business_id: order.business_id,
+          branch_id: order.branch_id,
+          cashier_id: order.cashier_id,
+          revision: order.revision,
+          items: order.items,
+          total_accumulated: Number(order.total_amount) || 0,
+          updated_at: order.updated_at,
+        })
+      }
+
+      for (const tab of localTabs) {
+        if (
+          tab.business_id === result.businessId &&
+          tab.branch_id === result.branchId &&
+          !serverTableIds.has(tab.table_id || tab.id) &&
+          !pendingTableIds.has(tab.table_id || tab.id)
+        ) {
+          await tabsStore.delete(tab.id)
+        }
+      }
+
+      await transaction.done
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event(TABLE_ORDERS_UPDATED_EVENT))
+      }
+    } catch (error) {
+      console.warn('[SYNC] Shared table-order refresh failed; the local copy remains available.', error)
+    }
   }
 
   // =========================================================
@@ -887,6 +1141,30 @@ export class SyncEngine {
     // =======================================================
 
     try {
+      const salesToSync = formattedTransactions
+        .filter((transaction) => transaction.type === 'sale')
+        .map((transaction) => transaction.id)
+      if (salesToSync.length > 0) {
+        const transaction = db.transaction('pending_sales', 'readwrite')
+        const salesStore = transaction.objectStore('pending_sales')
+        for (const saleId of salesToSync) {
+          const sale = await salesStore.get(saleId)
+          if (sale) {
+            await salesStore.put({
+              ...sale,
+              syncStatus: 'syncing',
+              lastSyncAttempt: new Date().toISOString(),
+            })
+          }
+        }
+        await transaction.done
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent(SALE_SYNC_STATUS_EVENT, {
+            detail: { saleIds: salesToSync, status: 'syncing' },
+          }))
+        }
+      }
+
       const response =
         await fetch(
           '/api/sync',
@@ -1278,6 +1556,7 @@ export class SyncEngine {
       db.transaction(
         [
           'pending_sales',
+          'completed_sales_history',
           'pending_stock_reconciliations',
           'pending_stock_receipts',
         ],
@@ -1287,6 +1566,11 @@ export class SyncEngine {
     const salesStore =
       tx.objectStore(
         'pending_sales'
+      )
+
+    const historyStore =
+      tx.objectStore(
+        'completed_sales_history'
       )
 
     const reconciliationStore =
@@ -1338,6 +1622,14 @@ export class SyncEngine {
       if (
         salesIds.has(id)
       ) {
+        const pendingSale = pendingSales.find((sale) => String(sale.localId) === id)
+        if (pendingSale) {
+          await historyStore.put({
+            ...toLocalHistoricalSale(pendingSale as never),
+            localSyncStatus: 'synced',
+          } as never)
+        }
+
         await salesStore.delete(
           id
         )

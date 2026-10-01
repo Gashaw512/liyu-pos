@@ -64,11 +64,11 @@ export default function POSTableSelector({
             aria-hidden="true"
           />
 
-          <span className="text-[10px] font-bold text-coffee-600">
+          <span className="text-xs font-bold text-coffee-600">
             {isAm ? 'ጠረጴዛ ይምረጡ' : 'Choose a table'}
           </span>
 
-          <span className="rounded-full bg-cream-100 px-1.5 py-0.5 text-[8px] font-black text-coffee-500">
+          <span className="rounded-full bg-cream-100 px-1.5 py-0.5 text-[10px] font-black text-coffee-500">
             {tables.length}
           </span>
         </div>
@@ -87,7 +87,7 @@ export default function POSTableSelector({
             aria-hidden="true"
           />
 
-          <span className="text-[8px] font-bold text-coffee-400">
+          <span className="text-[10px] font-bold text-coffee-400">
             {isAm ? 'ትዕዛዝ አለ' : 'Order open'}
           </span>
         </div>
@@ -130,15 +130,15 @@ export default function POSTableSelector({
             `
               relative
               flex
-              h-10
-              min-w-[82px]
+              h-11
+              min-w-[92px]
               shrink-0
               items-center
               justify-center
               rounded-lg
               border
               px-2
-              text-[10px]
+              text-xs
               font-black
               transition-all
               duration-150
@@ -209,15 +209,15 @@ export default function POSTableSelector({
                 `
                   relative
                   flex
-                  h-10
-                  min-w-[64px]
+                  h-11
+                  min-w-[72px]
                   shrink-0
                   items-center
                   justify-center
                   rounded-lg
                   border
                   px-2
-                  text-[10px]
+                  text-xs
                   font-black
                   transition-all
                   duration-150

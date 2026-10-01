@@ -9,9 +9,10 @@ import {
   Save,
   ShoppingCart,
   Trash2,
+  Undo2,
   X,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import type { POSCartItem, POSTable } from './types'
 
@@ -24,9 +25,11 @@ interface POSCartProps {
   onIncrease: (id: string, amount?: number) => void
   onDecrease: (id: string) => void
   onClearItem: (id: string) => void
+  onRestoreItem: (item: POSCartItem) => void
 
   onSaveTab: () => Promise<void>
   onCheckout: () => void
+  onClearCart: () => void
 
   /**
    * Optional close action for mobile/header bill drawer.
@@ -46,8 +49,10 @@ export default function POSCart({
   onIncrease,
   onDecrease,
   onClearItem,
+  onRestoreItem,
   onSaveTab,
   onCheckout,
+  onClearCart,
   onClose,
   isAm,
   hideHeader = false,
@@ -56,6 +61,13 @@ export default function POSCart({
     useState<POSCartItem | null>(null)
 
   const [typedValue, setTypedValue] = useState('')
+  const [lastRemovedItem, setLastRemovedItem] = useState<POSCartItem | null>(null)
+
+  useEffect(() => {
+    if (!lastRemovedItem) return
+    const timeout = window.setTimeout(() => setLastRemovedItem(null), 8000)
+    return () => window.clearTimeout(timeout)
+  }, [lastRemovedItem])
 
   if (cart.length === 0) {
     return null
@@ -126,6 +138,7 @@ export default function POSCart({
       Number.isNaN(newQuantity) ||
       newQuantity <= 0
     ) {
+      setLastRemovedItem(activeItem)
       onClearItem(activeItem.id)
       closeQuantityEditor()
       return
@@ -231,7 +244,7 @@ export default function POSCart({
                       px-1.5 py-0.5
                       text-center
                       font-mono
-                      text-[8px]
+                      text-[10px]
                       font-black
                       text-coffee-700
                     "
@@ -243,7 +256,7 @@ export default function POSCart({
                 <p
                   className="
                     truncate
-                    text-[8px]
+                    text-[10px]
                     font-medium
                     text-coffee-400
                   "
@@ -269,7 +282,7 @@ export default function POSCart({
                 <span
                   className="
                     ml-1
-                    text-[8px]
+                    text-[10px]
                     font-bold
                     text-coffee-400
                   "
@@ -327,7 +340,7 @@ export default function POSCart({
           >
             <span
               className="
-                text-[8px]
+                text-[10px]
                 font-black
                 uppercase
                 tracking-wider
@@ -341,7 +354,7 @@ export default function POSCart({
 
             <span
               className="
-                text-[8px]
+                text-[10px]
                 font-medium
                 text-coffee-400
               "
@@ -384,19 +397,19 @@ export default function POSCart({
                       <p
                         className="
                           truncate
-                          text-[11px]
+                          text-xs
                           font-black
                           text-coffee-800
                         "
                       >
-                        {item.name}
+                        {isAm ? item.name_am?.trim() || item.name : item.name}
                       </p>
 
                       <p
                         className="
                           mt-0.5
                           font-mono
-                          text-[8px]
+                          text-[10px]
                           text-coffee-400
                         "
                       >
@@ -418,18 +431,17 @@ export default function POSCart({
                     >
                       <button
                         type="button"
-                        onClick={() =>
-                          onDecrease(
-                            item.id,
-                          )
-                        }
+                        onClick={() => {
+                          if (quantity === 1) setLastRemovedItem(item)
+                          onDecrease(item.id)
+                        }}
                         aria-label={
                           isAm
                             ? 'ቀንስ'
                             : 'Reduce'
                         }
                         className="
-                          flex h-8 w-8
+                          flex h-10 w-10
                           items-center
                           justify-center
                           rounded-md
@@ -456,7 +468,7 @@ export default function POSCart({
                             : 'Change quantity'
                         }
                         className="
-                          flex h-8 min-w-9
+                          flex h-10 min-w-10
                           items-center
                           justify-center
                           rounded-md
@@ -486,7 +498,7 @@ export default function POSCart({
                             : 'Add'
                         }
                         className="
-                          flex h-8 w-8
+                          flex h-10 w-10
                           items-center
                           justify-center
                           rounded-md
@@ -513,7 +525,7 @@ export default function POSCart({
                       <p
                         className="
                           font-mono
-                          text-[11px]
+                          text-xs
                           font-black
                           text-coffee-800
                         "
@@ -523,11 +535,10 @@ export default function POSCart({
 
                       <button
                         type="button"
-                        onClick={() =>
-                          onClearItem(
-                            item.id,
-                          )
-                        }
+                        onClick={() => {
+                          setLastRemovedItem(item)
+                          onClearItem(item.id)
+                        }}
                         aria-label={
                           isAm
                             ? 'እቃ አስወግድ'
@@ -538,7 +549,7 @@ export default function POSCart({
                           inline-flex
                           items-center
                           gap-0.5
-                          text-[8px]
+                          text-[10px]
                           font-bold
                           text-danger
                           transition
@@ -572,6 +583,32 @@ export default function POSCart({
             p-2.5
           "
         >
+          {lastRemovedItem && (
+            <button
+              type="button"
+              onClick={() => {
+                onRestoreItem(lastRemovedItem)
+                setLastRemovedItem(null)
+              }}
+              className="mb-2 flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-cream-300 bg-white px-3 text-xs font-black text-coffee-700 transition hover:bg-cream-100"
+            >
+              <Undo2 className="h-4 w-4" />
+              {isAm ? 'የተወገደውን መልስ' : 'Undo remove'}
+            </button>
+          )}
+
+          <div className="mb-2 flex justify-end">
+            <button
+              type="button"
+              onClick={onClearCart}
+              className="flex h-10 items-center gap-2 rounded-lg px-3 text-xs font-black text-danger transition hover:bg-danger/5 active:scale-[0.98]"
+              aria-label={isAm ? 'ትዕዛዙን አጽዳ' : 'Clear order'}
+            >
+              <Trash2 className="h-4 w-4" />
+              {isAm ? 'ትዕዛዝ አጽዳ' : 'Clear order'}
+            </button>
+          </div>
+
           {/* TOTAL */}
 
           <div
@@ -585,7 +622,7 @@ export default function POSCart({
             <div className="flex items-center gap-1.5">
               <span
                 className="
-                  text-[9px]
+                        text-[11px]
                   font-black
                   text-coffee-500
                 "
@@ -597,7 +634,7 @@ export default function POSCart({
 
               <span
                 className="
-                  text-[8px]
+                  text-[10px]
                   font-medium
                   text-coffee-400
                 "
@@ -799,7 +836,7 @@ export default function POSCart({
             >
               <p
                 className="
-                  text-[8px]
+                  text-[10px]
                   font-black
                   uppercase
                   tracking-wider
@@ -820,7 +857,7 @@ export default function POSCart({
                   text-coffee-800
                 "
               >
-                {activeItem.name}
+                {isAm ? activeItem.name_am?.trim() || activeItem.name : activeItem.name}
               </h3>
 
               <div
@@ -897,7 +934,7 @@ export default function POSCart({
                   border border-cream-200
                   bg-white
                   font-mono
-                  text-base
+                  text-lg
                   font-black
                   text-coffee-800
                   transition
@@ -955,7 +992,7 @@ export default function POSCart({
                   h-10
                   rounded-lg
                   bg-cream-200
-                  text-[10px]
+                  text-xs
                   font-black
                   text-coffee-700
                   transition

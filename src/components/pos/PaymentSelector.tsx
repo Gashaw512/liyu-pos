@@ -6,19 +6,15 @@ import {
   Banknote,
   Building2,
   Check,
+  Loader2,
   Smartphone,
   Split,
   X,
 } from 'lucide-react'
+import { calculateCashSettlement } from '@/lib/calculations/cashSettlement'
+import type { PaymentSplit } from './types'
 
-interface PaymentSplit {
-  cash: number
-  telebirr: number
-  cbeBirr: number
-  awash: number
-}
-
-interface PaymentMethod {
+interface PaymentOption {
   id: keyof PaymentSplit
   name: string
   nameAm: string
@@ -44,7 +40,7 @@ interface PaymentMethod {
  * POS
  */
 
-const PAYMENT_METHODS: PaymentMethod[] = [
+const PAYMENT_METHODS: PaymentOption[] = [
   {
     id: 'cash',
     name: 'Cash',
@@ -60,16 +56,30 @@ const PAYMENT_METHODS: PaymentMethod[] = [
     enabled: true,
   },
   {
-    id: 'cbeBirr',
+    id: 'cbe_birr',
     name: 'CBE Birr',
     nameAm: 'CBE Birr',
     icon: 'mobile',
     enabled: true,
   },
   {
-    id: 'awash',
+    id: 'awash_bank',
     name: 'Awash Bank',
     nameAm: 'አዋሽ ባንክ',
+    icon: 'bank',
+    enabled: true,
+  },
+  {
+    id: 'bank_transfer',
+    name: 'Bank transfer',
+    nameAm: 'የባንክ ዝውውር',
+    icon: 'bank',
+    enabled: true,
+  },
+  {
+    id: 'credit',
+    name: 'Credit',
+    nameAm: 'ዱቤ',
     icon: 'bank',
     enabled: true,
   },
@@ -81,6 +91,7 @@ interface PaymentSelectorProps {
     split: PaymentSplit,
   ) => void | Promise<void>
   isAm: boolean
+  isSubmitting?: boolean
 }
 
 type PaymentKey = keyof PaymentSplit
@@ -99,8 +110,10 @@ type PaymentAmounts = Record<
 const EMPTY_AMOUNTS: PaymentAmounts = {
   cash: 0,
   telebirr: 0,
-  cbeBirr: 0,
-  awash: 0,
+  cbe_birr: 0,
+  awash_bank: 0,
+  bank_transfer: 0,
+  credit: 0,
 }
 
 const roundMoney = (
@@ -126,6 +139,7 @@ export default function PaymentSelector({
   totalBill,
   onConfirmPayment,
   isAm,
+  isSubmitting = false,
 }: PaymentSelectorProps) {
   /*
    * ============================================================
@@ -166,6 +180,7 @@ export default function PaymentSelector({
 
   const [activeMethods, setActiveMethods] =
     useState<PaymentKey[]>(['cash'])
+  const [cashReceivedOverride, setCashReceivedOverride] = useState<string | null>(null)
 
   /*
    * ============================================================
@@ -182,32 +197,17 @@ export default function PaymentSelector({
     if (!firstMethod) {
       setAmounts(EMPTY_AMOUNTS)
       setActiveMethods([])
+      setCashReceivedOverride(null)
       return
     }
 
     setAmounts({
-      cash:
-        firstMethod === 'cash'
-          ? roundMoney(totalBill)
-          : 0,
-
-      telebirr:
-        firstMethod === 'telebirr'
-          ? roundMoney(totalBill)
-          : 0,
-
-      cbeBirr:
-        firstMethod === 'cbeBirr'
-          ? roundMoney(totalBill)
-          : 0,
-
-      awash:
-        firstMethod === 'awash'
-          ? roundMoney(totalBill)
-          : 0,
+      ...EMPTY_AMOUNTS,
+      [firstMethod]: roundMoney(totalBill),
     })
 
     setActiveMethods([firstMethod])
+    setCashReceivedOverride(null)
   }, [totalBill, enabledMethods])
 
   /*
@@ -252,6 +252,22 @@ export default function PaymentSelector({
   const isBalanced =
     remainingAmount <= 0.009
 
+  const cashReceived = cashReceivedOverride === null
+    ? Number(amounts.cash || 0)
+    : Math.max(0, Number(cashReceivedOverride) || 0)
+  const cashSettlement = calculateCashSettlement(Number(amounts.cash || 0), cashReceived)
+  const cashShortfall = cashSettlement.remaining
+  const changeDue = cashSettlement.change
+  const canSubmit = isBalanced && cashSettlement.isCovered
+  const visibleRemaining = Math.max(remainingAmount, cashShortfall)
+  const settlementStatus = cashShortfall > 0.009
+    ? 'remaining'
+    : changeDue > 0.009
+      ? 'change'
+      : isBalanced
+        ? 'complete'
+        : 'remaining'
+
   /*
    * ============================================================
    * GET ICON
@@ -259,7 +275,7 @@ export default function PaymentSelector({
    */
 
   const getIcon = (
-    icon: PaymentMethod['icon'],
+    icon: PaymentOption['icon'],
   ) => {
     switch (icon) {
       case 'cash':
@@ -308,6 +324,7 @@ export default function PaymentSelector({
       ...current,
       methodId,
     ])
+    setCashReceivedOverride(null)
 
     setAmounts((current) => {
       const currentPaid = roundMoney(
@@ -355,6 +372,7 @@ export default function PaymentSelector({
         (id) => id !== methodId,
       ),
     )
+    setCashReceivedOverride(null)
 
     setAmounts((current) => ({
       ...current,
@@ -651,34 +669,11 @@ export default function PaymentSelector({
       methods[1].id,
     ])
 
+    setCashReceivedOverride(null)
     setAmounts({
-      cash:
-        methods[0].id === 'cash'
-          ? first
-          : methods[1].id === 'cash'
-            ? second
-            : 0,
-
-      telebirr:
-        methods[0].id === 'telebirr'
-          ? first
-          : methods[1].id === 'telebirr'
-            ? second
-            : 0,
-
-      cbeBirr:
-        methods[0].id === 'cbeBirr'
-          ? first
-          : methods[1].id === 'cbeBirr'
-            ? second
-            : 0,
-
-      awash:
-        methods[0].id === 'awash'
-          ? first
-          : methods[1].id === 'awash'
-            ? second
-            : 0,
+      ...EMPTY_AMOUNTS,
+      [methods[0].id]: first,
+      [methods[1].id]: second,
     })
   }
 
@@ -696,26 +691,17 @@ export default function PaymentSelector({
      * This is an extra safety check.
      */
 
-    if (!isBalanced) {
+    if (!canSubmit || isSubmitting) {
       return
     }
 
     await onConfirmPayment({
-      cash: roundMoney(
-        Number(amounts.cash || 0),
-      ),
-
-      telebirr: roundMoney(
-        Number(amounts.telebirr || 0),
-      ),
-
-      cbeBirr: roundMoney(
-        Number(amounts.cbeBirr || 0),
-      ),
-
-      awash: roundMoney(
-        Number(amounts.awash || 0),
-      ),
+      cash: roundMoney(Number(amounts.cash || 0)),
+      telebirr: roundMoney(Number(amounts.telebirr || 0)),
+      cbe_birr: roundMoney(Number(amounts.cbe_birr || 0)),
+      awash_bank: roundMoney(Number(amounts.awash_bank || 0)),
+      bank_transfer: roundMoney(Number(amounts.bank_transfer || 0)),
+      credit: roundMoney(Number(amounts.credit || 0)),
     })
   }
 
@@ -1081,7 +1067,7 @@ export default function PaymentSelector({
                     }
                     placeholder="0.00"
                     className="
-                      h-9
+                      h-11
                       w-full
                       rounded-md
                       border border-cream-300
@@ -1123,15 +1109,39 @@ export default function PaymentSelector({
         )}
       </div>
 
+      {activeMethods.includes('cash') && (
+        <div className="rounded-lg border border-cream-300 bg-cream-50 px-3 py-2">
+          <label htmlFor="cash-received" className="mb-1 block text-xs font-black text-coffee-700">
+            {isAm ? 'የተቀበሉት ጥሬ ገንዘብ' : 'Cash received'}
+          </label>
+          <div className="relative">
+            <input
+              id="cash-received"
+              type="number"
+              min="0"
+              step="0.01"
+              inputMode="decimal"
+              value={cashReceivedOverride ?? (amounts.cash > 0 ? String(amounts.cash) : '')}
+              onChange={(event) => setCashReceivedOverride(event.target.value)}
+              placeholder="0.00"
+              disabled={isSubmitting}
+              className="h-11 w-full rounded-lg border border-cream-300 bg-cream-100 px-3 pr-12 font-mono text-base font-black text-coffee-800 outline-none transition focus:border-berbere-300 focus:bg-cream-50 focus:ring-2 focus:ring-berbere-100 disabled:opacity-60"
+            />
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-coffee-400">ETB</span>
+          </div>
+        </div>
+      )}
+
       {/* ====================================================== */}
       {/* REMAINING BALANCE */}
       {/* ====================================================== */}
 
       <div
+        aria-live="polite"
         className={[
           'flex items-center justify-between',
           'rounded-lg px-3 py-2',
-          isBalanced
+          settlementStatus === 'complete'
             ? 'bg-success-bg'
             : 'bg-cream-100',
         ].join(' ')}
@@ -1145,13 +1155,11 @@ export default function PaymentSelector({
             text-coffee-500
           "
         >
-          {isBalanced
-            ? isAm
-              ? 'ክፍያ ሙሉ'
-              : 'Payment complete'
-            : isAm
-              ? 'ቀሪ ክፍያ'
-              : 'Remaining'}
+          {settlementStatus === 'change'
+            ? isAm ? 'ቀይር' : 'Change'
+            : settlementStatus === 'complete'
+              ? isAm ? 'ክፍያ ሙሉ' : 'Paid in full'
+              : isAm ? 'ቀሪ ክፍያ' : 'Remaining'}
         </span>
 
         <span
@@ -1159,12 +1167,14 @@ export default function PaymentSelector({
             'font-mono',
             'text-sm',
             'font-black',
-            isBalanced
+            settlementStatus === 'complete'
               ? 'text-success'
-              : 'text-coffee-600',
+              : settlementStatus === 'change'
+                ? 'text-success'
+                : 'text-coffee-600',
           ].join(' ')}
         >
-          {remainingAmount.toLocaleString()}
+          {(settlementStatus === 'change' ? changeDue : visibleRemaining).toLocaleString()}
 
           <span className="ml-1 text-[9px]">
             ETB
@@ -1179,7 +1189,7 @@ export default function PaymentSelector({
       <button
         type="button"
         onClick={submitPayment}
-        disabled={!isBalanced}
+        disabled={!canSubmit || isSubmitting}
         className="
           flex
           h-11
@@ -1203,16 +1213,16 @@ export default function PaymentSelector({
           disabled:shadow-none
         "
       >
-        <Check
-          className="
-            h-4
-            w-4
-            text-gold-300
-          "
-        />
+        {isSubmitting ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <Check className="h-4 w-4 text-gold-300" />
+        )}
 
         <span>
-          {isAm
+          {isSubmitting
+            ? isAm ? 'በማስቀመጥ ላይ...' : 'Saving sale...'
+            : isAm
             ? 'ክፍያውን ጨርስ'
             : 'Complete Payment'}
         </span>

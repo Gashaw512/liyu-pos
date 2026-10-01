@@ -342,6 +342,10 @@ export default function POSProductGrid({
             product.retail_price ?? 0,
           )
 
+        const displayName = isAm
+          ? product.name_am?.trim() || product.name
+          : product.name
+
         const inventoryBadge =
           getInventoryBadge(
             product,
@@ -355,7 +359,7 @@ export default function POSProductGrid({
               group
               relative
               flex
-              min-h-[82px]
+              min-h-[100px]
               flex-col
               overflow-hidden
               rounded-lg
@@ -363,7 +367,7 @@ export default function POSProductGrid({
               p-1.5
               transition-all
               duration-100
-              sm:min-h-[86px]
+              sm:min-h-[104px]
               sm:p-2
               ${
                 isAdded
@@ -397,12 +401,12 @@ export default function POSProductGrid({
                 rounded-md
                 px-1.5
                 py-0.5
-                text-[7px]
+                text-[9px]
                 font-black
                 leading-none
                 ring-1
                 ring-inset
-                sm:text-[8px]
+                sm:text-[10px]
                 ${inventoryBadge.className}
               `}
               title={
@@ -423,8 +427,8 @@ export default function POSProductGrid({
               }
               aria-label={
                 isAdded
-                  ? `${product.name}, quantity ${cartQuantity}`
-                  : `Add ${product.name}`
+                  ? `${displayName}, quantity ${cartQuantity}`
+                  : `Add ${displayName}`
               }
               className="
                 min-h-0
@@ -444,10 +448,10 @@ export default function POSProductGrid({
                 <p
                   className={`
                     line-clamp-2
-                    text-[10px]
+                    text-xs
                     font-black
                     leading-[1.25]
-                    sm:text-[11px]
+                    sm:text-[13px]
                     ${
                       isAdded
                         ? 'text-berbere-800'
@@ -455,7 +459,7 @@ export default function POSProductGrid({
                     }
                   `}
                 >
-                  {product.name}
+                  {displayName}
                 </p>
               </div>
             </button>
@@ -486,9 +490,9 @@ export default function POSProductGrid({
                 <span
                   className={`
                     font-mono
-                    text-[11px]
+                    text-xs
                     font-black
-                    sm:text-xs
+                    sm:text-sm
                     ${
                       isAdded
                         ? 'text-berbere-700'
@@ -504,10 +508,10 @@ export default function POSProductGrid({
                 <span
                   className="
                     ml-0.5
-                    text-[7px]
+                    text-[9px]
                     font-bold
                     text-coffee-400
-                    sm:text-[8px]
+                    sm:text-[10px]
                   "
                 >
                   ETB
@@ -526,13 +530,13 @@ export default function POSProductGrid({
                   }
                   aria-label={
                     isAm
-                      ? `${product.name} ወደ ትዕዛዝ ጨምር`
-                      : `Add ${product.name}`
+                      ? `${displayName} ወደ ትዕዛዝ ጨምር`
+                      : `Add ${displayName}`
                   }
                   className="
                     flex
-                    h-6
-                    w-6
+                    h-10
+                    w-10
                     shrink-0
                     items-center
                     justify-center
@@ -543,16 +547,16 @@ export default function POSProductGrid({
                     hover:bg-berbere-100
                     hover:text-berbere-600
                     active:scale-90
-                    sm:h-7
-                    sm:w-7
+                    sm:h-10
+                    sm:w-10
                   "
                 >
                   <Plus
                     className="
-                      h-3
-                      w-3
-                      sm:h-3.5
-                      sm:w-3.5
+                      h-4
+                      w-4
+                      sm:h-5
+                      sm:w-5
                     "
                     strokeWidth={3}
                   />
@@ -561,7 +565,7 @@ export default function POSProductGrid({
                 <div
                   className="
                     flex
-                    h-6
+                    h-10
                     shrink-0
                     items-center
                     gap-0.5
@@ -571,7 +575,7 @@ export default function POSProductGrid({
                     shadow-sm
                     ring-1
                     ring-berbere-100
-                    sm:h-7
+                    sm:h-10
                   "
                   onClick={(event) =>
                     event.stopPropagation()
@@ -593,8 +597,8 @@ export default function POSProductGrid({
                     }
                     className="
                       flex
-                      h-5
-                      w-5
+                      h-9
+                      w-9
                       items-center
                       justify-center
                       rounded
@@ -603,16 +607,14 @@ export default function POSProductGrid({
                       hover:bg-cream-100
                       hover:text-berbere-600
                       active:scale-90
-                      sm:h-6
-                      sm:w-6
+                      sm:h-9
+                      sm:w-9
                     "
                   >
                     <Minus
                       className="
-                        h-2.5
-                        w-2.5
-                        sm:h-3
-                        sm:w-3
+                        h-4
+                        w-4
                       "
                       strokeWidth={3}
                     />
@@ -666,26 +668,25 @@ export default function POSProductGrid({
                     }}
                     aria-label={
                       isAm
-                        ? `${product.name} ብዛት`
-                        : `${product.name} quantity`
+                        ? `${displayName} ብዛት`
+                        : `${displayName} quantity`
                     }
                     className="
-                      h-5
-                      w-7
+                      h-9
+                      w-9
                       appearance-none
                       border-0
                       bg-transparent
                       p-0
                       text-center
                       font-mono
-                      text-[10px]
+                      text-sm
                       font-black
                       text-berbere-700
                       outline-none
                       focus:ring-0
-                      sm:h-6
-                      sm:w-8
-                      sm:text-[11px]
+                      sm:h-10
+                      sm:w-10
                     "
                   />
 
@@ -705,8 +706,8 @@ export default function POSProductGrid({
                     }
                     className="
                       flex
-                      h-5
-                      w-5
+                      h-9
+                      w-9
                       items-center
                       justify-center
                       rounded
@@ -714,16 +715,14 @@ export default function POSProductGrid({
                       transition-colors
                       hover:bg-berbere-50
                       active:scale-90
-                      sm:h-6
-                      sm:w-6
+                      sm:h-9
+                      sm:w-9
                     "
                   >
                     <Plus
                       className="
-                        h-2.5
-                        w-2.5
-                        sm:h-3
-                        sm:w-3
+                        h-4
+                        w-4
                       "
                       strokeWidth={3}
                     />

@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react'
 import { useParams, useRouter } from 'next/navigation'
@@ -111,6 +112,8 @@ export default function SalesPage() {
   const [savingTab, setSavingTab] = useState(false)
   const [openingShift, setOpeningShift] = useState(false)
   const [closingShift, setClosingShift] = useState(false)
+  const [finalizingSale, setFinalizingSale] = useState(false)
+  const finalizingSaleRef = useRef(false)
   const [closedShiftFeedback, setClosedShiftFeedback] = useState<ClosedShiftFeedback | null>(null)
   const [closeShiftDialogOpen, setCloseShiftDialogOpen] = useState(false)
   const [actualCashCount, setActualCashCount] = useState('')
@@ -491,8 +494,13 @@ export default function SalesPage() {
   // ==========================================================
 
   const loadTableTab = useCallback(
-    async (table: POSTable) => {
+    async (table: POSTable, refreshServer = true) => {
       try {
+        if (refreshServer && typeof navigator !== 'undefined' && navigator.onLine) {
+          const { syncEngine } = await import('@/lib/offline/syncEngine')
+          await syncEngine.refreshOpenTableOrders()
+        }
+
         const db = await getDB()
 
         if (!db.objectStoreNames.contains('open_tabs')) {
@@ -529,6 +537,18 @@ export default function SalesPage() {
     },
     [],
   )
+
+  useEffect(() => {
+    const refreshTableOrders = () => {
+      void loadPOSData()
+      if (selectedTable && !hasUnsavedChanges) {
+        void loadTableTab(selectedTable, false)
+      }
+    }
+
+    window.addEventListener('liyu:table-orders-updated', refreshTableOrders)
+    return () => window.removeEventListener('liyu:table-orders-updated', refreshTableOrders)
+  }, [hasUnsavedChanges, loadPOSData, loadTableTab, selectedTable])
 
   // ==========================================================
   // SELECT TABLE
@@ -1045,6 +1065,97 @@ export default function SalesPage() {
   // SAVE TABLE ORDER
   // ==========================================================
 
+  const clearCurrentOrder = async () => {
+    const table = selectedTable
+    if (table) {
+      const db = await getDB()
+      const [tabs, queuedOrders] = await Promise.all([
+        db.getAll('open_tabs'),
+        db.getAll('pending_table_orders'),
+      ])
+      const tableTabs = tabs.filter((tab) => tabBelongsToTable(tab, table))
+      const queuedForTable = queuedOrders
+        .filter((order) => order.tableId === table.id)
+        .sort((first, second) => first.createdAt.localeCompare(second.createdAt))
+      const firstSave = queuedForTable.find((order) => order.operation === 'save')
+      const baseItems = firstSave?.baseItems ?? tableTabs[0]?.items ?? []
+      const transaction = db.transaction(['open_tabs', 'pending_table_orders'], 'readwrite')
+      const orderStore = transaction.objectStore('pending_table_orders')
+
+      for (const order of queuedForTable) {
+        if (order.operation === 'save') await orderStore.delete(order.localId)
+      }
+      for (const tab of tableTabs) {
+        await transaction.objectStore('open_tabs').delete(tab.id)
+      }
+
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(table.id)) {
+        await orderStore.put({
+          localId: crypto.randomUUID(),
+          tableId: table.id,
+          tableNumber: table.table_number || table.name,
+          businessId: businessId || activeShift?.business_id || '',
+          branchId: branchId || activeShift?.branch_id || '',
+          cashierId: userId || activeShift?.cashier_id || '',
+          operation: 'cancel',
+          baseItems,
+          items: [],
+          totalAmount: 0,
+          createdAt: new Date().toISOString(),
+          attempts: 0,
+        })
+      }
+
+      await transaction.done
+    }
+
+    setCart([])
+    setSelectedTable(null)
+    setSavedCartSnapshot(EMPTY_CART_SNAPSHOT)
+    setHasUnsavedChanges(false)
+    setShowCheckout(false)
+    setBillOpen(false)
+    setManualTip('')
+    await loadPOSData()
+
+    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      const { syncEngine } = await import('@/lib/offline/syncEngine')
+      void syncEngine.syncAll()
+    }
+  }
+
+  const handleRestoreCartItem = (item: POSCartItem) => {
+    setCart((current) => {
+      const existing = current.find((entry) => entry.id === item.id)
+      if (existing) {
+        return current.map((entry) => entry.id === item.id
+          ? { ...entry, quantity: entry.quantity + item.quantity }
+          : entry)
+      }
+      return [...current, item]
+    })
+    if (selectedTable) setHasUnsavedChanges(true)
+  }
+
+  const handleClearOrder = () => {
+    if (!cartHasItems) return
+
+    setConfirmDialog({
+      open: true,
+      title: isAm ? 'ትዕዛዙን ያጽዱ?' : 'Clear this order?',
+      message: selectedTable
+        ? isAm ? `${selectedTable.name} ላይ ያለውን ትዕዛዝ ሙሉ በሙሉ ማጥፋት ይፈልጋሉ?` : `Remove the saved order for ${selectedTable.name}?`
+        : isAm ? 'ሁሉንም ዕቃዎች ከዚህ ትዕዛዝ ማጥፋት ይፈልጋሉ?' : 'Remove all items from this order?',
+      onConfirm: () => {
+        closeConfirmDialog()
+        void clearCurrentOrder().catch((error) => {
+          console.error('[POS] Failed to clear the current order:', error)
+          toast(isAm ? 'ትዕዛዙን ማጥፋት አልተቻለም' : 'Could not clear this order.', 'error')
+        })
+      },
+    })
+  }
+
   const handleSaveTab = async () => {
     if (
       !selectedTable ||
@@ -1065,6 +1176,9 @@ export default function SalesPage() {
         table: selectedTable,
         cart,
         totalBill,
+        businessId: businessId || activeShift?.business_id || '',
+        branchId: branchId || activeShift?.branch_id || '',
+        cashierId: userId || activeShift?.cashier_id || '',
       })
 
       setSavedCartSnapshot(result.snapshot)
@@ -1082,10 +1196,19 @@ export default function SalesPage() {
 
       toast(
         isAm
-          ? 'ትዕዛዙ በጠረጴዛው ላይ ተቀምጧል!'
-          : 'Order saved to table successfully.',
+          ? typeof navigator !== 'undefined' && !navigator.onLine
+            ? 'ትዕዛዙ በዚህ መሣሪያ ተቀምጧል። ኢንተርኔት ሲመለስ ይላካል።'
+            : 'ትዕዛዙ ተቀምጧል።'
+          : typeof navigator !== 'undefined' && !navigator.onLine
+            ? 'Order saved on this device. It will sync when you are online.'
+            : 'Order saved.',
         'success',
       )
+
+      if (typeof navigator !== 'undefined' && navigator.onLine) {
+        const { syncEngine } = await import('@/lib/offline/syncEngine')
+        void syncEngine.syncAll()
+      }
     } catch (error) {
       console.error(
         '[POS] Failed to save table tab:',
@@ -1118,7 +1241,10 @@ export default function SalesPage() {
   const handleFinalizeSale = async (
     splitPayments: PaymentSplit,
   ) => {
-    if (!activeShift || cart.length === 0) return
+    if (finalizingSaleRef.current || !activeShift || cart.length === 0) return
+
+    finalizingSaleRef.current = true
+    setFinalizingSale(true)
 
     try {
       const safeShift = await normalizeActiveShiftContext(activeShift)
@@ -1160,8 +1286,12 @@ export default function SalesPage() {
 
       toast(
         isAm
-          ? 'ሽያጩ በተሳካ ሁኔታ ተቀምጧል'
-          : 'Sale completed successfully.',
+          ? typeof navigator !== 'undefined' && !navigator.onLine
+            ? 'ሽያጩ በዚህ መሣሪያ ተቀምጧል። ኢንተርኔት ሲመለስ ይላካል።'
+            : 'ሽያጩ ተቀምጧል።'
+          : typeof navigator !== 'undefined' && !navigator.onLine
+            ? 'Sale saved on this device. It will sync when you are online.'
+            : 'Sale saved.',
         'success',
       )
 
@@ -1197,6 +1327,9 @@ export default function SalesPage() {
           : 'Unable to save the sale locally.',
         'error',
       )
+    } finally {
+      finalizingSaleRef.current = false
+      setFinalizingSale(false)
     }
   }
 
@@ -1371,6 +1504,10 @@ export default function SalesPage() {
           selectedTable={selectedTable}
           totalItems={totalItems}
           totalBill={totalBill}
+          cartSummary={[
+            ...cart.slice(0, 2).map((item) => `${isAm ? item.name_am?.trim() || item.name : item.name} x${item.quantity}`),
+            ...(cart.length > 2 ? [isAm ? `እና ${cart.length - 2} ተጨማሪ` : `+${cart.length - 2} more`] : []),
+          ].join(', ')}
           onCloseShift={handleCloseShift}
           closingShift={closingShift}
           cartHasItems={cartHasItems}
@@ -1409,12 +1546,14 @@ export default function SalesPage() {
             savingTab={savingTab}
             onIncrease={increaseQuantity}
             onDecrease={decreaseQuantity}
+            onRestoreItem={handleRestoreCartItem}
             onClearItem={clearCartItem}
             onSaveTab={handleSaveTab}
             onCheckout={() => {
               setShowCheckout(true)
               setBillOpen(false)
             }}
+            onClearCart={handleClearOrder}
             onClose={() => setBillOpen(false)}
             isAm={isAm}
           />
@@ -1583,6 +1722,7 @@ export default function SalesPage() {
                 onBack={() => setShowCheckout(false)}
                 onConfirmPayment={handleFinalizeSale}
                 isAm={isAm}
+                isSubmitting={finalizingSale}
               />
             </div>
           </main>

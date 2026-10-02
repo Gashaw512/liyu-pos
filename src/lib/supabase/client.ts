@@ -27,7 +27,7 @@ let clientInstance: ReturnType<typeof createBrowserClient> | null = null
 
 const offlineAwareFetch: typeof fetch = (input, init) => {
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    return Promise.reject(new TypeError('Supabase request skipped while offline.'))
+    return Promise.reject(new TypeError('Internet connection required. This action is unavailable offline.'))
   }
 
   return fetch(input, init)

@@ -29,30 +29,43 @@ export default function ShiftsPage() {
     
     try {
       const db = await getDB()
-      
-      const closurePayload = {
-        localId: crypto.randomUUID(),
-        type: 'shift_close',
-        timestamp: Date.now(),
-        payload: {
-          shift_id: activeShift.id,
-          physical_drawer_cash: Number(closingCash),
-          closed_at: new Date().toISOString()
-        }
+
+      const reportId =
+        activeShift.report_id ||
+        activeShift.real_database_id ||
+        (activeShift.id !== 'current' ? activeShift.id : null)
+
+      if (!reportId || !activeShift.business_id || !activeShift.branch_id || !activeShift.cashier_id) {
+        throw new Error('The active shift is missing its synchronization context.')
       }
 
-      // Add to general queue table block structures
-      await db.put('sync_log', {
-        id: closurePayload.localId,
-        type: 'inventory_recon',
-        status: 'success',
-        timestamp: new Date().toISOString()
+      await db.put('pending_shift_closures', {
+        reportId,
+        businessId: activeShift.business_id,
+        branchId: activeShift.branch_id,
+        cashierId: activeShift.cashier_id,
+        openedAt: activeShift.opened_at,
+        closedAt: new Date().toISOString(),
+        openingCash: Number(activeShift.opening_cash) || 0,
+        actualCash: Number(closingCash),
+        attempts: 0,
       })
 
       // Wipe current tracking slot
       await db.delete('active_shift', 'current')
+
+      if (navigator.onLine) {
+        const { syncEngine } = await import('@/lib/offline/syncEngine')
+        void syncEngine.syncAll()
+      }
       
-      alert(isAm ? 'ፈረቃው ተዘግቷል! የሪፖርት መልዕክት ለባለቤቱ በቴሌግራም ይላካል::' : 'Shift locked down! Analytical metrics pushed straight to owner.')
+      alert(navigator.onLine
+        ? isAm
+          ? 'ፈረቃው ተዘግቷል! የሪፖርት መልዕክት ለባለቤቱ በቴሌግራም ይላካል::'
+          : 'Shift locked down! Analytical metrics pushed straight to owner.'
+        : isAm
+          ? 'ፈረቃው ተዘግቷል። ሪፖርቱ ኢንተርኔት ሲመለስ ይላካል።'
+          : 'Shift closed. The report is queued and will sync when online.')
       router.refresh()
       window.location.reload()
     } catch (err) {

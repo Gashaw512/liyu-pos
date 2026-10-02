@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { KeyRound, Loader2, LogOut, Store, UserRound } from 'lucide-react'
 
 import createClient from '@/lib/supabase/client'
+import { clearLastVisitedRoute } from '@/lib/offline/sessionFallback'
 
 interface SettingsData {
   profile: { fullName: string }
@@ -164,6 +165,16 @@ export default function AccountSettings({ locale }: { locale: string }) {
       setFeedback({ kind: 'error', message: t('Could not sign out. Try again.', 'ከመለያው መውጣት አልተቻለም። እንደገና ይሞክሩ።') })
       setSaving(null)
       return
+    }
+    clearLastVisitedRoute()
+    if ('caches' in window) {
+      await Promise.all(['others', 'apis', 'start-url'].map(async (cacheName) => {
+        try {
+          await caches.delete(cacheName)
+        } catch {
+          // A cache cleanup issue must not interrupt a successful sign-out.
+        }
+      }))
     }
     router.replace(`/${locale}/login` as `/${string}`)
   }

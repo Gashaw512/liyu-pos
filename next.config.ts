@@ -10,6 +10,15 @@ const withPWA = nextPWA({
 
   register: true,
   skipWaiting: true,
+  // Cache rendered documents reached through Next's client-side navigation.
+  cacheOnFrontEndNav: true,
+  fallbacks: {
+    document: '/offline.html',
+    image: '',
+    audio: '',
+    video: '',
+    font: '',
+  },
 
   // Keep old caches from interfering with the latest deployment.
   cleanupOutdatedCaches: true,

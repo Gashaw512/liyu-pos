@@ -994,6 +994,11 @@ export async function loadPOSDataFromDB(
     console.log(
       '[POS] Inventory context:',
       {
+        businessId:
+          activeShift?.business_id ??
+          activeShift?.businessId ??
+          null,
+
         branchId,
 
         productCount:

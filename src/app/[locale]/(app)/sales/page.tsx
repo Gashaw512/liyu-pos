@@ -1188,16 +1188,15 @@ export default function SalesPage() {
 
       setSavedCartSnapshot(result.snapshot)
       setHasUnsavedChanges(false)
+      setTables((currentTables) =>
+        currentTables.map((table) =>
+          table.id === selectedTable.id
+            ? { ...table, has_open_tab: true }
+            : table,
+        ),
+      )
 
       await loadPOSData()
-
-      setCart([])
-      setSelectedTable(null)
-      setSavedCartSnapshot(EMPTY_CART_SNAPSHOT)
-      setHasUnsavedChanges(false)
-      setShowCheckout(false)
-      setBillOpen(false)
-      setManualTip('')
 
       toast(
         isAm

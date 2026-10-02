@@ -196,6 +196,8 @@ export default function InventoryPage() {
     setIsSaving,
     t,
     isAm,
+    businessId,
+    branchId,
   );
 
   // ==========================================================

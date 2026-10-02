@@ -1188,6 +1188,7 @@ export default function SalesPage() {
 
       setSavedCartSnapshot(result.snapshot)
       setHasUnsavedChanges(false)
+      await loadPOSData()
       setTables((currentTables) =>
         currentTables.map((table) =>
           table.id === selectedTable.id
@@ -1195,8 +1196,11 @@ export default function SalesPage() {
             : table,
         ),
       )
-
-      await loadPOSData()
+      setSelectedTable((currentTable) =>
+        currentTable?.id === selectedTable.id
+          ? { ...currentTable, has_open_tab: true }
+          : currentTable,
+      )
 
       toast(
         isAm

@@ -396,17 +396,18 @@ async function resolveBusinessBranch(
   supabase: SupabaseClient,
   payload: Record<string, unknown>,
   context: SyncContext,
+  options: {
+    useAuthenticatedBusiness?: boolean
+  } = {},
 ): Promise<{
   branchId: string
   businessId: string
 }> {
-  const requestedBusinessId =
-    payload.business_id ===
-    'biz_active'
+  const requestedBusinessId = options.useAuthenticatedBusiness
+    ? context.activeBusinessId
+    : payload.business_id === 'biz_active'
       ? context.activeBusinessId
-      : toValidUuid(
-          payload.business_id,
-        )
+      : toValidUuid(payload.business_id)
 
   if (!requestedBusinessId) {
     throw new Error(
@@ -1396,6 +1397,7 @@ async function syncInventoryCount(
       supabase,
       payload,
       context,
+      { useAuthenticatedBusiness: true },
     )
 
   const productId =
@@ -1474,6 +1476,35 @@ async function syncInventoryCount(
     existingMovement?.length
   ) {
     return tx.id
+  }
+
+  // Inventory counts can remain queued across an account refresh or a
+  // business-context change. Treat the authenticated profile as the tenant,
+  // then confirm the product belongs to that tenant before accepting the count.
+  const {
+    data: product,
+    error: productError,
+  } = await supabase
+    .from('products')
+    .select('id,branch_id')
+    .eq('id', productId)
+    .eq('business_id', businessId)
+    .maybeSingle()
+
+  if (productError) {
+    throw productError
+  }
+
+  if (!product) {
+    throw new Error(
+      'Inventory count product is not available in this business.',
+    )
+  }
+
+  if (product.branch_id && product.branch_id !== branchId) {
+    throw new Error(
+      'Inventory count product is not available in this branch.',
+    )
   }
 
   /*

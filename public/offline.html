@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#8B2635" />
+    <title>Liyu POS</title>
+    <script>
+      (() => {
+        const key = `liyu-offline-recovery:${location.pathname}`
+        try {
+          if (sessionStorage.getItem(key)) return
+
+          const lastPath = localStorage.getItem('liyu-last-path')
+          if (!lastPath) return
+
+          const destination = new URL(lastPath, location.origin)
+          if (
+            destination.origin !== location.origin ||
+            !/^\/(en|am)\//.test(destination.pathname) ||
+            /^\/(en|am)\/(login|register|onboarding)(\/|$)/.test(destination.pathname)
+          ) return
+
+          sessionStorage.setItem(key, '1')
+          location.replace(destination.pathname + destination.search + destination.hash)
+        } catch {
+          // Keep the fallback message available if browser storage is disabled.
+        }
+      })()
+    </script>
+  </head>
+  <body style="margin:0;background:#f7f4eb;color:#2b1e1a;font:14px system-ui,sans-serif">
+    <main style="max-width:28rem;margin:18vh auto;padding:1.5rem;text-align:center">
+      <strong>Internet connection required</strong>
+      <p style="line-height:1.6">This screen is not available offline yet. Return to the app to continue with saved POS, inventory, and shift data.</p>
+    </main>
+  </body>
+</html>

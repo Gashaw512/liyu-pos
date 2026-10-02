@@ -145,6 +145,13 @@ export function useBusinessContext(): BusinessContext {
 
   const loadContext =
     useCallback(async () => {
+      // Keep using the last known context while offline. The browser client
+      // will load a fresh context again once connectivity returns.
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        setLoading(false)
+        return
+      }
+
       const supabase =
         createClient()
 
@@ -273,6 +280,13 @@ export function useBusinessContext(): BusinessContext {
 
   useEffect(() => {
     void loadContext()
+
+    const handleOnline = () => {
+      void loadContext()
+    }
+
+    window.addEventListener('online', handleOnline)
+    return () => window.removeEventListener('online', handleOnline)
   }, [loadContext])
 
   return {

@@ -277,7 +277,7 @@ export default function InventoryPage() {
         > = {};
         let nextFifoCostDataAvailable = false;
 
-        if (businessId && branchId) {
+        if (businessId && branchId && navigator.onLine) {
           try {
             const { data, error } = await getSupabaseBrowserClient()
               .from("inventory_cost_layers")

@@ -253,7 +253,12 @@ export default function SalesPage() {
 
   const resolveExistingOpenShift = useCallback(
     async (): Promise<Shift | null> => {
-      if (!businessId || !branchId || !userId) {
+      if (
+        !businessId ||
+        !branchId ||
+        !userId ||
+        (typeof navigator !== 'undefined' && !navigator.onLine)
+      ) {
         return null
       }
 

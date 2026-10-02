@@ -25,6 +25,14 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 let clientInstance: ReturnType<typeof createBrowserClient> | null = null
 
+const offlineAwareFetch: typeof fetch = (input, init) => {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return Promise.reject(new TypeError('Supabase request skipped while offline.'))
+  }
+
+  return fetch(input, init)
+}
+
 /**
  * Returns the shared Supabase browser client.
  *
@@ -42,7 +50,8 @@ export function getSupabaseBrowserClient() {
   if (!clientInstance) {
     clientInstance = createBrowserClient(
       supabaseUrl,
-      supabaseAnonKey
+      supabaseAnonKey,
+      { global: { fetch: offlineAwareFetch } },
     )
   }
 

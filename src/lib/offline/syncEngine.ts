@@ -104,6 +104,7 @@ const SALE_SYNC_STATUS_EVENT = 'liyu:sale-sync-status'
 export class SyncEngine {
   private isSyncing = false
   private tableOrdersUnavailable = false
+  private tableOrdersPullInFlight: Promise<void> | null = null
 
   public async refreshCatalog(): Promise<boolean> {
     if (
@@ -504,12 +505,27 @@ export class SyncEngine {
   }
 
   public async refreshOpenTableOrders(): Promise<void> {
-    if (typeof navigator !== 'undefined' && navigator.onLine) {
-      await this.pullOpenTableOrders()
-    }
+    await this.pullOpenTableOrders()
   }
 
-  private async pullOpenTableOrders(allowFallbackSetup = true): Promise<void> {
+  private pullOpenTableOrders(allowFallbackSetup = true): Promise<void> {
+    if (typeof navigator === 'undefined' || !navigator.onLine) {
+      return Promise.resolve()
+    }
+
+    if (this.tableOrdersPullInFlight) {
+      return this.tableOrdersPullInFlight
+    }
+
+    const pull = this.pullOpenTableOrdersRequest(allowFallbackSetup)
+    this.tableOrdersPullInFlight = pull.finally(() => {
+      this.tableOrdersPullInFlight = null
+    })
+
+    return this.tableOrdersPullInFlight
+  }
+
+  private async pullOpenTableOrdersRequest(allowFallbackSetup: boolean): Promise<void> {
     try {
       const response = await fetch('/api/table-orders', {
         method: 'GET',
@@ -559,7 +575,7 @@ export class SyncEngine {
           throw new Error(setupResult?.error || `HTTP ${setupResponse.status}`)
         }
 
-        await this.pullOpenTableOrders(false)
+        await this.pullOpenTableOrdersRequest(false)
         return
       }
 

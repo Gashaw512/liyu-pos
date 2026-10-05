@@ -23,6 +23,7 @@ interface SyncTransaction {
 
 interface SyncContext {
   mainBranchId: string | null
+  profileBranchId: string | null
   activeBusinessId: string
   operatorUserId: string
   operatorRole: string | null
@@ -324,7 +325,7 @@ async function resolveSyncContext(
   } = await supabase
     .from('profiles')
     .select(
-      'business_id, role',
+      'business_id, branch_id, role',
     )
     .eq('id', userId)
     .maybeSingle()
@@ -370,9 +371,31 @@ async function resolveSyncContext(
     throw branchError
   }
 
+  const profileBranchId =
+    toValidUuid(profile.branch_id)
+
+  const {
+    data: profileBranch,
+    error: profileBranchError,
+  } = profileBranchId
+    ? await supabase
+        .from('branches')
+        .select('id')
+        .eq('id', profileBranchId)
+        .eq('business_id', businessId)
+        .maybeSingle()
+    : { data: null, error: null }
+
+  if (profileBranchError) {
+    throw profileBranchError
+  }
+
   return {
     mainBranchId:
       branch?.id ?? null,
+
+    profileBranchId:
+      profileBranch?.id ?? null,
 
     activeBusinessId:
       businessId,
@@ -1395,7 +1418,15 @@ async function syncInventoryCount(
   } =
     await resolveBusinessBranch(
       supabase,
-      payload,
+      {
+        ...payload,
+        // Inventory reconciliation rows can outlive the branch context
+        // that created them. Match the app's authenticated branch context
+        // instead of retrying an obsolete queued branch ID indefinitely.
+        branch_id:
+          context.profileBranchId ??
+          context.mainBranchId,
+      },
       context,
       { useAuthenticatedBusiness: true },
     )

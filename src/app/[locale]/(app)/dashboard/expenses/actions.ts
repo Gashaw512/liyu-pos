@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { Route } from 'next'
 
 import { createClient } from '@/lib/supabase/server'
+import { getAssignedProfileRoles } from '@/lib/shift-reports/server'
 
 interface ExpenseActionResult {
   success: boolean
@@ -85,14 +86,13 @@ async function getExpenseContext(
     user.user_metadata?.role ??
     'owner'
 
+  const roles = await getAssignedProfileRoles(supabase, user.id, role)
+
   // ----------------------------------------------------------
   // AUTHORIZATION
   // ----------------------------------------------------------
 
-  if (
-    role !== 'owner' &&
-    role !== 'manager'
-  ) {
+  if (!roles.some((assignedRole) => assignedRole === 'owner' || assignedRole === 'manager')) {
     redirect(
       `/${locale}/dashboard` as Route,
     )

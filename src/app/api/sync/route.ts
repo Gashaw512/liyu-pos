@@ -2,6 +2,7 @@
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminDatabaseClient, getAssignedProfileRoles } from '@/lib/shift-reports/server'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,7 +27,7 @@ interface SyncContext {
   profileBranchId: string | null
   activeBusinessId: string
   operatorUserId: string
-  operatorRole: string | null
+  operatorRoles: string[]
 }
 
 interface InventoryChange {
@@ -353,6 +354,12 @@ async function resolveSyncContext(
     )
   }
 
+  const operatorRoles = await getAssignedProfileRoles(
+    supabase,
+    userId,
+    profile.role,
+  )
+
   const {
     data: branch,
     error: branchError,
@@ -403,11 +410,7 @@ async function resolveSyncContext(
     operatorUserId:
       userId,
 
-    operatorRole:
-      typeof profile.role ===
-      'string'
-        ? profile.role
-        : null,
+    operatorRoles,
   }
 }
 
@@ -1979,6 +1982,13 @@ export async function POST(
         user.id,
       )
 
+    // The queue has already been authenticated and each operation is checked
+    // against this profile's tenant, branch, and role. Use the existing server
+    // database client for the verified write path because sale sync also
+    // records inventory deductions for cashiers under the inventory RLS rules.
+    const syncDatabase =
+      createAdminDatabaseClient() as unknown as SupabaseClient
+
     /* ----------------------------------------------------------
        DEDUPLICATE QUEUE IDS
     ---------------------------------------------------------- */
@@ -2062,9 +2072,21 @@ export async function POST(
         orderedTransactions
     ) {
       try {
+        const canSyncTransaction = tx.type === 'sale'
+          ? context.operatorRoles.some((role) => ['owner', 'manager', 'cashier', 'barman'].includes(role))
+          : context.operatorRoles.some((role) => ['owner', 'manager', 'inventory_clerk'].includes(role))
+
+        if (!canSyncTransaction) {
+          throw new Error(
+            tx.type === 'sale'
+              ? 'This role cannot sync completed sales.'
+              : 'This role cannot sync inventory changes.',
+          )
+        }
+
         const syncedId =
           await processTransaction(
-            supabase,
+            syncDatabase,
             tx,
             context,
           )

@@ -39,6 +39,7 @@ interface POSCartProps {
 
   isAm: boolean
   hideHeader?: boolean
+  canCheckout?: boolean
 }
 
 export default function POSCart({
@@ -56,6 +57,7 @@ export default function POSCart({
   onClose,
   isAm,
   hideHeader = false,
+  canCheckout = true,
 }: POSCartProps) {
   const [activeItem, setActiveItem] =
     useState<POSCartItem | null>(null)
@@ -737,7 +739,7 @@ export default function POSCart({
 
             {/* PAY & FINISH */}
 
-            <button
+            {canCheckout && <button
               type="button"
               onClick={onCheckout}
               className="
@@ -789,7 +791,7 @@ export default function POSCart({
               >
                 {totalBill.toLocaleString()}
               </span>
-            </button>
+            </button>}
           </div>
         </footer>
       </section>

@@ -16,6 +16,9 @@ import type { POSTable } from './types'
 
 interface POSHeaderProps {
   isAm: boolean
+  canViewSalesReport: boolean
+  canCheckout: boolean
+  canCloseShift: boolean
   selectedTable: POSTable | null
   totalItems: number
   totalBill: number
@@ -36,6 +39,9 @@ const controlClass =
 
 export default function POSHeader({
   isAm,
+  canViewSalesReport,
+  canCheckout,
+  canCloseShift,
   selectedTable,
   totalItems,
   totalBill,
@@ -81,7 +87,7 @@ export default function POSHeader({
           </button>
         )}
 
-        <button
+        {canViewSalesReport && <button
           type="button"
           onClick={() => {
             if (billOpen) onToggleBill()
@@ -94,9 +100,9 @@ export default function POSHeader({
         >
           <BarChart3 className="h-3.5 w-3.5 text-berbere-500" aria-hidden="true" />
           <span>{isAm ? 'ዛሬ' : 'Today'}</span>
-        </button>
+        </button>}
 
-        {cartHasItems && (
+        {canCheckout && cartHasItems && (
           <button
             type="button"
             onClick={() => {
@@ -113,7 +119,7 @@ export default function POSHeader({
           </button>
         )}
 
-        <button
+        {canCloseShift && <button
           type="button"
           onClick={() => void onCloseShift()}
           disabled={closingShift}
@@ -124,7 +130,7 @@ export default function POSHeader({
           {closingShift
             ? <Loader2 className="h-4 w-4 animate-spin" />
             : <LogOut className="h-4 w-4" />}
-        </button>
+        </button>}
       </div>
     </header>
     {cartHasItems && (

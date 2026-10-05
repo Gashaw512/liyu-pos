@@ -57,9 +57,20 @@ export async function GET() {
     if (auth.error) {
       return NextResponse.json({ error: auth.error }, { status: auth.error === 'Unauthorized' ? 401 : 403 })
     }
+    const authorizedRoles = auth.roles
     if (!auth.profile!.business_id || !auth.profile!.branch_id) {
       return NextResponse.json({ error: 'No business branch is assigned to this account.' }, { status: 403 })
     }
+
+    const { data: configuredTables, error: configuredTablesError } = await client
+      .from('restaurant_tables')
+      .select('id,name')
+      .eq('business_id', auth.profile!.business_id)
+      .eq('branch_id', auth.profile!.branch_id)
+      .eq('is_active', true)
+      .is('deleted_at', null)
+      .order('name', { ascending: true })
+    if (configuredTablesError) throw configuredTablesError
 
     const { data, error } = await client
       .from('open_table_orders')
@@ -70,17 +81,16 @@ export async function GET() {
       .order('updated_at', { ascending: false })
     if (error) throw error
 
-    const tableIds = [...new Set((data ?? []).map((order) => order.table_id))]
-    const { data: tables, error: tablesError } = tableIds.length
-      ? await client.from('restaurant_tables').select('id,name').in('id', tableIds)
-      : { data: [], error: null }
-    if (tablesError) throw tablesError
-    const tableNames = new Map((tables ?? []).map((table) => [table.id, table.name]))
+    const tableNames = new Map((configuredTables ?? []).map((table) => [table.id, table.name]))
 
     return NextResponse.json({
       success: true,
       businessId: auth.profile!.business_id,
       branchId: auth.profile!.branch_id,
+      tables: configuredTables ?? [],
+      canCreateFallbackTables:
+        configuredTables?.length === 0 &&
+        authorizedRoles.some((role) => role === 'owner' || role === 'manager'),
       orders: (data ?? []).map((order) => ({
         ...order,
         table_number: tableNames.get(order.table_id) ?? '',
@@ -106,6 +116,7 @@ export async function PUT(request: Request) {
     if (auth.error) {
       return NextResponse.json({ error: auth.error }, { status: auth.error === 'Unauthorized' ? 401 : 403 })
     }
+    const authorizedRoles = auth.roles
 
     const body = await request.json().catch(() => null) as {
       tableId?: unknown
@@ -127,6 +138,15 @@ export async function PUT(request: Request) {
     const items = parseItems(body.items)
     if (!baseItems || !items || (body.operation === 'save' && items.length === 0)) {
       return NextResponse.json({ error: 'The table order contains invalid items.' }, { status: 400 })
+    }
+
+    if (
+      (body.operation === 'complete' || body.operation === 'cancel') &&
+      !authorizedRoles.some((role) =>
+        ['owner', 'manager', 'cashier'].includes(role),
+      )
+    ) {
+      return NextResponse.json({ error: 'Only a cashier or manager can complete or cancel a table order.' }, { status: 403 })
     }
 
     const profile = auth.profile!

@@ -21,6 +21,7 @@ import {
   ReceiptText,
   Settings,
   ShoppingCart,
+  Clock3,
 } from 'lucide-react'
 
 import { useErp } from './AppShell'
@@ -46,6 +47,7 @@ export default function BottomNav({
   const isAm = locale === 'am'
 
   const {
+    roles,
     isCollapsed,
     setIsCollapsed,
   } = useErp()
@@ -170,8 +172,15 @@ export default function BottomNav({
           'manager',
         ],
       },
+      {
+        key: 'shifts',
+        name: isAm ? 'ፈረቃ' : 'Shifts',
+        path: `/${locale}/shifts`,
+        icon: Clock3,
+        roles: ['owner', 'manager', 'cashier'],
+      },
     ],
-    [isAm, locale],
+    [isAm, locale, role],
   )
 
   /*
@@ -183,12 +192,21 @@ export default function BottomNav({
    */
 
   const visibleTabs = useMemo(() => {
-    const currentRole = role || 'waiter'
+    const currentRoles = roles.length ? roles : [role || 'waiter']
 
-    return tabs.filter((tab) =>
-      tab.roles.includes(currentRole),
-    )
-  }, [tabs, role])
+    return tabs
+      .filter((tab) => tab.roles.some((allowedRole) => currentRoles.includes(allowedRole)))
+      .map((tab) => tab.key === 'sales' && !isAm
+        ? {
+            ...tab,
+            name: role === 'waiter'
+              ? 'Tables & Orders'
+              : role === 'cashier'
+                ? 'Bills & Sales'
+                : 'Sales',
+          }
+        : tab)
+  }, [tabs, role, roles])
 
   /*
    * ============================================================
@@ -208,12 +226,13 @@ export default function BottomNav({
    * Manage
    */
 
-  const primaryKeys = [
-    'dashboard',
-    'sales',
-    'inventory',
-    'expenses',
-  ]
+  const assignedRoles = roles.length ? roles : [role || 'waiter']
+  const cashierFocused =
+    assignedRoles.includes('cashier') &&
+    !assignedRoles.some((assignedRole) => ['owner', 'manager'].includes(assignedRole))
+  const primaryKeys = cashierFocused
+    ? ['sales', 'shifts', 'dashboard']
+    : ['dashboard', 'sales', 'inventory', 'expenses']
 
   const mobilePrimaryTabs = useMemo(() => {
     return primaryKeys
@@ -225,14 +244,14 @@ export default function BottomNav({
       .filter(
         (tab): tab is NavItem => Boolean(tab),
       )
-  }, [visibleTabs])
+  }, [visibleTabs, primaryKeys])
 
   const mobileMoreTabs = useMemo(() => {
     return visibleTabs.filter(
       (tab) =>
         !primaryKeys.includes(tab.key),
     )
-  }, [visibleTabs])
+  }, [visibleTabs, primaryKeys])
 
   const hasMoreItems =
     mobileMoreTabs.length > 0

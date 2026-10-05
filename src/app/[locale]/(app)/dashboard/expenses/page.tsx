@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 
 import { createClient } from '@/lib/supabase/server'
+import { getAssignedProfileRoles } from '@/lib/shift-reports/server'
 
 import {
   addExpense,
@@ -96,9 +97,8 @@ export default async function DashboardExpensesPage({
     user.user_metadata?.role ??
     'owner'
 
-  const isOwnerOrManager =
-    userRole === 'owner' ||
-    userRole === 'manager'
+  const assignedRoles = await getAssignedProfileRoles(supabase, user.id, userRole)
+  const isOwnerOrManager = assignedRoles.some((role) => role === 'owner' || role === 'manager')
 
   if (!isOwnerOrManager) {
     redirect(

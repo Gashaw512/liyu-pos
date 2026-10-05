@@ -102,6 +102,8 @@ export interface LocalTableConfiguration {
   id: string;
   name: string;
   table_number?: string | number;
+  business_id?: string;
+  branch_id?: string;
   status?: 'vacant' | 'occupied' | 'dirty' | 'reserved';
 }
 

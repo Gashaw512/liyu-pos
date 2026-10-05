@@ -12,7 +12,7 @@ const money = (value: unknown) => Number.isFinite(Number(value)) ? Number(value)
 export async function POST(request: Request) {
   try {
     const client = await createClient()
-    const auth = await getAuthorizedProfile(client, ['owner', 'manager', 'cashier', 'waiter'])
+    const auth = await getAuthorizedProfile(client, ['owner', 'manager', 'cashier'])
     if (auth.error) return NextResponse.json({ error: auth.error }, { status: auth.error === 'Unauthorized' ? 401 : 403 })
     const body = await request.json() as { reportId?: unknown; branchId?: unknown; openedAt?: unknown; closedAt?: unknown; openingCash?: unknown; actualCash?: unknown }
     if (typeof body.reportId !== 'string' || !UUID.test(body.reportId) || body.branchId !== auth.profile!.branch_id || typeof body.openedAt !== 'string' || typeof body.closedAt !== 'string') return NextResponse.json({ error: 'Invalid shift close details.' }, { status: 400 })

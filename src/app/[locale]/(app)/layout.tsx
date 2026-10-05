@@ -6,6 +6,7 @@ import { createClient } from '../../../lib/supabase/server'
 import AppShell from '../../../components/layout/AppShell'
 import OfflineAwareAppShell from '../../../components/layout/OfflineAwareAppShell'
 import { ToastProvider } from '../../../components/ui/ToastProvider'
+import { getAssignedProfileRoles } from '../../../lib/shift-reports/server'
 
 interface AuthenticatedGroupLayoutProps {
   children: ReactNode
@@ -57,6 +58,8 @@ export default async function AuthenticatedGroupLayout({
     redirect(`/${locale}/login` as any)
   }
 
+  const roles = await getAssignedProfileRoles(supabase, user.id, profile.role)
+
   // ============================================================
   // 3. ONBOARDING
   // ============================================================
@@ -90,6 +93,7 @@ export default async function AuthenticatedGroupLayout({
         <AppShell
           locale={locale}
           role={profile.role}
+          roles={roles}
           fullName={profile.full_name}
           businessName={businessData?.name || 'LIYU POS'}
         >

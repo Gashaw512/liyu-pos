@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
+import { getAssignedProfileRoles } from "@/lib/shift-reports/server";
 import StaffWorkspaceTabs from "@/components/user/StaffWorkspaceTabs";
 
 import type {
@@ -38,9 +39,12 @@ export default async function StaffManagementPage({
     .eq("id", user.id)
     .single();
 
+  const roles = profile
+    ? await getAssignedProfileRoles(supabase, user.id, profile.role)
+    : []
   if (
     !profile?.business_id ||
-    (profile.role !== "owner" && profile.role !== "manager")
+    !roles.some((role) => role === "owner" || role === "manager")
   ) {
     redirect(`/${locale}/dashboard` as Route);
   }

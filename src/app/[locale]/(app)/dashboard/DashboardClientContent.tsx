@@ -45,6 +45,7 @@ interface LowStockItem {
 interface DashboardClientProps {
   locale: string
   role: string
+  roles?: string[]
   businessName: string
 
   initialProductCount: number
@@ -82,6 +83,7 @@ interface DashboardClientProps {
 export default function DashboardClientContent({
   locale,
   role,
+  roles = [role],
   businessName,
 
   initialProductCount,
@@ -131,8 +133,8 @@ export default function DashboardClientContent({
     openShiftCount > 0
 
   const isOwnerOrManager =
-    role === 'owner' ||
-    role === 'manager'
+    roles.includes('owner') ||
+    roles.includes('manager')
 
   /* ==========================================================
      DERIVED DATA
@@ -899,14 +901,22 @@ export default function DashboardClientContent({
               <div>
                 <h3 className="text-sm font-black">
                   {t(
-                    'Open Point of Sale',
+                    role === 'waiter'
+                      ? 'Tables & Orders'
+                      : role === 'cashier'
+                        ? 'Open Bills & Sales'
+                        : 'Open Point of Sale',
                     'አዲስ መሸጫ ክፈት',
                   )}
                 </h3>
 
                 <p className="mt-0.5 text-xs text-cream-300">
                   {t(
-                    'Process customer sales and receipts',
+                    role === 'waiter'
+                      ? 'View tables, create orders, and check order status'
+                      : role === 'cashier'
+                        ? 'Record payments and manage your shift'
+                        : 'Process customer sales and receipts',
                     'የደንበኛ ሽያጭ እና ደረሰኝ ይመዝግቡ',
                   )}
                 </p>
@@ -915,6 +925,16 @@ export default function DashboardClientContent({
 
             <ArrowRight className="h-5 w-5 shrink-0 text-cream-300" />
           </button>
+          {roles.includes('cashier') && (
+            <button
+              type="button"
+              onClick={goToShifts}
+              className="flex w-full items-center justify-between rounded-2xl border border-coffee-100 bg-white p-4 text-left shadow-sm transition hover:bg-coffee-50"
+            >
+              <span className="text-sm font-black text-coffee-800">{t('View my shift', 'ፈረቃዬን ይመልከቱ')}</span>
+              <ArrowRight className="h-4 w-4 text-coffee-300" />
+            </button>
+          )}
         </div>
       )}
     </div>

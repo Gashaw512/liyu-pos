@@ -34,10 +34,17 @@ export default function OfflineAwareAppShell({
         const cache = await caches.open('others')
         await Promise.all(['/sales', '/inventory', '/shifts'].map(async (route) => {
           const url = new URL(`/${locale}${route}`, window.location.origin)
-          if (await cache.match(url.href)) return
-
           try {
-            await cache.add(url.href)
+            // Refresh previously cached documents as well, so offline launches
+            // do not keep pointing at a stale route after a deployment.
+            const response = await fetch(url.href, { credentials: 'same-origin' })
+            if (
+              response.ok &&
+              !response.redirected &&
+              response.headers.get('content-type')?.includes('text/html')
+            ) {
+              await cache.put(url.href, response)
+            }
           } catch {
             // The route can still be opened online if it cannot be cached now.
           }

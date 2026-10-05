@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
+import { getAssignedProfileRoles } from "@/lib/shift-reports/server";
 import StaffUpdateRoleForm from "@/components/user/StaffUpdateRoleForm";
 
 interface PageProps {
@@ -77,10 +78,13 @@ export default async function StaffProfileDetailPage({
       .eq("id", user.id)
       .single();
 
+  const currentUserRoles = currentUserProfile
+    ? await getAssignedProfileRoles(supabase, user.id, currentUserProfile.role)
+    : []
   if (
     currentUserError ||
     !currentUserProfile?.business_id ||
-    !["owner", "manager"].includes(currentUserProfile.role)
+    !currentUserRoles.some((role) => ["owner", "manager"].includes(role))
   ) {
     redirect(`/${locale}/dashboard` as Route);
   }

@@ -37,6 +37,7 @@ interface POSBillDropdownProps {
   onClose: () => void
 
   isAm: boolean
+  canCheckout?: boolean
 }
 
 export default function POSBillDropdown({
@@ -53,6 +54,7 @@ export default function POSBillDropdown({
   onClearCart,
   onClose,
   isAm,
+  canCheckout = true,
 }: POSBillDropdownProps) {
   return (
     <>
@@ -100,6 +102,7 @@ export default function POSBillDropdown({
           onClose={onClose}
           isAm={isAm}
           hideHeader
+          canCheckout={canCheckout}
         />
       </div>
     </>

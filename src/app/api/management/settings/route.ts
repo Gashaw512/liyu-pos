@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { createClient } from '@/lib/supabase/server'
+import { getAssignedProfileRoles } from '@/lib/shift-reports/server'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,6 +37,7 @@ export async function GET() {
       .maybeSingle()
 
     if (profileError || !profile) return json({ error: 'profile_missing' }, 404)
+    const roles = await getAssignedProfileRoles(supabase, user.id, profile.role)
 
     let business = null
     if (profile.business_id) {
@@ -52,7 +54,7 @@ export async function GET() {
     return json({
       profile: { fullName: profile.full_name },
       business,
-      canEditBusiness: profile.role === 'owner',
+      canEditBusiness: roles.includes('owner'),
     })
   } catch {
     return json({ error: 'load_failed' }, 500)
@@ -78,6 +80,7 @@ export async function PATCH(request: Request) {
       .maybeSingle()
 
     if (profileError || !profile) return json({ error: 'profile_missing' }, 404)
+    const roles = await getAssignedProfileRoles(supabase, user.id, profile.role)
 
     if (body.section === 'account') {
       const fullName = optionalText(body.fullName, 150)
@@ -94,7 +97,7 @@ export async function PATCH(request: Request) {
       return json({ success: true, fullName })
     }
 
-    if (profile.role !== 'owner' || !profile.business_id) {
+    if (!roles.includes('owner') || !profile.business_id) {
       return json({ error: 'business_owner_only' }, 403)
     }
 

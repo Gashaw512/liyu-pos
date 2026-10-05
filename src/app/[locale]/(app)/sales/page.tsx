@@ -21,6 +21,7 @@ import {
   toLocalActiveShift,
 } from '@/lib/offline/shiftContext'
 import { useBusinessContext } from '@/lib/auth/useBusinessContext'
+import { useErp } from '@/components/layout/AppShell'
 import createClient from '@/lib/supabase/client'
 
 import POSHeader from '../../../../components/pos/POSHeader'
@@ -81,6 +82,12 @@ export default function SalesPage() {
   const isAm = locale === 'am'
 
   const { toast } = useToast()
+  const { role, roles } = useErp()
+  const assignedRoles = roles.length ? roles : [role]
+  const hasRole = (allowed: string[]) => allowed.some((candidate) => assignedRoles.includes(candidate))
+  const canCheckout = hasRole(['owner', 'manager', 'cashier', 'barman'])
+  const isWaiter = hasRole(['waiter']) && !canCheckout
+  const canViewSalesReport = hasRole(['owner', 'manager', 'cashier', 'barman'])
 
   const {
     businessId,
@@ -375,7 +382,7 @@ export default function SalesPage() {
         }
 
         const data =
-          await loadPOSDataFromDB(db)
+          await loadPOSDataFromDB(db, { businessId, branchId })
 
         /*
          * loadPOSDataFromDB() reads active_shift itself,
@@ -398,6 +405,16 @@ export default function SalesPage() {
         setTables(
           data.tables,
         )
+
+        setSelectedTable((currentTable) => {
+          if (!currentTable) return currentTable
+          return data.tables.find((table) => table.id === currentTable.id) ??
+            data.tables.find((table) =>
+              table.name === currentTable.name ||
+              table.table_number === currentTable.table_number,
+            ) ??
+            currentTable
+        })
       } catch (error) {
         console.error(
           '[POS] Failed to load POS data:',
@@ -554,6 +571,19 @@ export default function SalesPage() {
     window.addEventListener('liyu:table-orders-updated', refreshTableOrders)
     return () => window.removeEventListener('liyu:table-orders-updated', refreshTableOrders)
   }, [hasUnsavedChanges, loadPOSData, loadTableTab, selectedTable])
+
+  useEffect(() => {
+    const refreshConfiguredTables = () => {
+      if (!navigator.onLine) return
+      void import('@/lib/offline/syncEngine').then(({ syncEngine }) =>
+        syncEngine.refreshOpenTableOrders(),
+      )
+    }
+
+    refreshConfiguredTables()
+    window.addEventListener('online', refreshConfiguredTables)
+    return () => window.removeEventListener('online', refreshConfiguredTables)
+  }, [])
 
   // ==========================================================
   // SELECT TABLE
@@ -936,6 +966,7 @@ export default function SalesPage() {
   }
 
   const handleCloseShift = async () => {
+    if (!hasRole(['owner', 'manager', 'cashier'])) return
     if (closingShift) return
     if (!activeShift) return
 
@@ -1188,16 +1219,19 @@ export default function SalesPage() {
 
       setSavedCartSnapshot(result.snapshot)
       setHasUnsavedChanges(false)
-
       await loadPOSData()
-
-      setCart([])
-      setSelectedTable(null)
-      setSavedCartSnapshot(EMPTY_CART_SNAPSHOT)
-      setHasUnsavedChanges(false)
-      setShowCheckout(false)
-      setBillOpen(false)
-      setManualTip('')
+      setTables((currentTables) =>
+        currentTables.map((table) =>
+          table.id === selectedTable.id
+            ? { ...table, has_open_tab: true }
+            : table,
+        ),
+      )
+      setSelectedTable((currentTable) =>
+        currentTable?.id === selectedTable.id
+          ? { ...currentTable, has_open_tab: true }
+          : currentTable,
+      )
 
       toast(
         isAm
@@ -1246,6 +1280,7 @@ export default function SalesPage() {
   const handleFinalizeSale = async (
     splitPayments: PaymentSplit,
   ) => {
+    if (!canCheckout) return
     if (finalizingSaleRef.current || !activeShift || cart.length === 0) return
 
     finalizingSaleRef.current = true
@@ -1360,7 +1395,7 @@ export default function SalesPage() {
   // OPEN SHIFT
   // ==========================================================
 
-  if (!activeShift) {
+  if (!activeShift && !isWaiter) {
     return (
       <div className="flex min-h-full items-start justify-center overflow-y-auto bg-coffee-900 px-3 pb-[calc(5rem+env(safe-area-inset-bottom))] pt-4 sm:items-center sm:p-4">
         <div className="w-full max-w-sm overflow-hidden rounded-3xl bg-cream-50 shadow-elevated">
@@ -1506,6 +1541,9 @@ export default function SalesPage() {
       <div className="relative z-50 shrink-0">
         <POSHeader
           isAm={isAm}
+          canViewSalesReport={canViewSalesReport}
+          canCheckout={canCheckout}
+          canCloseShift={hasRole(['owner', 'manager', 'cashier'])}
           selectedTable={selectedTable}
           totalItems={totalItems}
           totalBill={totalBill}
@@ -1529,7 +1567,7 @@ export default function SalesPage() {
             <SellerDailyStatement
               businessId={businessId}
               branchId={branchId}
-              cashierId={activeShift.cashier_id ?? userId}
+              cashierId={activeShift?.cashier_id ?? userId}
               locale={locale}
               isAm={isAm}
               initiallyExpanded
@@ -1551,12 +1589,14 @@ export default function SalesPage() {
             onClearItem={clearCartItem}
             onSaveTab={handleSaveTab}
             onCheckout={() => {
+              if (!canCheckout) return
               setShowCheckout(true)
               setBillOpen(false)
             }}
             onClearCart={handleClearOrder}
             onClose={() => setBillOpen(false)}
             isAm={isAm}
+            canCheckout={canCheckout}
           />
         )}
       </div>
@@ -1740,7 +1780,7 @@ export default function SalesPage() {
         onCancel={closeConfirmDialog}
       />
 
-      <CloseShiftDialog
+      {activeShift && <CloseShiftDialog
         open={closeShiftDialogOpen}
         isAm={isAm}
         openingCash={Number(activeShift?.opening_cash) || 0}
@@ -1749,7 +1789,7 @@ export default function SalesPage() {
         onActualCashChange={setActualCashCount}
         onConfirm={confirmCloseShift}
         onCancel={() => setCloseShiftDialogOpen(false)}
-      />
+      />}
     </div>
   )
 }

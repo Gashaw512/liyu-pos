@@ -2,6 +2,7 @@
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminDatabaseClient, getAssignedProfileRoles } from '@/lib/shift-reports/server'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,9 +24,10 @@ interface SyncTransaction {
 
 interface SyncContext {
   mainBranchId: string | null
+  profileBranchId: string | null
   activeBusinessId: string
   operatorUserId: string
-  operatorRole: string | null
+  operatorRoles: string[]
 }
 
 interface InventoryChange {
@@ -324,7 +326,7 @@ async function resolveSyncContext(
   } = await supabase
     .from('profiles')
     .select(
-      'business_id, role',
+      'business_id, branch_id, role',
     )
     .eq('id', userId)
     .maybeSingle()
@@ -352,6 +354,12 @@ async function resolveSyncContext(
     )
   }
 
+  const operatorRoles = await getAssignedProfileRoles(
+    supabase,
+    userId,
+    profile.role,
+  )
+
   const {
     data: branch,
     error: branchError,
@@ -370,9 +378,31 @@ async function resolveSyncContext(
     throw branchError
   }
 
+  const profileBranchId =
+    toValidUuid(profile.branch_id)
+
+  const {
+    data: profileBranch,
+    error: profileBranchError,
+  } = profileBranchId
+    ? await supabase
+        .from('branches')
+        .select('id')
+        .eq('id', profileBranchId)
+        .eq('business_id', businessId)
+        .maybeSingle()
+    : { data: null, error: null }
+
+  if (profileBranchError) {
+    throw profileBranchError
+  }
+
   return {
     mainBranchId:
       branch?.id ?? null,
+
+    profileBranchId:
+      profileBranch?.id ?? null,
 
     activeBusinessId:
       businessId,
@@ -380,11 +410,7 @@ async function resolveSyncContext(
     operatorUserId:
       userId,
 
-    operatorRole:
-      typeof profile.role ===
-      'string'
-        ? profile.role
-        : null,
+    operatorRoles,
   }
 }
 
@@ -396,17 +422,18 @@ async function resolveBusinessBranch(
   supabase: SupabaseClient,
   payload: Record<string, unknown>,
   context: SyncContext,
+  options: {
+    useAuthenticatedBusiness?: boolean
+  } = {},
 ): Promise<{
   branchId: string
   businessId: string
 }> {
-  const requestedBusinessId =
-    payload.business_id ===
-    'biz_active'
+  const requestedBusinessId = options.useAuthenticatedBusiness
+    ? context.activeBusinessId
+    : payload.business_id === 'biz_active'
       ? context.activeBusinessId
-      : toValidUuid(
-          payload.business_id,
-        )
+      : toValidUuid(payload.business_id)
 
   if (!requestedBusinessId) {
     throw new Error(
@@ -1394,8 +1421,17 @@ async function syncInventoryCount(
   } =
     await resolveBusinessBranch(
       supabase,
-      payload,
+      {
+        ...payload,
+        // Inventory reconciliation rows can outlive the branch context
+        // that created them. Match the app's authenticated branch context
+        // instead of retrying an obsolete queued branch ID indefinitely.
+        branch_id:
+          context.profileBranchId ??
+          context.mainBranchId,
+      },
       context,
+      { useAuthenticatedBusiness: true },
     )
 
   const productId =
@@ -1474,6 +1510,35 @@ async function syncInventoryCount(
     existingMovement?.length
   ) {
     return tx.id
+  }
+
+  // Inventory counts can remain queued across an account refresh or a
+  // business-context change. Treat the authenticated profile as the tenant,
+  // then confirm the product belongs to that tenant before accepting the count.
+  const {
+    data: product,
+    error: productError,
+  } = await supabase
+    .from('products')
+    .select('id,branch_id')
+    .eq('id', productId)
+    .eq('business_id', businessId)
+    .maybeSingle()
+
+  if (productError) {
+    throw productError
+  }
+
+  if (!product) {
+    throw new Error(
+      'Inventory count product is not available in this business.',
+    )
+  }
+
+  if (product.branch_id && product.branch_id !== branchId) {
+    throw new Error(
+      'Inventory count product is not available in this branch.',
+    )
   }
 
   /*
@@ -1917,6 +1982,13 @@ export async function POST(
         user.id,
       )
 
+    // The queue has already been authenticated and each operation is checked
+    // against this profile's tenant, branch, and role. Use the existing server
+    // database client for the verified write path because sale sync also
+    // records inventory deductions for cashiers under the inventory RLS rules.
+    const syncDatabase =
+      createAdminDatabaseClient() as unknown as SupabaseClient
+
     /* ----------------------------------------------------------
        DEDUPLICATE QUEUE IDS
     ---------------------------------------------------------- */
@@ -2000,9 +2072,21 @@ export async function POST(
         orderedTransactions
     ) {
       try {
+        const canSyncTransaction = tx.type === 'sale'
+          ? context.operatorRoles.some((role) => ['owner', 'manager', 'cashier', 'barman'].includes(role))
+          : context.operatorRoles.some((role) => ['owner', 'manager', 'inventory_clerk'].includes(role))
+
+        if (!canSyncTransaction) {
+          throw new Error(
+            tx.type === 'sale'
+              ? 'This role cannot sync completed sales.'
+              : 'This role cannot sync inventory changes.',
+          )
+        }
+
         const syncedId =
           await processTransaction(
-            supabase,
+            syncDatabase,
             tx,
             context,
           )

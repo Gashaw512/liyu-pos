@@ -8,6 +8,7 @@ import DashboardClientContent from './DashboardClientContent'
 import {
   getDashboardReport,
 } from '@/queries/dashboardReport'
+import { getAssignedProfileRoles } from '@/lib/shift-reports/server'
 
 export const dynamic = 'force-dynamic'
 
@@ -413,6 +414,8 @@ export default async function DashboardOverviewPage({
     user.user_metadata?.role ??
     'owner'
 
+  const userRoles = await getAssignedProfileRoles(supabase, user.id, userRole)
+
   /* ==========================================================
      4. DETERMINE DASHBOARD PERIOD
      ========================================================== */
@@ -589,6 +592,7 @@ export default async function DashboardOverviewPage({
     <DashboardClientContent
       locale={locale}
       role={userRole}
+      roles={userRoles}
       businessName={businessName}
 
       /* ------------------------------------------------------

@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation'
 import { KeyRound, Settings2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import ManagementCard from '@/components/management/ManagementCard'
+import { useErp } from '@/components/layout/AppShell'
 
 interface ManagementItem {
   title: string
@@ -24,6 +25,8 @@ export default function ManagementHubPage() {
 
   const locale = String(params?.locale || 'am')
   const isAm = locale === 'am'
+  const { role, roles } = useErp()
+  const isOwner = (roles.length ? roles : [role]).includes('owner')
 
   const sections: ManagementSection[] = [
     {
@@ -131,7 +134,13 @@ export default function ManagementHubPage() {
 
         {/* MANAGEMENT SECTIONS */}
         <div className="space-y-5 sm:space-y-6">
-          {sections.map((section) => (
+          {sections.map((section) => {
+            const items = section.items.filter((item) =>
+              isOwner || !item.route.endsWith('/settings'),
+            )
+            if (!items.length) return null
+
+            return (
             <section key={section.title}>
               {/* SECTION LABEL */}
               <div className="mb-2 flex items-center gap-2 px-1">
@@ -144,7 +153,7 @@ export default function ManagementHubPage() {
 
               {/* CARD GROUP */}
               <div className="overflow-hidden rounded-2xl border border-cream-200 bg-white shadow-sm">
-                {section.items.map((item, index) => (
+                {items.map((item, index) => (
                   <div key={item.route}>
                     <ManagementCard
                       title={item.title}
@@ -153,14 +162,15 @@ export default function ManagementHubPage() {
                       route={item.route}
                     />
 
-                    {index < section.items.length - 1 && (
+                    {index < items.length - 1 && (
                       <div className="mx-4 border-b border-cream-100" />
                     )}
                   </div>
                 ))}
               </div>
             </section>
-          ))}
+            )
+          })}
         </div>
       </div>
     </div>

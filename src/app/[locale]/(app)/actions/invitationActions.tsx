@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 
 import { createClient } from "@/lib/supabase/server";
+import { getAssignedProfileRoles } from "@/lib/shift-reports/server";
 import type { StaffRole } from "@/types/enum";
 
 type CreateStaffInvitationInput = {
@@ -83,11 +84,12 @@ export async function createStaffInvitation(
     throw new Error("Profile not found");
   }
 
+  const roles = await getAssignedProfileRoles(supabase, user.id, profile.role)
   if (!profile.business_id) {
     throw new Error("Missing business context");
   }
 
-  if (!["owner", "manager"].includes(profile.role)) {
+  if (!["owner", "manager"].some((role) => roles.includes(role))) {
     throw new Error("Permission denied");
   }
 

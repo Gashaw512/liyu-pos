@@ -199,9 +199,6 @@ export default function DashboardClientContent({
   const goToInventory = () =>
     goTo('/inventory')
 
-  const goToShifts = () =>
-    goTo('/shifts')
-
   const goToCloseDay = () =>
     goTo('/dashboard/close-day')
 
@@ -364,7 +361,7 @@ export default function DashboardClientContent({
         isVoicePlaying={isVoicePlaying}
         onToggleVoice={handleVoiceGuidance}
         activeShift={hasActiveShift}
-        onDayStatusClick={goToShifts}
+        onDayStatusClick={goToSales}
         onCloseDay={
           hasActiveShift
             ? goToCloseDay
@@ -372,7 +369,7 @@ export default function DashboardClientContent({
         }
         onOpenDay={
           !hasActiveShift
-            ? goToShifts
+            ? goToSales
             : undefined
         }
         onSalesClick={goToSales}
@@ -651,7 +648,7 @@ export default function DashboardClientContent({
 
               <button
                 type="button"
-                onClick={goToShifts}
+                onClick={goToSales}
                 className="flex items-center justify-between rounded-xl border border-coffee-100 bg-coffee-50 px-3 py-3 text-left transition hover:bg-coffee-100 sm:col-span-2"
               >
                 <div className="flex items-center gap-3">
@@ -928,10 +925,10 @@ export default function DashboardClientContent({
           {roles.includes('cashier') && (
             <button
               type="button"
-              onClick={goToShifts}
+              onClick={goToSales}
               className="flex w-full items-center justify-between rounded-2xl border border-coffee-100 bg-white p-4 text-left shadow-sm transition hover:bg-coffee-50"
             >
-              <span className="text-sm font-black text-coffee-800">{t('View my shift', 'ፈረቃዬን ይመልከቱ')}</span>
+              <span className="text-sm font-black text-coffee-800">{t('Open POS shift controls', 'ፈረቃዬን በPOS ይክፈቱ')}</span>
               <ArrowRight className="h-4 w-4 text-coffee-300" />
             </button>
           )}

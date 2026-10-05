@@ -32,7 +32,7 @@ export default function OfflineAwareAppShell({
     const warmCoreRoutes = async () => {
       try {
         const cache = await caches.open('others')
-        await Promise.all(['/sales', '/inventory', '/shifts'].map(async (route) => {
+        await Promise.all(['/sales', '/inventory'].map(async (route) => {
           const url = new URL(`/${locale}${route}`, window.location.origin)
           try {
             // Refresh previously cached documents as well, so offline launches

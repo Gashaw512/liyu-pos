@@ -375,7 +375,7 @@ export default function SalesPage() {
         }
 
         const data =
-          await loadPOSDataFromDB(db)
+          await loadPOSDataFromDB(db, { businessId, branchId })
 
         /*
          * loadPOSDataFromDB() reads active_shift itself,
@@ -398,6 +398,16 @@ export default function SalesPage() {
         setTables(
           data.tables,
         )
+
+        setSelectedTable((currentTable) => {
+          if (!currentTable) return currentTable
+          return data.tables.find((table) => table.id === currentTable.id) ??
+            data.tables.find((table) =>
+              table.name === currentTable.name ||
+              table.table_number === currentTable.table_number,
+            ) ??
+            currentTable
+        })
       } catch (error) {
         console.error(
           '[POS] Failed to load POS data:',
@@ -554,6 +564,19 @@ export default function SalesPage() {
     window.addEventListener('liyu:table-orders-updated', refreshTableOrders)
     return () => window.removeEventListener('liyu:table-orders-updated', refreshTableOrders)
   }, [hasUnsavedChanges, loadPOSData, loadTableTab, selectedTable])
+
+  useEffect(() => {
+    const refreshConfiguredTables = () => {
+      if (!navigator.onLine) return
+      void import('@/lib/offline/syncEngine').then(({ syncEngine }) =>
+        syncEngine.refreshOpenTableOrders(),
+      )
+    }
+
+    refreshConfiguredTables()
+    window.addEventListener('online', refreshConfiguredTables)
+    return () => window.removeEventListener('online', refreshConfiguredTables)
+  }, [])
 
   // ==========================================================
   // SELECT TABLE

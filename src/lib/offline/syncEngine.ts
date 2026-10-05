@@ -167,6 +167,10 @@ export class SyncEngine {
         return
       }
 
+      // Load the authenticated branch's table IDs before pushing queued
+      // offline table orders. This also gives old device-only table names a
+      // chance to map to configured tables in the same business/branch.
+      await this.pullOpenTableOrders()
       await this.syncPendingTableOrderEvents('save')
 
       // ======================================================
@@ -505,7 +509,7 @@ export class SyncEngine {
     }
   }
 
-  private async pullOpenTableOrders(): Promise<void> {
+  private async pullOpenTableOrders(allowFallbackSetup = true): Promise<void> {
     try {
       const response = await fetch('/api/table-orders', {
         method: 'GET',
@@ -516,6 +520,8 @@ export class SyncEngine {
         success?: boolean
         businessId?: string
         branchId?: string
+        canCreateFallbackTables?: boolean
+        tables?: Array<{ id: string; name: string }>
         orders?: Array<{
           table_id: string
           table_number?: string
@@ -530,7 +536,7 @@ export class SyncEngine {
         error?: string
         code?: string
       } | null
-      if (!response.ok || !result?.success || !result.businessId || !result.branchId || !Array.isArray(result.orders)) {
+      if (!response.ok || !result?.success || !result.businessId || !result.branchId || !Array.isArray(result.tables) || !Array.isArray(result.orders)) {
         if (result?.code === 'TABLE_ORDERS_NOT_CONFIGURED') {
           this.tableOrdersUnavailable = true
           console.warn('[SYNC] Shared table orders are paused until their database migration is applied.')
@@ -539,18 +545,95 @@ export class SyncEngine {
         throw new Error(result?.error || `HTTP ${response.status}`)
       }
 
+      if (allowFallbackSetup && result.tables.length === 0 && result.canCreateFallbackTables) {
+        const setupResponse = await fetch('/api/table-orders/setup-fallbacks', {
+          method: 'POST',
+          cache: 'no-store',
+        })
+        const setupResult = await setupResponse.json().catch(() => null) as {
+          success?: boolean
+          error?: string
+        } | null
+
+        if (!setupResponse.ok || !setupResult?.success) {
+          throw new Error(setupResult?.error || `HTTP ${setupResponse.status}`)
+        }
+
+        await this.pullOpenTableOrders(false)
+        return
+      }
+
       this.tableOrdersUnavailable = false
 
       const db = await getDB()
-      const transaction = db.transaction(['open_tabs', 'pending_table_orders'], 'readwrite')
+      const transaction = db.transaction(['tables', 'open_tabs', 'pending_table_orders'], 'readwrite')
+      const tablesStore = transaction.objectStore('tables')
       const tabsStore = transaction.objectStore('open_tabs')
       const pendingStore = transaction.objectStore('pending_table_orders')
-      const [localTabs, pendingEvents] = await Promise.all([
+      const [cachedTables, localTabs, pendingEvents] = await Promise.all([
+        tablesStore.getAll(),
         tabsStore.getAll(),
         pendingStore.getAll(),
       ])
+      const configuredTableIds = new Set(result.tables.map((table) => table.id))
+      const configuredTableByName = new Map(
+        result.tables.map((table) => [table.name.trim(), table]),
+      )
+      for (const table of cachedTables) {
+        if (
+          table.business_id === result.businessId &&
+          table.branch_id === result.branchId &&
+          !configuredTableIds.has(table.id)
+        ) {
+          await tablesStore.delete(table.id)
+        }
+      }
+      for (const table of result.tables) {
+        await tablesStore.put({
+          ...table,
+          table_number: table.name,
+          business_id: result.businessId,
+          branch_id: result.branchId,
+        })
+      }
+
+      for (const event of pendingEvents) {
+        const table = configuredTableByName.get(event.tableNumber.trim())
+        const belongsToCurrentContext =
+          (!event.businessId || event.businessId === result.businessId) &&
+          (!event.branchId || event.branchId === result.branchId)
+        if (!table || isPersistedTableId(event.tableId) || !belongsToCurrentContext) continue
+
+        await pendingStore.put({
+          ...event,
+          tableId: table.id,
+          tableNumber: table.name,
+          businessId: result.businessId,
+          branchId: result.branchId,
+        })
+      }
+
+      for (const tab of localTabs) {
+        const localTableId = tab.table_id || tab.id
+        const table = configuredTableByName.get(tab.table_number.trim())
+        const belongsToCurrentContext =
+          (!tab.business_id || tab.business_id === result.businessId) &&
+          (!tab.branch_id || tab.branch_id === result.branchId)
+        if (!table || isPersistedTableId(localTableId) || !belongsToCurrentContext) continue
+
+        await tabsStore.delete(tab.id)
+        await tabsStore.put({
+          ...tab,
+          id: table.id,
+          table_id: table.id,
+          table_number: table.name,
+          business_id: result.businessId,
+          branch_id: result.branchId,
+        })
+      }
+
       const pendingTableIds = new Set(
-        pendingEvents
+        (await pendingStore.getAll())
           .filter((event) => !event.branchId || event.branchId === result.branchId)
           .map((event) => event.tableId),
       )

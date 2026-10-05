@@ -7,20 +7,11 @@ import type {
   POSProduct,
   POSTable,
 } from './types'
+import { FALLBACK_TABLES } from '@/lib/pos/tableDefaults'
 
 // ============================================================
 // CONSTANTS
 // ============================================================
-
-export const FALLBACK_TABLES = [
-  'Table 1',
-  'Table 2',
-  'Table 3',
-  'Table 4',
-  'Table 5',
-  'Table 6',
-  'VIP Box',
-] as const
 
 export const DEFAULT_CASH_FLOAT = '0'
 
@@ -947,6 +938,7 @@ export interface POSDataSnapshot {
 
 export async function loadPOSDataFromDB(
   db: any,
+  context: { businessId?: string | null; branchId?: string | null } = {},
 ): Promise<POSDataSnapshot> {
   // ----------------------------------------------------------
   // ACTIVE SHIFT
@@ -962,6 +954,9 @@ export async function loadPOSDataFromDB(
     activeShift?.branch_id ??
     activeShift?.branchId ??
     null
+
+  const tableBusinessId = context.businessId ?? activeShift?.business_id ?? null
+  const tableBranchId = context.branchId ?? branchId
 
   // ----------------------------------------------------------
   // PRODUCTS
@@ -1080,8 +1075,11 @@ export async function loadPOSDataFromDB(
     )
   ) {
     openTabs =
-      await db.getAll(
+      (await db.getAll(
         'open_tabs',
+      )).filter((tab: any) =>
+        (!tableBusinessId || !tab.business_id || tab.business_id === tableBusinessId) &&
+        (!tableBranchId || !tab.branch_id || tab.branch_id === tableBranchId),
       )
   }
 
@@ -1104,7 +1102,10 @@ export async function loadPOSDataFromDB(
 
     tables =
       normalizePOSTables(
-        tableRows || [],
+        (tableRows || []).filter((table: any) =>
+          (!tableBusinessId || !table.business_id || table.business_id === tableBusinessId) &&
+          (!tableBranchId || !table.branch_id || table.branch_id === tableBranchId),
+        ),
         openTabs,
       )
   }

@@ -21,7 +21,6 @@ import {
   ReceiptText,
   Settings,
   ShoppingCart,
-  Clock3,
 } from 'lucide-react'
 
 import { useErp } from './AppShell'
@@ -172,13 +171,6 @@ export default function BottomNav({
           'manager',
         ],
       },
-      {
-        key: 'shifts',
-        name: isAm ? 'ፈረቃ' : 'Shifts',
-        path: `/${locale}/shifts`,
-        icon: Clock3,
-        roles: ['owner', 'manager', 'cashier'],
-      },
     ],
     [isAm, locale, role],
   )
@@ -231,7 +223,7 @@ export default function BottomNav({
     assignedRoles.includes('cashier') &&
     !assignedRoles.some((assignedRole) => ['owner', 'manager'].includes(assignedRole))
   const primaryKeys = cashierFocused
-    ? ['sales', 'shifts', 'dashboard']
+    ? ['sales', 'dashboard']
     : ['dashboard', 'sales', 'inventory', 'expenses']
 
   const mobilePrimaryTabs = useMemo(() => {

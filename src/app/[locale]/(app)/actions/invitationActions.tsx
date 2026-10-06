@@ -2,6 +2,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { randomBytes } from "node:crypto";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 
 import { createClient } from "@/lib/supabase/server";
@@ -231,10 +232,7 @@ export async function createStaffInvitation(
      7. Generate invitation code
   ------------------------------------------------------- */
 
-  const code = `LY-${crypto
-    .randomUUID()
-    .slice(0, 6)
-    .toUpperCase()}`;
+  const code = `LY-${randomBytes(8).toString("hex").toUpperCase()}`;
 
   /* -------------------------------------------------------
      8. Create invitation

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient as createSupabaseAdminClient } from '@supabase/supabase-js'
 
-import { normalizeEthiopianPhone } from '@/lib/auth/recoveryCode'
+import { normalizeEthiopianPhone } from '@/lib/auth/phone'
 
 export const dynamic = 'force-dynamic'
 
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
       .select('staff_name,phone')
       .eq('code', code)
       .eq('status', 'pending')
-      .gt('expires_at', new Date().toISOString())
+      .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
       .maybeSingle()
 
     if (error) throw error

@@ -7,7 +7,7 @@ CREATE OR REPLACE FUNCTION public.handle_staff_signup_activation()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = ''
 AS $$
 DECLARE
   invitation public.staff_invitations%ROWTYPE;
@@ -120,6 +120,47 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.handle_new_user_registration()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  new_business_id UUID;
+  new_branch_id UUID;
+  business_name TEXT;
+  business_type TEXT;
+  owner_name TEXT;
+BEGIN
+  business_name := coalesce(nullif(btrim(NEW.raw_user_meta_data->>'business_name'), ''), 'My Store');
+  business_type := coalesce(nullif(btrim(NEW.raw_user_meta_data->>'business_type'), ''), 'other');
+  owner_name := coalesce(nullif(btrim(NEW.raw_user_meta_data->>'full_name'), ''), 'Owner');
+
+  INSERT INTO public.businesses (name, type, phone, plan, currency)
+  VALUES (business_name, business_type, NEW.phone, 'starter', 'ETB')
+  RETURNING id INTO new_business_id;
+
+  INSERT INTO public.branches (business_id, name, phone, is_main, is_active)
+  VALUES (new_business_id, 'Main Branch', NEW.phone, true, true)
+  RETURNING id INTO new_branch_id;
+
+  INSERT INTO public.profiles (
+    id, business_id, branch_id, full_name, phone, role, language,
+    onboarding_completed, onboarding_step, is_active
+  )
+  VALUES (
+    NEW.id, new_business_id, new_branch_id, owner_name, NEW.phone, 'owner', 'am',
+    false, 'welcome', true
+  );
+
+  INSERT INTO public.onboarding_progress (business_id, current_step, is_completed)
+  VALUES (new_business_id, 'welcome', false);
+
+  RETURN NEW;
+END;
+$$;
+
 DROP TRIGGER IF EXISTS on_staff_signup ON auth.users;
 CREATE TRIGGER on_staff_signup
   AFTER INSERT ON auth.users
@@ -134,3 +175,6 @@ CREATE TRIGGER trg_on_auth_user_created
   FOR EACH ROW
   WHEN (lower(coalesce(NEW.raw_user_meta_data->>'is_staff', 'false')) IN ('', 'false'))
   EXECUTE FUNCTION public.handle_new_user_registration();
+
+REVOKE ALL ON FUNCTION public.handle_staff_signup_activation() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.handle_new_user_registration() FROM PUBLIC, anon, authenticated;

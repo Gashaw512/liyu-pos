@@ -16,6 +16,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function optionalText(value: unknown, maxLength: number): string | null | undefined {
+  if (value === null) return null
+  if (value === undefined) return undefined
   if (typeof value !== 'string') return undefined
   const trimmed = value.trim()
   if (!trimmed) return null
@@ -103,7 +105,12 @@ export async function PATCH(request: Request) {
 
     const name = optionalText(body.name, 200)
     const phone = optionalText(body.phone, 20)
-    const email = optionalText(body.email, 255)
+    const emailProvided = Object.prototype.hasOwnProperty.call(body, 'email')
+    const email = !emailProvided
+      ? undefined
+      : body.email == null
+        ? null
+        : optionalText(body.email, 255)
     const city = optionalText(body.city, 100)
     const address = optionalText(body.address, 500)
     if (body.is_hotel_integrated !== undefined && typeof body.is_hotel_integrated !== 'boolean') {
@@ -114,7 +121,7 @@ export async function PATCH(request: Request) {
     if (phone === undefined || (phone && (!/^[+\d() .-]+$/.test(phone) || phone.replace(/\D/g, '').length < 7))) {
       return json({ error: 'invalid_phone' }, 400)
     }
-    if (email === undefined || (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) {
+    if ((emailProvided && email === undefined) || (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) {
       return json({ error: 'invalid_email' }, 400)
     }
     if (city === undefined || address === undefined) return json({ error: 'field_too_long' }, 400)
@@ -124,7 +131,7 @@ export async function PATCH(request: Request) {
       .update({
         name,
         phone,
-        email,
+        ...(emailProvided ? { email: email ?? null } : {}),
         city,
         address,
         ...(typeof body.is_hotel_integrated === 'boolean'

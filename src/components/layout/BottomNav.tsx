@@ -18,6 +18,7 @@ import {
   ChevronUp,
   Home,
   Package,
+  PackageCheck,
   ReceiptText,
   Settings,
   ShoppingCart,
@@ -136,6 +137,22 @@ export default function BottomNav({
           'owner',
           'manager',
           'inventory_clerk',
+        ],
+      },
+
+      {
+        key: 'stock-handover',
+        name: isAm ? 'á‹¨áŠ¥á‰ƒ áˆ­áŠ­áŠ­' : 'Stock handover',
+        path: `/${locale}/stock-handover`,
+        icon: PackageCheck,
+        roles: [
+          'owner',
+          'manager',
+          'inventory_clerk',
+          'cashier',
+          'waiter',
+          'barman',
+          'kitchen',
         ],
       },
 

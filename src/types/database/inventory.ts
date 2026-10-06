@@ -101,3 +101,72 @@ export interface InventoryCostAllocation {
   unit_cost: number;
   created_at: string;
 }
+
+/** A server-recorded issue/acceptance entry for branch stock custody. */
+export type StockHandoverStatus = 'pending_verification' | 'accepted' | 'disputed';
+
+export interface StockHandover {
+  id: string;
+  request_id: string;
+  business_id: string;
+  branch_id: string;
+  issued_by_clerk_id: string;
+  received_by_user_id: string;
+  product_id: string;
+  recipient_shift_id: string | null;
+  custody_shift_id: string | null;
+  quantity_issued: number;
+  status: StockHandoverStatus;
+  dispute_reason: string | null;
+  issued_at: string;
+  verified_at: string | null;
+  verified_by: string | null;
+}
+
+export type CustodyShiftStatus = 'ACTIVE' | 'CLOSED';
+
+export interface CustodyShift {
+  id: string;
+  business_id: string;
+  branch_id: string;
+  user_id: string;
+  opened_at: string;
+  closed_at: string | null;
+  closed_by: string | null;
+  status: CustodyShiftStatus;
+  close_reason: string | null;
+  created_at: string;
+}
+
+export interface CustodyShiftInventoryEntry {
+  id: string;
+  business_id: string;
+  branch_id: string;
+  custody_shift_id: string;
+  handover_id: string;
+  product_id: string;
+  quantity_received: number;
+  accepted_at: string;
+}
+
+export interface CustodyShiftReconciliation {
+  id: string;
+  business_id: string;
+  branch_id: string;
+  custody_shift_id: string;
+  closed_by: string;
+  closed_at: string;
+  accepted_stock_snapshot: Array<{
+    product_id: string;
+    product_name: string;
+    quantity_received: number;
+    physical_count: number | null;
+    difference: number | null;
+  }>;
+  physical_count_snapshot: Array<{
+    product_id: string;
+    product_name: string;
+    quantity: number;
+  }> | null;
+  created_at: string;
+}

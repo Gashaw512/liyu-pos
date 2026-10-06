@@ -24,6 +24,7 @@ type BusinessForm = NonNullable<SettingsData['business']>
 type Feedback = { kind: 'success' | 'error'; message: string } | null
 
 const inputClass = 'mt-1 h-11 w-full rounded-xl border border-cream-300 bg-white px-3 text-sm text-coffee-800 outline-none transition placeholder:text-coffee-300 focus:border-berbere-400 focus:ring-2 focus:ring-berbere-100 disabled:bg-cream-100 disabled:text-coffee-500'
+const BUSINESS_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 function Field({ label, ...props }: InputHTMLAttributes<HTMLInputElement> & { label: string }) {
   return (
@@ -86,6 +87,11 @@ export default function AccountSettings({ locale }: { locale: string }) {
   ) => {
     event.preventDefault()
     if (saving || (section === 'business' && !business)) return
+    const businessEmail = business?.email?.trim() ?? ''
+    if (section === 'business' && businessEmail && !BUSINESS_EMAIL_PATTERN.test(businessEmail)) {
+      setFeedback({ kind: 'error', message: t('Enter a valid email address.', 'ትክክለኛ ኢሜይል ያስገቡ።') })
+      return
+    }
     setSaving(section)
     setFeedback(null)
     try {
@@ -224,7 +230,7 @@ export default function AccountSettings({ locale }: { locale: string }) {
           <form className="grid grid-cols-1 gap-3 sm:grid-cols-2" onSubmit={(event) => void submit(event, 'business')}>
             <Field label={t('Business name', 'የንግድ ስም')} value={business.name} onChange={(event) => setBusiness({ ...business, name: event.target.value })} maxLength={200} required disabled={!settings.canEditBusiness} />
             <Field label={t('Business phone', 'የንግድ ስልክ')} type="tel" inputMode="tel" value={business.phone ?? ''} onChange={(event) => setBusiness({ ...business, phone: event.target.value })} maxLength={20} placeholder="09… / +251…" disabled={!settings.canEditBusiness} />
-            <Field label={t('Business email (optional)', 'የንግድ ኢሜይል (አማራጭ)')} type="email" value={business.email ?? ''} onChange={(event) => setBusiness({ ...business, email: event.target.value })} maxLength={255} autoComplete="email" disabled={!settings.canEditBusiness} />
+            <Field label={t('Business email (optional)', 'የንግድ ኢሜይል (አማራጭ)')} type="text" inputMode="email" value={business.email ?? ''} onChange={(event) => setBusiness({ ...business, email: event.target.value })} maxLength={255} autoComplete="email" disabled={!settings.canEditBusiness} />
             <Field label={t('City', 'ከተማ')} value={business.city ?? ''} onChange={(event) => setBusiness({ ...business, city: event.target.value })} maxLength={100} disabled={!settings.canEditBusiness} />
             <Field label={t('Address', 'አድራሻ')} value={business.address ?? ''} onChange={(event) => setBusiness({ ...business, address: event.target.value })} maxLength={500} className="sm:col-span-2" disabled={!settings.canEditBusiness} />
             <label className="flex min-h-11 items-center gap-3 rounded-xl border border-cream-200 bg-cream-50 px-3 text-sm font-bold text-coffee-700 sm:col-span-2">

@@ -16,6 +16,42 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 
 class TableOrderValidationError extends Error {}
 
+async function ensureTicketLines(
+  admin: ReturnType<typeof createAdminDatabaseClient>,
+  order: { id: string; business_id: string; branch_id: string; revision: number },
+) {
+  const { data: tickets, error } = await admin
+    .from('kitchen_order_tickets')
+    .select('id,item_payload')
+    .eq('order_id', order.id)
+    .eq('business_id', order.business_id)
+    .eq('branch_id', order.branch_id)
+    .eq('order_revision', order.revision)
+  if (error) throw error
+
+  const lines = (tickets ?? []).flatMap((ticket) =>
+    (Array.isArray(ticket.item_payload) ? ticket.item_payload : []).flatMap((value) => {
+      if (!value || typeof value !== 'object') return []
+      const item = value as Record<string, unknown>
+      const productId = typeof item.product_id === 'string' ? item.product_id : ''
+      const quantity = Number(item.quantity)
+      if (!UUID.test(productId) || !Number.isFinite(quantity) || quantity <= 0) return []
+      return [{
+        business_id: order.business_id,
+        branch_id: order.branch_id,
+        ticket_id: ticket.id,
+        product_id: productId,
+        product_name: typeof item.name === 'string' ? item.name.slice(0, 200) : 'Item',
+        quantity,
+      }]
+    }),
+  )
+  if (!lines.length) return
+  const { error: insertError } = await admin.from('kitchen_order_ticket_lines')
+    .upsert(lines, { onConflict: 'ticket_id,product_id', ignoreDuplicates: true })
+  if (insertError) throw insertError
+}
+
 function isTableOrdersMigrationMissing(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false
   const candidate = error as { code?: unknown; message?: unknown }
@@ -287,6 +323,7 @@ export async function PUT(request: Request) {
           .select('*')
           .single()
         if (!insertError && inserted) {
+          await ensureTicketLines(admin, inserted)
           return NextResponse.json({ success: true, order: inserted })
         }
         if (insertError?.code === '23505') continue
@@ -299,21 +336,50 @@ export async function PUT(request: Request) {
       const nextStatus = nextItems.length > 0
         ? 'open'
         : body.operation === 'cancel' ? 'cancelled' : 'completed'
-      const { data: updated, error: updateError } = await admin
-        .from('open_table_orders')
-        .update({
-          items: nextItems,
-          total_amount: calculateTableOrderTotal(nextItems),
-          revision: current.revision + 1,
-          status: nextStatus,
-          ...(body.operation === 'save' ? { cashier_id: user.id } : {}),
-        })
-        .eq('id', current.id)
-        .eq('revision', current.revision)
-        .select('*')
-        .maybeSingle()
+      const isAdminOverride = authorizedRoles.some((role) => role === 'owner' || role === 'manager')
+      if ((body.operation === 'save' || body.operation === 'cancel') && !isAdminOverride) {
+        const { data: tickets, error: ticketsError } = await admin.from('kitchen_order_tickets')
+          .select('id').eq('order_id', current.id)
+          .eq('business_id', profile.business_id).eq('branch_id', profile.branch_id)
+          .eq('preparation_status', 'ready')
+        if (ticketsError) throw ticketsError
+        const ticketIds = (tickets ?? []).map((ticket) => ticket.id)
+        if (ticketIds.length) {
+          const { data: readyLines, error: readyLinesError } = await admin.from('kitchen_order_ticket_lines')
+            .select('product_id,quantity,allocated_quantity,wasted_quantity')
+            .in('ticket_id', ticketIds).eq('preparation_status', 'ready')
+          if (readyLinesError) throw readyLinesError
+          const protectedQuantity = new Map<string, number>()
+          for (const line of readyLines ?? []) {
+            const outstanding = Math.max(0, Number(line.quantity) - Number(line.allocated_quantity) - Number(line.wasted_quantity))
+            protectedQuantity.set(line.product_id, (protectedQuantity.get(line.product_id) ?? 0) + outstanding)
+          }
+          const nextQuantity = new Map<string, number>()
+          for (const line of nextItems) nextQuantity.set(line.product_id, (nextQuantity.get(line.product_id) ?? 0) + line.quantity)
+          const removesPreparedItems = [...protectedQuantity].some(([productId, quantity]) =>
+            (nextQuantity.get(productId) ?? 0) < quantity,
+          )
+          if (removesPreparedItems) {
+            return NextResponse.json({ error: 'Prepared items cannot be removed or reduced. Ask an owner or manager to record the correction.' }, { status: 403 })
+          }
+        }
+      }
+
+      const { data: updated, error: updateError } = await admin.rpc('commit_table_order_update', {
+        p_order_id: current.id,
+        p_business_id: profile.business_id,
+        p_branch_id: profile.branch_id,
+        p_expected_revision: current.revision,
+        p_items: nextItems,
+        p_total_amount: calculateTableOrderTotal(nextItems),
+        p_status: nextStatus,
+        p_actor_id: user.id,
+      })
       if (updateError) throw updateError
-      if (updated) return NextResponse.json({ success: true, order: updated })
+      if (updated) {
+        await ensureTicketLines(admin, updated)
+        return NextResponse.json({ success: true, order: updated })
+      }
     }
 
     return NextResponse.json({ error: 'Order changed on another device. It will retry with the latest order.' }, { status: 409 })

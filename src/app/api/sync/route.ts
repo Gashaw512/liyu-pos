@@ -1422,6 +1422,21 @@ async function syncSale(
         }
       }
 
+      // The KOT custody ledger is a sub-ledger of the branch inventory ledger.
+      // Allocate only sold quantities to ready, worker-attributed KOT lines;
+      // the existing branch/FIFO deduction below still runs exactly once.
+      // The database transaction locks the sale and ticket lines, so retries
+      // cannot allocate the same prepared quantity twice.
+      if (sale.table_id) {
+        const { error: allocationError } = await supabase.rpc('allocate_ready_kot_lines_for_sale', {
+          p_sale_id: sale.id,
+          p_business_id: sale.business_id,
+          p_branch_id: sale.branch_id,
+          p_table_id: sale.table_id,
+        })
+        if (allocationError) throw allocationError
+      }
+
       if (roomChargePayment) {
         const { error: folioError } = await supabase.rpc('post_room_charge_for_sale', {
           p_business_id: sale.business_id,

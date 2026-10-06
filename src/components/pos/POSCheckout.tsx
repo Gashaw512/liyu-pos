@@ -24,9 +24,11 @@ interface POSCheckoutProps {
   onBack: () => void
   onConfirmPayment: (
     splitPayments: PaymentSplit,
+    roomNumber?: string,
   ) => Promise<void>
   isAm: boolean
   isSubmitting?: boolean
+  roomChargeEnabled?: boolean
 }
 
 export default function POSCheckout({
@@ -39,6 +41,7 @@ export default function POSCheckout({
   onConfirmPayment,
   isAm,
   isSubmitting = false,
+  roomChargeEnabled = false,
 }: POSCheckoutProps) {
   const amountDue = totalBill + (Number(manualTip) || 0)
 
@@ -339,10 +342,12 @@ export default function POSCheckout({
         </div>
 
         <PaymentSelector
+          key={amountDue}
           totalBill={amountDue}
           onConfirmPayment={onConfirmPayment}
           isAm={isAm}
           isSubmitting={isSubmitting}
+          roomChargeEnabled={roomChargeEnabled}
         />
       </section>
     </div>

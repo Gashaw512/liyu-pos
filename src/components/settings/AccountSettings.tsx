@@ -15,6 +15,7 @@ interface SettingsData {
     email: string | null
     city: string | null
     address: string | null
+    is_hotel_integrated: boolean
   } | null
   canEditBusiness: boolean
 }
@@ -226,6 +227,10 @@ export default function AccountSettings({ locale }: { locale: string }) {
             <Field label={t('Business email (optional)', 'የንግድ ኢሜይል (አማራጭ)')} type="email" value={business.email ?? ''} onChange={(event) => setBusiness({ ...business, email: event.target.value })} maxLength={255} autoComplete="email" disabled={!settings.canEditBusiness} />
             <Field label={t('City', 'ከተማ')} value={business.city ?? ''} onChange={(event) => setBusiness({ ...business, city: event.target.value })} maxLength={100} disabled={!settings.canEditBusiness} />
             <Field label={t('Address', 'አድራሻ')} value={business.address ?? ''} onChange={(event) => setBusiness({ ...business, address: event.target.value })} maxLength={500} className="sm:col-span-2" disabled={!settings.canEditBusiness} />
+            <label className="flex min-h-11 items-center gap-3 rounded-xl border border-cream-200 bg-cream-50 px-3 text-sm font-bold text-coffee-700 sm:col-span-2">
+              <input type="checkbox" checked={business.is_hotel_integrated} onChange={(event) => setBusiness({ ...business, is_hotel_integrated: event.target.checked })} disabled={!settings.canEditBusiness} className="h-5 w-5 accent-berbere-600" />
+              <span>{t('Hotel integrated (allow room charges)', 'ከሆቴል ጋር የተያያዘ (የክፍል ክፍያ ፍቀድ)')}</span>
+            </label>
             {settings.canEditBusiness && <div className="sm:col-span-2"><button type="submit" disabled={saving !== null || business.name.trim().length < 2} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-berbere-600 px-4 text-sm font-black text-white disabled:opacity-50">{saving === 'business' && <Loader2 className="h-4 w-4 animate-spin" />}{t('Save business details', 'የንግድ መረጃ አስቀምጥ')}</button></div>}
           </form>
         </section>

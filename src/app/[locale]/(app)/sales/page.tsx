@@ -116,6 +116,7 @@ export default function SalesPage() {
   const closingShiftInstanceRef = useRef<Shift | null>(null)
 
   const [showCheckout, setShowCheckout] = useState(false)
+  const [roomChargeConfiguration, setRoomChargeConfiguration] = useState<{ businessId: string; enabled: boolean } | null>(null)
   const [billOpen, setBillOpen] = useState(false)
   const [savingTab, setSavingTab] = useState(false)
   const [openingShift, setOpeningShift] = useState(false)
@@ -136,6 +137,28 @@ export default function SalesPage() {
   const [cashFloat, setCashFloat] =
     useState(DEFAULT_CASH_FLOAT)
   const [manualTip, setManualTip] = useState('')
+
+  const roomChargeEnabled = Boolean(
+    canCheckout && businessId &&
+    roomChargeConfiguration?.businessId === businessId &&
+    roomChargeConfiguration.enabled,
+  )
+
+  useEffect(() => {
+    if (!businessId || !canCheckout) return
+
+    let active = true
+    void fetch('/api/billing/charge-to-room', { cache: 'no-store' })
+      .then(async (response) => response.ok ? response.json() as Promise<{ enabled?: boolean }> : null)
+      .then((result) => {
+        if (active) setRoomChargeConfiguration({ businessId, enabled: result?.enabled === true })
+      })
+      .catch(() => {
+        if (active) setRoomChargeConfiguration({ businessId, enabled: false })
+      })
+
+    return () => { active = false }
+  }, [businessId, canCheckout])
 
   const [hasUnsavedChanges, setHasUnsavedChanges] =
     useState(false)
@@ -1347,6 +1370,7 @@ export default function SalesPage() {
 
   const handleFinalizeSale = async (
     splitPayments: PaymentSplit,
+    roomNumber?: string,
   ) => {
     if (!canCheckout) return
     if (finalizingSaleRef.current || !activeShift || cart.length === 0) return
@@ -1369,6 +1393,7 @@ export default function SalesPage() {
 
       const sale = await finalizeSale({
         splitPayments,
+        roomNumber,
         manualTip,
         activeShift: safeShift,
         selectedTable,
@@ -1832,6 +1857,7 @@ export default function SalesPage() {
                 onConfirmPayment={handleFinalizeSale}
                 isAm={isAm}
                 isSubmitting={finalizingSale}
+                roomChargeEnabled={roomChargeEnabled}
               />
             </div>
           </main>

@@ -1,5 +1,5 @@
 // components/navigation/navigation.ts
-import { Home, Package, ShoppingCart, BarChart3, Settings } from "lucide-react"
+import { Home, Package, ShoppingCart, BarChart3, Settings, ChefHat } from "lucide-react"
 
 export interface NavItem {
   key: string
@@ -34,6 +34,14 @@ export const navigationConfig: NavItem[] = [
     path: "/sales",
     icon: ShoppingCart,
     roles: ["owner", "manager", "cashier", "waiter"]
+  },
+  {
+    key: "kitchen",
+    nameAm: "ወጪ ምግብ",
+    nameEn: "Kitchen",
+    path: "/kitchen",
+    icon: ChefHat,
+    roles: ["owner", "manager", "kitchen", "barman"]
   },
   {
     key: "reports",

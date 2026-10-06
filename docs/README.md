@@ -1,4 +1,60 @@
-# Liyu POS Restaurant/Bar Manual QA and Demo Plan
+# Liyu POS Hospitality Architecture and Manual QA Plan
+
+This guide describes the hospitality and POS behavior currently present in the repository. It separates implemented controls from deployment-dependent checks and known limits, so a demo or security review does not mistake intended behavior for verified production behavior.
+
+## Implemented architecture and security boundaries
+
+### Tenant and role context
+
+Authenticated server routes resolve the user, business, branch, and assigned roles from the Supabase session/profile. They do not accept a browser-supplied business ID as authorization. APIs and database policies scope operational records by business and, where relevant, branch. UI navigation is only a convenience; route handlers and database policies are the security boundary. The repository contains migrations for these policies, but code review cannot verify that they have been applied to a particular Supabase project.
+
+The active role model includes `owner`, `manager`, `cashier`, `waiter`, `inventory_clerk`, `kitchen`, and `barman`. Assigned roles may be combined; some sensitive endpoints explicitly require a single-role cashier context.
+
+### Catalog price proofs and offline sales
+
+The authenticated product-template endpoint loads the business and active branch from the user profile and attaches an HMAC-SHA-256 `price_proof` to each product. The signing secret is derived server-side from `SUPABASE_SERVICE_ROLE_KEY`; it is never returned to the browser. A proof binds the product ID, price in cents, business, branch, and proof version. Cached catalog products carry this proof into offline carts and queued sale items.
+
+At table-order save, the server loads active products from the tenant's price master and validates the submitted proof before using the item snapshot. A valid signed snapshot preserves the price issued to that device, including a catalog price cached before going offline; owner/manager paths can authorize overrides and sign them. The offline sale sync processor rechecks new sale lines against the business catalog and accepts a valid signed cached price or an owner/manager-authorized price. Completed sale lines remain unchanged on idempotent retries.
+
+This protects integrity of the issued price snapshot; it does not force already-cached devices to adopt a newer price while offline. Price proofs require the server secret to be configured and do not replace the need to refresh the catalog when connectivity is available.
+
+### Table orders and KOT dispatch
+
+The `/api/table-orders` route scopes reads to the authenticated business and branch. Its save operation allows users with the `waiter`, `manager`, or `owner` role; completion/cancellation is separately restricted to owner, manager, or cashier. The server validates prices before writing the table snapshot. The `20261006100129_add_hotel_integration_flag.sql` migration removes authenticated-client insert/update/delete grants and leaves table-order mutations to the service role used by the server route. Apply that migration before relying on the direct-write database block in a deployed environment.
+
+The `20261006092213_hospitality_kot_and_room_folios.sql` migration adds branch/business-scoped KOT records and an insert/update trigger. The trigger aggregates quantities by product and creates tickets only for quantity increases compared with the previous saved order. A unique key on order revision and station prevents duplicate station tickets for the same revision. It classifies products as bar items by matching terms such as drink, beer, or coffee in category/product text; items not matching those terms go to kitchen. This is a current heuristic, not a configurable production-station mapping.
+
+The Kitchen page reads tickets through `/api/kitchen/tickets`, scopes them to the user's business and branch, and filters by station role. Kitchen and bar staff can move their station tickets from pending to preparing to ready; owners/managers can oversee both. The page listens to Supabase Realtime changes and refreshes every 10 seconds as a fallback. `/api/print/kot-queue` provides pending station tickets and accepts acknowledgements. It accepts the normal authenticated session or a Supabase bearer access token verified server-side; access is checked against the user's role and branch. Ensure Realtime publication and the KOT migration are present in the target database.
+
+### Hotel integration and room charges
+
+`businesses.is_hotel_integrated` defaults to `false`, so existing standalone outlets do not enable room settlement. The owner-facing business settings route reads and updates this flag. The payment selector only exposes room charge when the business flag is enabled and the active role set is exactly `cashier`. The POST endpoint independently enforces that same cashier-only condition and returns 403 when the business toggle is off.
+
+Room lookup requires an online request and checks an active folio within the user's business and branch. After a sale sync, the server checks the business toggle and calls `post_room_charge_for_sale`. The database function verifies the completed sale, exactly one room-charge payment equal to the sale total, and an active folio. It inserts one immutable folio charge per sale and increments the folio balance in the same database transaction; the unique sale reference makes retries idempotent. Room charges cannot be combined with other positive tenders. These paths depend on the hospitality migration being applied.
+
+### Shift close reports and delivery
+
+`/api/shift-reports/close` authenticates owner, manager, or cashier access and scopes report sales, payments, expenses, and inventory to the authenticated business/branch and cashier's persisted shift. Sales, payment breakdowns, product totals, cost, profit, and low-stock rows are built from server-side records. The low-stock PDF data uses `product_name`, `current_stock`, and `minimum_threshold` and includes tracked active products at or below their configured alert level.
+
+Delivery records are unique per business and shift. The route short-circuits sent/disabled reports and recent in-progress attempts, and claims pending/failed or stale sending rows with a conditional update before delivery. Per-recipient status rows prevent successful recipients from being needlessly resent when another recipient fails. Delivery may be disabled or queued independently of the shift close.
+
+**Cash reconciliation limitation:** the current close request still supplies `openingCash`, `openedAt`, and `closedAt`; the route validates identity, branch, and time range, but uses the submitted opening cash when calculating expected drawer cash and writing the shift summary. Do not describe the opening float as server-authoritative until the close route is changed to read it from the persisted shift. Actual sales/payment totals are read from server records.
+
+### Inventory clerk boundary (current implementation)
+
+`inventory_clerk` is the storekeeper/procurement role. Navigation and the current RLS migration grant inventory, purchase, supplier, stock movement, and stock reconciliation access; the sync route accepts inventory transactions for this role and rejects sale transaction sync when no sales-capable role is assigned.
+
+**Catalog write limitation:** the current RLS migration also allows `inventory_clerk` to insert/update/delete product and category records. Product rows contain retail pricing. Therefore the repository does not currently enforce the stricter rule that only owners/managers may change menu items and base prices. Do not claim inventory clerks are restricted only to stock intake, suppliers, and wastage, or that their access to every sales/billing path has been proven blocked, without separately auditing/deploying the relevant API and database policies.
+
+## Verification recorded for this documentation update
+
+- TypeScript check: **PASS** — `npx tsc --noEmit`.
+- ESLint and production build: not run as part of this documentation-only update.
+- Supabase migration deployment: not verified against a remote database.
+
+---
+
+## Manual QA and demo plan
 
 Use a dedicated staging/test business and test users. These checks describe the current POS, table-order, shift, inventory, reporting, and offline flows; they do not require new features. Do not treat a hidden navigation link as proof of authorization.
 

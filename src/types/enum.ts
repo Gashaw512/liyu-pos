@@ -18,7 +18,8 @@ export type StaffRole =
   | 'cbe_birr'
   | 'awash_bank'
   | 'bank_transfer'
-  | 'credit';
+  | 'credit'
+  | 'room_charge';
   export type BusinessVertical =
   | 'retail'
   | 'restaurant'

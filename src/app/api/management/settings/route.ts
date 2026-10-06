@@ -43,7 +43,7 @@ export async function GET() {
     if (profile.business_id) {
       const { data, error } = await supabase
         .from('businesses')
-        .select('name, phone, email, address, city')
+        .select('name, phone, email, address, city, is_hotel_integrated')
         .eq('id', profile.business_id)
         .maybeSingle()
 
@@ -106,6 +106,9 @@ export async function PATCH(request: Request) {
     const email = optionalText(body.email, 255)
     const city = optionalText(body.city, 100)
     const address = optionalText(body.address, 500)
+    if (body.is_hotel_integrated !== undefined && typeof body.is_hotel_integrated !== 'boolean') {
+      return json({ error: 'invalid_hotel_setting' }, 400)
+    }
 
     if (!name || name.length < 2) return json({ error: 'invalid_business_name' }, 400)
     if (phone === undefined || (phone && (!/^[+\d() .-]+$/.test(phone) || phone.replace(/\D/g, '').length < 7))) {
@@ -118,9 +121,18 @@ export async function PATCH(request: Request) {
 
     const { data, error } = await supabase
       .from('businesses')
-      .update({ name, phone, email, city, address })
+      .update({
+        name,
+        phone,
+        email,
+        city,
+        address,
+        ...(typeof body.is_hotel_integrated === 'boolean'
+          ? { is_hotel_integrated: body.is_hotel_integrated }
+          : {}),
+      })
       .eq('id', profile.business_id)
-      .select('name, phone, email, address, city')
+      .select('name, phone, email, address, city, is_hotel_integrated')
       .maybeSingle()
 
     if (error) return json({ error: 'save_business_failed' }, 500)

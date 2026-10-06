@@ -52,6 +52,7 @@ interface SaleRecord {
   tip_amount: number
   total_amount: number
   table_name: string | null
+  table_id: string | null
   status: string
   is_offline_sync: boolean
   created_at: string
@@ -71,6 +72,7 @@ interface PaymentRecord {
   business_id: string
   amount: number
   method: string
+  reference_no: string | null
   status: string
   created_at: string
 }
@@ -648,6 +650,8 @@ async function buildSaleRecord(
         payload.table_number,
       ),
 
+    table_id: toValidUuid(payload.table_id),
+
     status:
       toStringValue(
         payload.status,
@@ -755,6 +759,8 @@ function buildPayments(
           payment.method,
           'cash',
         ),
+
+      reference_no: toNullableString(payment.reference_no),
 
       status: payment.status === 'pending' ? 'pending' : 'completed',
 
@@ -1162,6 +1168,20 @@ async function syncSale(
           timestamp,
         )
 
+      const roomChargePayment = payments.find((payment) => payment.method === 'room_charge')
+      if (roomChargePayment) {
+        if (context.operatorRoles.length !== 1 || context.operatorRoles[0] !== 'cashier') {
+          throw new Error('Only a cashier can charge a guest room.')
+        }
+        const { data: business, error: businessError } = await supabase
+          .from('businesses')
+          .select('is_hotel_integrated')
+          .eq('id', sale.business_id)
+          .maybeSingle()
+        if (businessError) throw businessError
+        if (!business?.is_hotel_integrated) throw new Error('Room charges are not enabled for this business.')
+      }
+
       if (
         items.length === 0
       ) {
@@ -1400,6 +1420,16 @@ async function syncSale(
             throw paymentsError
           }
         }
+      }
+
+      if (roomChargePayment) {
+        const { error: folioError } = await supabase.rpc('post_room_charge_for_sale', {
+          p_business_id: sale.business_id,
+          p_branch_id: sale.branch_id,
+          p_sale_id: sale.id,
+          p_actor_id: context.operatorUserId,
+        })
+        if (folioError) throw folioError
       }
 
       /*

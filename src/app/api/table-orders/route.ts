@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 
-import { getAuthorizedProfile } from '@/lib/shift-reports/server'
+import { createAdminDatabaseClient, getAuthorizedProfile } from '@/lib/shift-reports/server'
 import { createClient } from '@/lib/supabase/server'
 import { signPriceProof, verifyPriceProof } from '@/lib/security/price-proof'
 import {
@@ -195,6 +195,13 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: 'Invalid table order.' }, { status: 400 })
     }
 
+    if (
+      body.operation === 'save' &&
+      !authorizedRoles.some((role) => ['waiter', 'manager', 'owner'].includes(role))
+    ) {
+      return NextResponse.json({ error: 'Only a waiter, manager, or owner can save a table order.' }, { status: 403 })
+    }
+
     const baseItems = parseItems(body.baseItems)
     const items = parseItems(body.items)
     if (!baseItems || !items || (body.operation === 'save' && items.length === 0)) {
@@ -227,6 +234,10 @@ export async function PUT(request: Request) {
       .maybeSingle()
     if (tableError) throw tableError
     if (!table) return NextResponse.json({ error: 'Table not found.' }, { status: 404 })
+
+    // All writes go through this authenticated route so signed price checks
+    // run before the database KOT trigger can inspect the saved snapshot.
+    const admin = createAdminDatabaseClient()
 
     let validatedItems = items
     if (body.operation === 'save') {
@@ -261,7 +272,7 @@ export async function PUT(request: Request) {
           return NextResponse.json({ success: true, order: null })
         }
 
-        const { data: inserted, error: insertError } = await client
+        const { data: inserted, error: insertError } = await admin
           .from('open_table_orders')
           .insert({
             business_id: profile.business_id,
@@ -288,7 +299,7 @@ export async function PUT(request: Request) {
       const nextStatus = nextItems.length > 0
         ? 'open'
         : body.operation === 'cancel' ? 'cancelled' : 'completed'
-      const { data: updated, error: updateError } = await client
+      const { data: updated, error: updateError } = await admin
         .from('open_table_orders')
         .update({
           items: nextItems,

@@ -214,7 +214,7 @@ export async function POST(request: Request) {
         const userIds = [...new Set(custodyShifts.map(row => row.user_id))]
         const minimumOpenedAt = custodyShifts.reduce((minimum, shift) =>
           shift.opened_at < minimum ? shift.opened_at : minimum, custodyShifts[0].opened_at)
-        const [custodyProducts, custodyUsers, reconciliationResult, salesResult, wastageResult] = await Promise.all([
+        const [custodyProducts, custodyUsers, reconciliationResult, allocationResult, kotWastageResult, wastageResult] = await Promise.all([
           productIds.length
             ? admin.from('products').select('id,name,name_am,track_inventory').in('id', productIds).eq('business_id', auth.profile!.business_id)
             : Promise.resolve({ data: [], error: null }),
@@ -224,13 +224,21 @@ export async function POST(request: Request) {
           admin.from('custody_shift_reconciliations')
             .select('custody_shift_id,status,accepted_stock_snapshot,physical_count_snapshot')
             .in('custody_shift_id', custodyShiftIds),
-          userIds.length
-            ? admin.from('sales').select('id,cashier_id,created_at')
+          custodyShiftIds.length && productIds.length
+            ? admin.from('kot_sale_allocations').select('custody_shift_id,product_id,quantity,created_at')
               .eq('business_id', auth.profile!.business_id)
               .eq('branch_id', auth.profile!.branch_id)
-              .in('cashier_id', userIds)
-              .eq('status', 'completed')
-              .is('deleted_at', null)
+              .in('custody_shift_id', custodyShiftIds)
+              .in('product_id', productIds)
+              .gte('created_at', minimumOpenedAt)
+              .lte('created_at', closeTimestamp)
+            : Promise.resolve({ data: [], error: null }),
+          custodyShiftIds.length && productIds.length
+            ? admin.from('kot_wastage_allocations').select('custody_shift_id,product_id,quantity,created_at')
+              .eq('business_id', auth.profile!.business_id)
+              .eq('branch_id', auth.profile!.branch_id)
+              .in('custody_shift_id', custodyShiftIds)
+              .in('product_id', productIds)
               .gte('created_at', minimumOpenedAt)
               .lte('created_at', closeTimestamp)
             : Promise.resolve({ data: [], error: null }),
@@ -245,8 +253,8 @@ export async function POST(request: Request) {
               .lte('created_at', closeTimestamp)
             : Promise.resolve({ data: [], error: null }),
         ])
-        if (custodyProducts.error || custodyUsers.error || reconciliationResult.error || salesResult.error || wastageResult.error) {
-          throw custodyProducts.error ?? custodyUsers.error ?? reconciliationResult.error ?? salesResult.error ?? wastageResult.error
+        if (custodyProducts.error || custodyUsers.error || reconciliationResult.error || allocationResult.error || kotWastageResult.error || wastageResult.error) {
+          throw custodyProducts.error ?? custodyUsers.error ?? reconciliationResult.error ?? allocationResult.error ?? kotWastageResult.error ?? wastageResult.error
         }
         const productsById = new Map((custodyProducts.data ?? []).map(row => [row.id, row.name_am || row.name || 'Product']))
         const usersById = new Map((custodyUsers.data ?? []).map(row => [row.id, row.full_name || 'Staff member']))
@@ -259,28 +267,21 @@ export async function POST(request: Request) {
           entriesByShift.set(entry.custody_shift_id, byProduct)
         }
 
-        const salesById = new Map((salesResult.data ?? []).map(sale => [sale.id, sale]))
-        const saleIds = [...salesById.keys()]
-        const { data: soldItems, error: soldItemsError } = saleIds.length
-          ? await admin.from('sale_items').select('sale_id,product_id,quantity').in('sale_id', saleIds).in('product_id', productIds)
-          : { data: [], error: null }
-        if (soldItemsError) throw soldItemsError
         const soldByShift = new Map<string, Map<string, number>>()
-        for (const item of soldItems ?? []) {
-          const sale = salesById.get(item.sale_id)
-          if (!sale?.cashier_id || !trackedProductIds.has(item.product_id)) continue
-          const custodyShift = custodyShifts.find(shift =>
-            shift.user_id === sale.cashier_id
-            && shift.opened_at <= sale.created_at
-            && (shift.closed_at ?? closeTimestamp) >= sale.created_at,
-          )
-          if (!custodyShift) continue
-          const byProduct = soldByShift.get(custodyShift.id) ?? new Map<string, number>()
-          byProduct.set(item.product_id, (byProduct.get(item.product_id) ?? 0) + money(item.quantity))
-          soldByShift.set(custodyShift.id, byProduct)
+        for (const allocation of allocationResult.data ?? []) {
+          if (!trackedProductIds.has(allocation.product_id)) continue
+          const byProduct = soldByShift.get(allocation.custody_shift_id) ?? new Map<string, number>()
+          byProduct.set(allocation.product_id, (byProduct.get(allocation.product_id) ?? 0) + money(allocation.quantity))
+          soldByShift.set(allocation.custody_shift_id, byProduct)
         }
 
         const wasteByShift = new Map<string, Map<string, number>>()
+        for (const allocation of kotWastageResult.data ?? []) {
+          if (!trackedProductIds.has(allocation.product_id)) continue
+          const byProduct = wasteByShift.get(allocation.custody_shift_id) ?? new Map<string, number>()
+          byProduct.set(allocation.product_id, (byProduct.get(allocation.product_id) ?? 0) + money(allocation.quantity))
+          wasteByShift.set(allocation.custody_shift_id, byProduct)
+        }
         for (const movement of wastageResult.data ?? []) {
           if (!movement.user_id || !trackedProductIds.has(movement.product_id)) continue
           const custodyShift = custodyShifts.find(shift =>
@@ -310,9 +311,11 @@ export async function POST(request: Request) {
           for (const item of acceptedStock) {
             const soldQty = soldByShift.get(shift.id)?.get(item.product_id) ?? 0
             const savedLine = submittedLines.find(line => line.product_id === item.product_id)
-            const wastageQty = savedReport?.status === 'submitted'
+            const recordedWastage = wasteByShift.get(shift.id)?.get(item.product_id) ?? 0
+            const enteredWastage = savedReport?.status === 'submitted'
               ? money(savedLine?.quantity_wasted)
-              : wasteByShift.get(shift.id)?.get(item.product_id) ?? 0
+              : 0
+            const wastageQty = Math.max(recordedWastage, enteredWastage)
             const expectedStock = item.quantity_received - soldQty - wastageQty
             const countLine = physicalLines.find(line => line.product_id === item.product_id)
             const actualCount = savedReport?.status === 'submitted' && countLine?.physical_count != null

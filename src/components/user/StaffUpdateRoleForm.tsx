@@ -1,154 +1,83 @@
 "use client";
 
 import { useState } from "react";
-import createClient from "@/lib/supabase/client";
-import { Loader2 } from "lucide-react";
-import { useRouter } from "next/navigation";
+import type { AvailableRole } from "@/services/roles";
 
 interface StaffUpdateRoleFormProps {
   locale: string;
   staffId: string;
-  currentRole: string;
+  primaryRole: AvailableRole;
+  assignedRoles: AvailableRole[];
 }
 
-export default function StaffUpdateRoleForm({
-  locale,
-  staffId,
-  currentRole,
-}: StaffUpdateRoleFormProps) {
-  const isAm = locale === "am";
+const OPTIONS: Array<{ role: Exclude<AvailableRole, "owner">; en: string; am: string }> = [
+  { role: "manager", en: "Manager", am: "አስተዳዳሪ" },
+  { role: "cashier", en: "Cashier", am: "ገንዘብ ተቀባይ" },
+  { role: "inventory_clerk", en: "Stockkeeper", am: "የክምችት ተቆጣጣሪ" },
+  { role: "waiter", en: "Waiter", am: "አስተናጋጅ" },
+  { role: "barman", en: "Barman", am: "ባርማን" },
+  { role: "kitchen", en: "Kitchen", am: "ወጥ ቤት" },
+]
 
-  const supabase = createClient();
-  const router = useRouter();
+export default function StaffUpdateRoleForm({ locale, staffId, primaryRole, assignedRoles }: StaffUpdateRoleFormProps) {
+  const isAm = locale === "am"
+  const [roles, setRoles] = useState<AvailableRole[]>([...new Set([primaryRole, ...assignedRoles])])
+  const [busyRole, setBusyRole] = useState<AvailableRole | null>(null)
+  const [error, setError] = useState("")
+  const [message, setMessage] = useState("")
 
-  const [role, setRole] = useState(currentRole);
-  const [loading, setLoading] = useState(false);
-
-  const roles = [
-    {
-      id: "manager",
-      label: isAm ? "ማናጀር" : "Manager",
-    },
-    {
-      id: "cashier",
-      label: isAm ? "ካሺየር" : "Cashier",
-    },
-    {
-      id: "inventory_clerk",
-      label: isAm
-        ? "የክምችት ሰራተኛ"
-        : "Stock Clerk",
-    },
-    {
-      id: "waiter",
-      label: isAm ? "አስተናጋጅ" : "Waiter",
-    },
-    {
-      id: "barman",
-      label: isAm ? "ባርማን" : "Barman",
-    },
-    {
-      id: "kitchen",
-      label: isAm ? "ወጥ ቤት" : "Kitchen",
-    },
-  ];
-
-  async function handleUpdateRole(
-    e: React.FormEvent<HTMLFormElement>
-  ) {
-    e.preventDefault();
-
-    if (role === currentRole) {
-      return;
-    }
-
-    setLoading(true);
-
+  async function updateRole(role: Exclude<AvailableRole, "owner">, assigned: boolean) {
+    setBusyRole(role)
+    setError("")
+    setMessage("")
     try {
-      const { error } = await supabase
-        .from("profiles")
-        .update({
-          role,
-        })
-        .eq("id", staffId);
-
-      if (error) {
-        throw error;
-      }
-
-      router.refresh();
-
-      alert(
-        isAm
-          ? "የስራ ሚናው በተሳካ ሁኔታ ተቀይሯል!"
-          : "Staff role updated successfully!"
-      );
-    } catch (err) {
-      console.error(
-        "[STAFF ROLE] Failed to update role:",
-        err
-      );
-
-      // Return the selector to the saved role
-      setRole(currentRole);
-
-      alert(
-        isAm
-          ? "ሚና ለመቀየር አልተሳካም።"
-          : "Failed to update role."
-      );
+      const response = await fetch(`/api/management/staff/${staffId}/roles`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role, assigned }),
+      })
+      const result = await response.json() as { roles?: AvailableRole[]; error?: string }
+      if (!response.ok || !result.roles) throw new Error(result.error || "Could not update staff role.")
+      setRoles(result.roles)
+      setMessage(isAm ? "የስራ ሚና ተቀይሯል።" : "Staff role updated.")
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not update staff role.")
     } finally {
-      setLoading(false);
+      setBusyRole(null)
     }
   }
 
   return (
-    <form
-      onSubmit={handleUpdateRole}
-      className="mt-2 space-y-3"
-    >
-      <label
-        htmlFor="staff-role"
-        className="block text-[11px] font-bold uppercase tracking-wide text-coffee-600"
-      >
-        {isAm
-          ? "የስራ ሚና ቀይር"
-          : "Change Staff Role"}
-      </label>
+    <section aria-labelledby="staff-roles-title">
+      <h2 id="staff-roles-title" className="text-sm font-black text-coffee-700">
+        {isAm ? "የስራ ሚናዎች" : "Staff roles"}
+      </h2>
+      <p className="mt-1 text-xs leading-5 text-coffee-500">
+        {isAm ? "አንድ ሰራተኛ ከአንድ በላይ ሚና ሊኖረው ይችላል።" : "A staff member can have more than one role."}
+      </p>
 
-      <div className="flex gap-2">
-        <select
-          id="staff-role"
-          value={role}
-          onChange={(e) => setRole(e.target.value)}
-          disabled={loading}
-          className="min-w-0 flex-1 rounded-xl border border-cream-200 bg-cream-50/50 px-3 py-2 text-xs font-bold text-coffee-900 outline-none transition focus:border-berbere-500 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {roles.map((r) => (
-            <option
-              key={r.id}
-              value={r.id}
-            >
-              {r.label}
-            </option>
-          ))}
-        </select>
-
-        <button
-          type="submit"
-          disabled={
-            loading ||
-            role === currentRole
-          }
-          className="inline-flex shrink-0 items-center gap-1 rounded-xl bg-berbere-500 px-4 py-2 text-xs font-bold text-white transition-all hover:bg-berbere-600 disabled:cursor-not-allowed disabled:bg-cream-200 disabled:text-coffee-400"
-        >
-          {loading && (
-            <Loader2 className="h-3 w-3 animate-spin" />
-          )}
-
-          {isAm ? "አዘምን" : "Update"}
-        </button>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        {OPTIONS.map(({ role, en, am }) => {
+          const checked = roles.includes(role)
+          const primary = role === primaryRole
+          return (
+            <label key={role} className="flex min-h-12 items-center gap-3 rounded-xl border border-cream-200 bg-white px-3 py-2 text-sm font-semibold text-coffee-700">
+              <input
+                type="checkbox"
+                checked={checked}
+                disabled={primary || busyRole !== null}
+                onChange={(event) => void updateRole(role, event.target.checked)}
+                className="h-5 w-5 accent-berbere-500 disabled:opacity-70"
+              />
+              <span className="flex-1">{isAm ? am : en}</span>
+              {primary && <span className="text-[10px] font-bold text-coffee-400">{isAm ? "ዋና" : "Primary"}</span>}
+              {busyRole === role && <span className="text-[10px] text-coffee-400">{isAm ? "በማስቀመጥ ላይ" : "Saving…"}</span>}
+            </label>
+          )
+        })}
       </div>
-    </form>
-  );
+      {error && <p role="alert" className="mt-3 rounded-lg bg-danger-bg px-3 py-2 text-xs font-semibold text-danger">{error}</p>}
+      {message && <p role="status" className="mt-3 rounded-lg bg-success-bg px-3 py-2 text-xs font-semibold text-success">{message}</p>}
+    </section>
+  )
 }

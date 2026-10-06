@@ -33,7 +33,10 @@ export async function GET() {
     if (auth.error) {
       return NextResponse.json(
         { error: auth.error },
-        { status: auth.error === 'Unauthorized' ? 401 : 403 },
+        {
+          status: auth.error === 'Unauthorized' ? 401 : 403,
+          headers: { 'Cache-Control': 'private, no-store, max-age=0' },
+        },
       )
     }
 
@@ -46,7 +49,12 @@ export async function GET() {
       .order('opened_at', { ascending: true })
 
     if (shiftError) throw shiftError
-    if (!shifts?.length) return NextResponse.json({ shifts: [] as ShiftSummary[] })
+    if (!shifts?.length) {
+      return NextResponse.json(
+        { shifts: [] as ShiftSummary[] },
+        { headers: { 'Cache-Control': 'private, no-store, max-age=0' } },
+      )
+    }
 
     const profileIds = [...new Set(shifts.map((shift) => shift.cashier_id))]
     const branchIds = [...new Set(shifts.map((shift) => shift.branch_id))]
@@ -148,12 +156,15 @@ export async function GET() {
       if (summary) summary.products = [...products.values()]
     }
 
-    return NextResponse.json({
-      shifts: [...summaries.values()].map((shift) => ({
-        ...shift,
-        products: shift.products.sort((a, b) => b.quantity - a.quantity),
-      })),
-    })
+    return NextResponse.json(
+      {
+        shifts: [...summaries.values()].map((shift) => ({
+          ...shift,
+          products: shift.products.sort((a, b) => b.quantity - a.quantity),
+        })),
+      },
+      { headers: { 'Cache-Control': 'private, no-store, max-age=0' } },
+    )
   } catch (error) {
     console.error('[dashboard] open shift preview failed:', error)
     return NextResponse.json(

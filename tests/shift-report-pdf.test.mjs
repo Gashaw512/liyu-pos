@@ -16,6 +16,7 @@ test('creates a valid PDF with every product line over multiple pages', () => {
     summary: [{ label: 'Sales', value: '12,345.00 ETB' }],
     payments: [{ method: 'Cash', amount: 12345 }],
     products: Array.from({ length: 105 }, (_, index) => ({ name: `Product ${index + 1}`, quantity: 2, sales: 120 })),
+    lowStockProducts: Array.from({ length: 30 }, (_, index) => ({ name: `Low stock ${index + 1}`, quantity: index, alertLevel: 5 })),
   }
   const pdf = createShiftReportPdf(report)
   const text = pdf.toString('latin1')
@@ -26,6 +27,8 @@ test('creates a valid PDF with every product line over multiple pages', () => {
   assert.ok(text.includes('120.00 ETB'))
   assert.ok(text.includes('SHIFT SUMMARY'))
   assert.ok(text.includes('QTY SOLD'))
+  assert.ok(text.includes('CURRENT LOW-STOCK PRODUCTS'))
+  for (let index = 1; index <= 30; index++) assert.ok(text.includes(`Low stock ${index}`), `missing low-stock product ${index}`)
 })
 
 test('renders a clear empty shift and removes unsupported glyphs instead of question marks', () => {

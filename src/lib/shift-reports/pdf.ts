@@ -7,6 +7,7 @@ export interface ShiftReportPdfData {
   summary: Array<{ label: string; value: string }>
   payments: Array<{ method: string; amount: number }>
   products: Array<{ name: string; quantity: number; sales: number }>
+  lowStockProducts?: Array<{ name: string; quantity: number; alertLevel: number }>
 }
 
 function pdfText(value: unknown): string {
@@ -144,6 +145,38 @@ export function createShiftReportPdf(report: ShiftReportPdfData): Buffer {
       text(truncatedName, 50, y, 9)
       text(product.quantity.toLocaleString('en-US', { maximumFractionDigits: 2 }), 350, y, 9)
       text(money(product.sales), 460, y, 9, true)
+      y -= 17
+      line(50, y + 5, 545, y + 5, '0.93 0.91 0.88')
+    }
+  }
+
+  section('Current low-stock products')
+  const drawStockHeader = () => {
+    text('PRODUCT', 50, y, 8, true, '0.45 0.38 0.35')
+    text('ON HAND', 350, y, 8, true, '0.45 0.38 0.35')
+    text('ALERT LEVEL', 455, y, 8, true, '0.45 0.38 0.35')
+    y -= 8
+    line(50, y, 545, y)
+    y -= 17
+  }
+  const lowStockProducts = report.lowStockProducts ?? []
+  if (!lowStockProducts.length) {
+    text('No low-stock products in this inventory snapshot.', 50, y, 9, false, '0.45 0.38 0.35')
+    y -= 18
+  } else {
+    drawStockHeader()
+    for (const product of lowStockProducts) {
+      if (y < 72) {
+        finishPage()
+        startPage(true)
+        section('Current low-stock products (continued)')
+        drawStockHeader()
+      }
+      const productName = pdfText(product.name) || 'Product name unavailable'
+      const truncatedName = productName.length > 48 ? `${productName.slice(0, 45)}...` : productName
+      text(truncatedName, 50, y, 9)
+      text(product.quantity.toLocaleString('en-US', { maximumFractionDigits: 2 }), 350, y, 9)
+      text(product.alertLevel.toLocaleString('en-US', { maximumFractionDigits: 2 }), 455, y, 9)
       y -= 17
       line(50, y + 5, 545, y + 5, '0.93 0.91 0.88')
     }

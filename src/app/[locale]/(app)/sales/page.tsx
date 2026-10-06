@@ -113,6 +113,7 @@ export default function SalesPage() {
     useState<POSTable | null>(null)
   const [cart, setCart] = useState<POSCartItem[]>([])
   const [activeShift, setActiveShift] = useState<Shift | null>(null)
+  const closingShiftInstanceRef = useRef<Shift | null>(null)
 
   const [showCheckout, setShowCheckout] = useState(false)
   const [billOpen, setBillOpen] = useState(false)
@@ -328,12 +329,40 @@ export default function SalesPage() {
             'current',
           )) || null
 
+        let remoteOpenShift: Shift | null = null
         if (businessId && branchId && userId) {
-          const remoteOpenShift = await resolveExistingOpenShift()
-          if (remoteOpenShift) {
-            if (!currentShift || !isSameOpenShiftInstance(currentShift, remoteOpenShift)) {
-              currentShift = remoteOpenShift
-            }
+          remoteOpenShift = await resolveExistingOpenShift()
+        }
+
+        const pendingClosures = await db.getAll('pending_shift_closures')
+        const closeAlreadyQueued = pendingClosures.some((closure) =>
+          [currentShift, remoteOpenShift, closingShiftInstanceRef.current].some((shift) =>
+            isDuplicateShiftClosure(closure, shift),
+          ),
+        )
+
+        const closeInProgress = [currentShift, remoteOpenShift].some((shift) =>
+          isDuplicateShiftClosure({
+            businessId: closingShiftInstanceRef.current?.business_id,
+            branchId: closingShiftInstanceRef.current?.branch_id,
+            cashierId: closingShiftInstanceRef.current?.cashier_id,
+            openedAt: closingShiftInstanceRef.current?.opened_at,
+          }, shift),
+        )
+
+        if (closeAlreadyQueued || closeInProgress) {
+          // A server read may still show the open row while its queued close
+          // is syncing. Do not resurrect that shift in the POS.
+          await db.delete('active_shift', 'current')
+          currentShift = null
+          if (navigator.onLine) {
+            void import('@/lib/offline/syncEngine').then(({ syncEngine }) =>
+              syncEngine.syncAll(),
+            )
+          }
+        } else if (remoteOpenShift) {
+          if (!currentShift || !isSameOpenShiftInstance(currentShift, remoteOpenShift)) {
+            currentShift = remoteOpenShift
           }
         }
 
@@ -443,6 +472,31 @@ export default function SalesPage() {
     businessContextLoading,
     loadPOSData,
   ])
+
+  // POS stock badges use the local snapshot for offline work. Refresh it on
+  // entry and after reconnect/focus so online cashiers see the current branch
+  // quantity. Keep this separate from sync-complete to avoid a refresh loop.
+  useEffect(() => {
+    if (businessContextLoading || !businessId || !branchId || !userId) return
+
+    const refreshOnlineCatalog = (): void => {
+      if (!navigator.onLine) return
+      void import('@/lib/offline/syncEngine').then(({ syncEngine }) =>
+        syncEngine.refreshCatalog(),
+      )
+    }
+
+    refreshOnlineCatalog()
+    window.addEventListener('online', refreshOnlineCatalog)
+    window.addEventListener('focus', refreshOnlineCatalog)
+    document.addEventListener('visibilitychange', refreshOnlineCatalog)
+
+    return () => {
+      window.removeEventListener('online', refreshOnlineCatalog)
+      window.removeEventListener('focus', refreshOnlineCatalog)
+      document.removeEventListener('visibilitychange', refreshOnlineCatalog)
+    }
+  }, [businessContextLoading, businessId, branchId, userId])
 
   useEffect(() => {
     const refreshCatalog = () => {
@@ -912,6 +966,7 @@ export default function SalesPage() {
 
       setClosedShiftFeedback(null)
       setActualCashCount('')
+      closingShiftInstanceRef.current = null
       setActiveShift(
         newShift,
       )
@@ -970,7 +1025,13 @@ export default function SalesPage() {
     if (closingShift) return
     if (!activeShift) return
 
-    if (hasUnsavedChanges || (cartHasItems && !selectedTable)) {
+    // Derive this at click time instead of relying only on the effect-updated
+    // flag, so a very fast add-then-close cannot discard an unsaved table item.
+    const hasUncommittedOrder = cartHasItems && (
+      !selectedTable || serializeCart(cart) !== savedCartSnapshot
+    )
+
+    if (hasUncommittedOrder) {
       toast(
         isAm
           ? 'ፈረቃውን ከመዝጋትዎ በፊት ክፍያውን ያጠናቅቁ ወይም ትዕዛዙን ያስቀምጡ።'
@@ -986,6 +1047,7 @@ export default function SalesPage() {
   const closeShift = async (countedCash: number | null) => {
     if (closingShift) return
 
+    closingShiftInstanceRef.current = activeShift
     setClosingShift(true)
 
     try {
@@ -1018,10 +1080,15 @@ export default function SalesPage() {
           setManualTip('')
           setBillOpen(false)
 
+          if (navigator.onLine) {
+            const { syncEngine } = await import('@/lib/offline/syncEngine')
+            void syncEngine.syncAll()
+          }
+
           toast(
             isAm
               ? 'ይህ ፈረቃ በሌላ መሣሪያ አስቀድሞ ተዘግቷል። ሪፖርቱ እንደገና አይላክም።'
-              : 'This shift has already been closed elsewhere; the report is not being sent twice.',
+              : 'This shift is already saved as closing. The app will finish it without sending the report twice.',
             'info',
           )
 
@@ -1068,6 +1135,7 @@ export default function SalesPage() {
         void syncEngine.syncAll()
       }
     } catch (error) {
+      closingShiftInstanceRef.current = null
       console.error(
         '[POS] Failed to close shift:',
         error,

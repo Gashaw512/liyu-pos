@@ -103,6 +103,8 @@ const SALE_SYNC_STATUS_EVENT = 'liyu:sale-sync-status'
 
 export class SyncEngine {
   private isSyncing = false
+  private syncRequestedWhileBusy = false
+  private forceCatalogRefreshRequested = false
   private tableOrdersUnavailable = false
   private tableOrdersPullInFlight: Promise<void> | null = null
 
@@ -113,6 +115,32 @@ export class SyncEngine {
       !navigator.onLine ||
       this.isSyncing
     ) {
+      if (this.isSyncing && typeof window !== 'undefined' && navigator.onLine) {
+        this.forceCatalogRefreshRequested = true
+        this.syncRequestedWhileBusy = true
+      }
+      return false
+    }
+
+    // Never replace the offline reference snapshot while local stock or sales
+    // mutations are still waiting for server confirmation. Let the normal
+    // outbound-first pipeline synchronize them and pull its snapshot safely.
+    try {
+      const db = await getDB()
+      const pendingStores = [
+        'pending_sales',
+        'pending_stock_reconciliations',
+        'pending_stock_receipts',
+      ] as const
+      const pending = await Promise.all(pendingStores.map((storeName) =>
+        db.objectStoreNames.contains(storeName) ? db.getAll(storeName) : Promise.resolve([]),
+      ))
+      if (pending.some((rows) => rows.length > 0)) {
+        void this.syncAll()
+        return false
+      }
+    } catch (error) {
+      console.warn('[SYNC] Could not confirm the offline queue is clear; keeping cached inventory.', error)
       return false
     }
 
@@ -122,6 +150,10 @@ export class SyncEngine {
       return await this.pullLatestProducts()
     } finally {
       this.isSyncing = false
+      if (this.syncRequestedWhileBusy && navigator.onLine) {
+        this.syncRequestedWhileBusy = false
+        queueMicrotask(() => void this.syncAll())
+      }
     }
   }
 
@@ -131,8 +163,9 @@ export class SyncEngine {
 
   public async syncAll(): Promise<void> {
     if (this.isSyncing) {
+      this.syncRequestedWhileBusy = true
       console.log(
-        '[SYNC] Synchronization already running. Skipping.'
+        '[SYNC] Synchronization already running. Queued one follow-up pass.'
       )
 
       return
@@ -215,10 +248,12 @@ export class SyncEngine {
       // ======================================================
 
       const refreshCatalog =
+        this.forceCatalogRefreshRequested ||
         outboundResult.hadWork ||
         await this.isCatalogRefreshDue()
 
       if (refreshCatalog) {
+        this.forceCatalogRefreshRequested = false
         await this.pullLatestProducts()
       } else {
         console.log(
@@ -236,6 +271,10 @@ export class SyncEngine {
       )
     } finally {
       this.isSyncing = false
+      if (this.syncRequestedWhileBusy && navigator.onLine) {
+        this.syncRequestedWhileBusy = false
+        queueMicrotask(() => void this.syncAll())
+      }
     }
   }
 

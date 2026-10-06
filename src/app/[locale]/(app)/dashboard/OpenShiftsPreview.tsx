@@ -41,10 +41,8 @@ export default function OpenShiftsPreview({ locale, count, isOwner, onNavigate }
     if (!open) return
 
     const controller = new AbortController()
-    setLoading(true)
-    setError(null)
 
-    void fetch('/api/dashboard/open-shifts', { signal: controller.signal })
+    void fetch('/api/dashboard/open-shifts', { cache: 'no-store', signal: controller.signal })
       .then(async (response) => {
         const result = await response.json() as { shifts?: OpenShift[]; error?: string }
         if (!response.ok) throw new Error(result.error || 'Unable to load open shifts.')
@@ -74,7 +72,18 @@ export default function OpenShiftsPreview({ locale, count, isOwner, onNavigate }
 
   const retry = () => {
     setError(null)
+    setLoading(true)
     setRetryCount((value) => value + 1)
+  }
+
+  const openPreview = () => {
+    if (!isOwner) {
+      onNavigate()
+      return
+    }
+    setError(null)
+    setLoading(true)
+    setOpen(true)
   }
 
   const dialog = open && typeof document !== 'undefined' ? createPortal(
@@ -208,7 +217,7 @@ export default function OpenShiftsPreview({ locale, count, isOwner, onNavigate }
     <>
       <button
         type="button"
-        onClick={() => isOwner ? setOpen(true) : onNavigate()}
+        onClick={openPreview}
         className="flex items-center justify-between rounded-xl border border-coffee-100 bg-coffee-50 px-3 py-3 text-left transition hover:bg-coffee-100 sm:col-span-2"
       >
         <div className="flex items-center gap-3">

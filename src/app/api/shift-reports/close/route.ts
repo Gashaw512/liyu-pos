@@ -151,10 +151,13 @@ export async function POST(request: Request) {
     // branch in one database update. This is separate from the cashier's cash
     // shift and never changes inventory quantities or FIFO layers.
     const custodyInventory: Array<{
-      recipientName: string
-      productName: string
-      quantityReceived: number
-      physicalCount: number | null
+      recipient_name: string
+      product_name: string
+      accepted_float: number
+      sold_qty: number
+      expected_stock: number
+      actual_count: number | null
+      variance: number | null
     }> = []
     let custodyShiftCount = 0
     const canCloseBranch = auth.roles.some(role => role === 'owner' || role === 'manager')
@@ -166,7 +169,7 @@ export async function POST(request: Request) {
         .eq('business_id', auth.profile!.business_id)
         .eq('branch_id', auth.profile!.branch_id)
         .eq('status', 'ACTIVE')
-        .select('id,user_id')
+        .select('id,user_id,opened_at,closed_at')
       if (custodyCloseError) throw custodyCloseError
 
       // A repeated close request can find no ACTIVE rows because the previous
@@ -174,7 +177,7 @@ export async function POST(request: Request) {
       // reconciliation snapshot can be safely repaired/upserted.
       const { data: sameCloseShifts, error: sameCloseError } = await admin
         .from('custody_shifts')
-        .select('id,user_id')
+        .select('id,user_id,opened_at,closed_at')
         .eq('business_id', auth.profile!.business_id)
         .eq('branch_id', auth.profile!.branch_id)
         .eq('status', 'CLOSED')
@@ -182,8 +185,22 @@ export async function POST(request: Request) {
         .eq('closed_at', closeTimestamp)
         .eq('close_reason', 'branch_report_close')
       if (sameCloseError) throw sameCloseError
-      const custodyShifts = closedCustodyShifts?.length ? closedCustodyShifts : (sameCloseShifts ?? [])
-      custodyShiftCount = custodyShifts.length
+      const newlyClosedShifts = closedCustodyShifts?.length ? closedCustodyShifts : (sameCloseShifts ?? [])
+      custodyShiftCount = newlyClosedShifts.length
+      const { data: previouslyReconciledShifts, error: priorCustodyError } = await admin
+        .from('custody_shifts')
+        .select('id,user_id,opened_at,closed_at')
+        .eq('business_id', auth.profile!.business_id)
+        .eq('branch_id', auth.profile!.branch_id)
+        .eq('status', 'CLOSED')
+        .eq('close_reason', 'recipient_reconciliation')
+        .gte('closed_at', openedAt.toISOString())
+        .lte('closed_at', closeTimestamp)
+      if (priorCustodyError) throw priorCustodyError
+      const shiftsById = new Map<string, (typeof newlyClosedShifts)[number] | (typeof previouslyReconciledShifts)[number]>()
+      for (const shift of previouslyReconciledShifts ?? []) shiftsById.set(shift.id, shift)
+      for (const shift of newlyClosedShifts) shiftsById.set(shift.id, shift)
+      const custodyShifts = [...shiftsById.values()]
       const custodyShiftIds = custodyShifts.map(row => row.id)
 
       if (custodyShiftIds.length) {
@@ -195,23 +212,89 @@ export async function POST(request: Request) {
 
         const productIds = [...new Set((custodyEntries ?? []).map(row => row.product_id))]
         const userIds = [...new Set(custodyShifts.map(row => row.user_id))]
-        const [custodyProducts, custodyUsers] = await Promise.all([
+        const minimumOpenedAt = custodyShifts.reduce((minimum, shift) =>
+          shift.opened_at < minimum ? shift.opened_at : minimum, custodyShifts[0].opened_at)
+        const [custodyProducts, custodyUsers, reconciliationResult, salesResult, wastageResult] = await Promise.all([
           productIds.length
-            ? admin.from('products').select('id,name,name_am').in('id', productIds).eq('business_id', auth.profile!.business_id)
+            ? admin.from('products').select('id,name,name_am,track_inventory').in('id', productIds).eq('business_id', auth.profile!.business_id)
             : Promise.resolve({ data: [], error: null }),
           userIds.length
             ? admin.from('profiles').select('id,full_name').in('id', userIds).eq('business_id', auth.profile!.business_id)
             : Promise.resolve({ data: [], error: null }),
+          admin.from('custody_shift_reconciliations')
+            .select('custody_shift_id,status,accepted_stock_snapshot,physical_count_snapshot')
+            .in('custody_shift_id', custodyShiftIds),
+          userIds.length
+            ? admin.from('sales').select('id,cashier_id,created_at')
+              .eq('business_id', auth.profile!.business_id)
+              .eq('branch_id', auth.profile!.branch_id)
+              .in('cashier_id', userIds)
+              .eq('status', 'completed')
+              .is('deleted_at', null)
+              .gte('created_at', minimumOpenedAt)
+              .lte('created_at', closeTimestamp)
+            : Promise.resolve({ data: [], error: null }),
+          userIds.length && productIds.length
+            ? admin.from('inventory_movements').select('user_id,product_id,quantity,created_at')
+              .eq('business_id', auth.profile!.business_id)
+              .eq('branch_id', auth.profile!.branch_id)
+              .eq('movement_type', 'waste')
+              .in('user_id', userIds)
+              .in('product_id', productIds)
+              .gte('created_at', minimumOpenedAt)
+              .lte('created_at', closeTimestamp)
+            : Promise.resolve({ data: [], error: null }),
         ])
-        if (custodyProducts.error || custodyUsers.error) throw custodyProducts.error ?? custodyUsers.error
+        if (custodyProducts.error || custodyUsers.error || reconciliationResult.error || salesResult.error || wastageResult.error) {
+          throw custodyProducts.error ?? custodyUsers.error ?? reconciliationResult.error ?? salesResult.error ?? wastageResult.error
+        }
         const productsById = new Map((custodyProducts.data ?? []).map(row => [row.id, row.name_am || row.name || 'Product']))
         const usersById = new Map((custodyUsers.data ?? []).map(row => [row.id, row.full_name || 'Staff member']))
+        const trackedProductIds = new Set((custodyProducts.data ?? []).filter(row => row.track_inventory !== false).map(row => row.id))
         const entriesByShift = new Map<string, Map<string, number>>()
         for (const entry of custodyEntries ?? []) {
+          if (!trackedProductIds.has(entry.product_id)) continue
           const byProduct = entriesByShift.get(entry.custody_shift_id) ?? new Map<string, number>()
           byProduct.set(entry.product_id, (byProduct.get(entry.product_id) ?? 0) + money(entry.quantity_received))
           entriesByShift.set(entry.custody_shift_id, byProduct)
         }
+
+        const salesById = new Map((salesResult.data ?? []).map(sale => [sale.id, sale]))
+        const saleIds = [...salesById.keys()]
+        const { data: soldItems, error: soldItemsError } = saleIds.length
+          ? await admin.from('sale_items').select('sale_id,product_id,quantity').in('sale_id', saleIds).in('product_id', productIds)
+          : { data: [], error: null }
+        if (soldItemsError) throw soldItemsError
+        const soldByShift = new Map<string, Map<string, number>>()
+        for (const item of soldItems ?? []) {
+          const sale = salesById.get(item.sale_id)
+          if (!sale?.cashier_id || !trackedProductIds.has(item.product_id)) continue
+          const custodyShift = custodyShifts.find(shift =>
+            shift.user_id === sale.cashier_id
+            && shift.opened_at <= sale.created_at
+            && (shift.closed_at ?? closeTimestamp) >= sale.created_at,
+          )
+          if (!custodyShift) continue
+          const byProduct = soldByShift.get(custodyShift.id) ?? new Map<string, number>()
+          byProduct.set(item.product_id, (byProduct.get(item.product_id) ?? 0) + money(item.quantity))
+          soldByShift.set(custodyShift.id, byProduct)
+        }
+
+        const wasteByShift = new Map<string, Map<string, number>>()
+        for (const movement of wastageResult.data ?? []) {
+          if (!movement.user_id || !trackedProductIds.has(movement.product_id)) continue
+          const custodyShift = custodyShifts.find(shift =>
+            shift.user_id === movement.user_id
+            && shift.opened_at <= movement.created_at
+            && (shift.closed_at ?? closeTimestamp) >= movement.created_at,
+          )
+          if (!custodyShift) continue
+          const byProduct = wasteByShift.get(custodyShift.id) ?? new Map<string, number>()
+          byProduct.set(movement.product_id, (byProduct.get(movement.product_id) ?? 0) + Math.abs(money(movement.quantity)))
+          wasteByShift.set(custodyShift.id, byProduct)
+        }
+
+        const reconciliationsByShift = new Map((reconciliationResult.data ?? []).map(row => [row.custody_shift_id, row]))
 
         const reconciliationRows = custodyShifts.map(shift => {
           const acceptedStock = [...(entriesByShift.get(shift.id) ?? new Map())].map(([productId, quantity]) => ({
@@ -221,12 +304,30 @@ export async function POST(request: Request) {
             physical_count: null,
             difference: null,
           }))
-          custodyInventory.push(...acceptedStock.map(item => ({
-            recipientName: usersById.get(shift.user_id) ?? 'Staff member',
-            productName: item.product_name,
-            quantityReceived: item.quantity_received,
-            physicalCount: item.physical_count,
-          })))
+          const savedReport = reconciliationsByShift.get(shift.id)
+          const submittedLines = Array.isArray(savedReport?.accepted_stock_snapshot) ? savedReport.accepted_stock_snapshot as Array<Record<string, unknown>> : []
+          const physicalLines = Array.isArray(savedReport?.physical_count_snapshot) ? savedReport.physical_count_snapshot as Array<Record<string, unknown>> : []
+          for (const item of acceptedStock) {
+            const soldQty = soldByShift.get(shift.id)?.get(item.product_id) ?? 0
+            const savedLine = submittedLines.find(line => line.product_id === item.product_id)
+            const wastageQty = savedReport?.status === 'submitted'
+              ? money(savedLine?.quantity_wasted)
+              : wasteByShift.get(shift.id)?.get(item.product_id) ?? 0
+            const expectedStock = item.quantity_received - soldQty - wastageQty
+            const countLine = physicalLines.find(line => line.product_id === item.product_id)
+            const actualCount = savedReport?.status === 'submitted' && countLine?.physical_count != null
+              ? money(countLine.physical_count)
+              : null
+            custodyInventory.push({
+              recipient_name: usersById.get(shift.user_id) ?? 'Staff member',
+              product_name: item.product_name,
+              accepted_float: item.quantity_received,
+              sold_qty: soldQty,
+              expected_stock: expectedStock,
+              actual_count: actualCount,
+              variance: actualCount == null ? null : actualCount - expectedStock,
+            })
+          }
           return {
             business_id: auth.profile!.business_id,
             branch_id: auth.profile!.branch_id,
@@ -235,11 +336,12 @@ export async function POST(request: Request) {
             closed_at: closeTimestamp,
             accepted_stock_snapshot: acceptedStock,
             physical_count_snapshot: null,
+            status: 'not_submitted',
           }
         })
         const { error: reconciliationError } = await admin
           .from('custody_shift_reconciliations')
-          .upsert(reconciliationRows, { onConflict: 'custody_shift_id' })
+          .upsert(reconciliationRows, { onConflict: 'custody_shift_id', ignoreDuplicates: true })
         if (reconciliationError) throw reconciliationError
       }
     }

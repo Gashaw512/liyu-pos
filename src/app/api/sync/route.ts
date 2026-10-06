@@ -3,6 +3,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminDatabaseClient, getAssignedProfileRoles } from '@/lib/shift-reports/server'
+import { verifyPriceProof } from '@/lib/security/price-proof'
 
 export const dynamic = 'force-dynamic'
 
@@ -1193,6 +1194,61 @@ async function syncSale(
         existingSaleError
       ) {
         throw existingSaleError
+      }
+
+      // Verify new/partially synced sale lines against the tenant's price
+      // master. Signed catalog proofs preserve the exact price cached while
+      // offline; manager-approved overrides are signed by the table-order API.
+      // Existing completed lines are left untouched on idempotent retries.
+      let needsPriceValidation = !existingSale
+      if (existingSale) {
+        const { data: savedLines, error: savedLinesError } = await supabase
+          .from('sale_items')
+          .select('id')
+          .eq('sale_id', sale.id)
+          .limit(1)
+        if (savedLinesError) throw savedLinesError
+        needsPriceValidation = !savedLines?.length
+      }
+
+      if (needsPriceValidation) {
+        const submittedItems = Array.isArray(payload.items) ? payload.items.map(asRecord) : []
+        const productIds = [...new Set(submittedItems.map((item) => toValidUuid(item.product_id)).filter((id): id is string => Boolean(id)))]
+        if (submittedItems.some((item) => !toValidUuid(item.product_id))) throw new Error('Sale contains an invalid product reference.')
+
+        const { data: products, error: productsError } = await supabase
+          .from('products')
+          .select('id,retail_price')
+          .eq('business_id', sale.business_id)
+          .in('id', productIds)
+          .eq('is_active', true)
+          .is('deleted_at', null)
+          .or(`branch_id.is.null,branch_id.eq.${sale.branch_id}`)
+        if (productsError) throw productsError
+
+        const productById = new Map((products ?? []).map((product) => [product.id, product]))
+        const canOverride = context.operatorRoles.some((role) => role === 'owner' || role === 'manager')
+        for (const item of submittedItems) {
+          const productId = toValidUuid(item.product_id)
+          if (!productId) throw new Error('Sale contains an invalid product reference.')
+          const product = productById.get(productId)
+          const price = Number(item.unit_price)
+          if (!product || !Number.isFinite(price) || price < 0) {
+            throw new Error('Sale contains a product or price that could not be verified.')
+          }
+
+          const priceCents = Math.round(price * 100)
+          const currentPriceCents = Math.round(Number(product.retail_price) * 100)
+          const signedPrice = verifyPriceProof(item.price_proof, {
+            businessId: sale.business_id,
+            branchId: sale.branch_id,
+            productId,
+            priceCents,
+          })
+          if (priceCents !== currentPriceCents && !signedPrice && !canOverride) {
+            throw new Error('Sale price does not match a verified catalog price. Refresh the catalog or ask a manager.')
+          }
+        }
       }
 
       if (!existingSale) {

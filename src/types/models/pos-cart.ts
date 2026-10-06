@@ -76,6 +76,7 @@ export interface LocalOpenTab {
     product_name_am?: string | null;
     quantity: number;
     unit_price: number;
+    price_proof?: string;
   }>;
 
   total_accumulated: number;

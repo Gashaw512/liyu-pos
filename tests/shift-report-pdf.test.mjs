@@ -5,6 +5,24 @@ import { decryptSecret, encryptSecret } from '../src/lib/shift-reports/crypto.ts
 import { processRecipientDeliveries } from '../src/lib/shift-reports/delivery.ts'
 import { isAllowedNotificationRole, selectEnabledBusinessRecipients } from '../src/lib/shift-reports/routing.ts'
 import { telegramSendDocument, telegramSendMessage } from '../src/lib/shift-reports/telegram.ts'
+import { signPriceProof, verifyPriceProof } from '../src/lib/security/price-proof.ts'
+
+test('price proofs are bound to tenant, branch, product, and exact price', () => {
+  process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-server-only-secret'
+  const claims = {
+    version: 1,
+    businessId: 'business-a',
+    branchId: 'branch-a',
+    productId: 'product-a',
+    priceCents: 2500,
+    kind: 'catalog',
+  }
+  const proof = signPriceProof(claims)
+  assert.deepEqual(verifyPriceProof(proof, claims), claims)
+  assert.equal(verifyPriceProof(proof, { ...claims, businessId: 'business-b' }), null)
+  assert.equal(verifyPriceProof(proof, { ...claims, priceCents: 1 }), null)
+  assert.equal(verifyPriceProof(`${proof}tampered`, claims), null)
+})
 
 test('creates a valid PDF with every product line over multiple pages', () => {
   const report = {
@@ -16,7 +34,7 @@ test('creates a valid PDF with every product line over multiple pages', () => {
     summary: [{ label: 'Sales', value: '12,345.00 ETB' }],
     payments: [{ method: 'Cash', amount: 12345 }],
     products: Array.from({ length: 105 }, (_, index) => ({ name: `Product ${index + 1}`, quantity: 2, sales: 120 })),
-    lowStockProducts: Array.from({ length: 30 }, (_, index) => ({ name: `Low stock ${index + 1}`, quantity: index, alertLevel: 5 })),
+    lowStockProducts: Array.from({ length: 30 }, (_, index) => ({ product_name: `Low stock ${index + 1}`, current_stock: index, minimum_threshold: 5 })),
   }
   const pdf = createShiftReportPdf(report)
   const text = pdf.toString('latin1')

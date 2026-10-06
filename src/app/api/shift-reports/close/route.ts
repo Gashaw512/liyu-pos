@@ -22,9 +22,31 @@ export async function POST(request: Request) {
     if (!auth.profile!.branch_id) return NextResponse.json({ error: 'No branch is assigned to this account.' }, { status: 403 })
 
     const admin = createAdminDatabaseClient()
-    const { data: prior, error: priorError } = await admin.from('shift_report_deliveries').select('shift_report_id,status,attempts,updated_at').eq('business_id', auth.profile!.business_id).eq('cashier_id', auth.user!.id).eq('opened_at', openedAt.toISOString()).maybeSingle()
-    if (priorError) throw priorError
+    const { data: deliveryByShift, error: deliveryByShiftError } = await admin
+      .from('shift_report_deliveries')
+      .select('shift_report_id,status,attempts,updated_at')
+      .eq('business_id', auth.profile!.business_id)
+      .eq('shift_report_id', body.reportId)
+      .maybeSingle()
+    if (deliveryByShiftError) throw deliveryByShiftError
+    const { data: priorByOpenTime, error: priorByOpenTimeError } = deliveryByShift
+      ? { data: null, error: null }
+      : await admin
+        .from('shift_report_deliveries')
+        .select('shift_report_id,status,attempts,updated_at')
+        .eq('business_id', auth.profile!.business_id)
+        .eq('cashier_id', auth.user!.id)
+        .eq('opened_at', openedAt.toISOString())
+        .maybeSingle()
+    if (priorByOpenTimeError) throw priorByOpenTimeError
+    const prior = deliveryByShift ?? priorByOpenTime
     if (prior && prior.shift_report_id !== body.reportId) return NextResponse.json({ success: true, duplicate: true, status: prior.status })
+    if (prior?.status === 'sent' || prior?.status === 'disabled') {
+      return NextResponse.json({ success: true, duplicate: true, status: prior.status })
+    }
+    if (prior?.status === 'sending' && Date.now() - Date.parse(prior.updated_at ?? '') < 5 * 60_000) {
+      return NextResponse.json({ success: true, duplicate: true, status: 'sending' })
+    }
 
     // Resolve the actual persisted shift first. Reports are tied to that shift
     // ID so sales from another shift by the same staff member cannot leak in
@@ -83,8 +105,8 @@ export async function POST(request: Request) {
       const quantity = money(row.quantity)
       const alertLevel = Math.max(0, money(product.low_stock_alert))
       if (quantity > alertLevel) return []
-      return [{ name: product.name_am || product.name || 'Product', quantity, alertLevel }]
-    }).sort((first, second) => first.quantity - second.quantity)
+      return [{ product_name: product.name_am || product.name || 'Product', current_stock: quantity, minimum_threshold: alertLevel }]
+    }).sort((first, second) => first.current_stock - second.current_stock)
     const payments = new Map<string, number>()
     for (const payment of paymentResult.data ?? []) payments.set(payment.method, (payments.get(payment.method) ?? 0) + money(payment.amount))
     const openingCash = money(body.openingCash)
@@ -150,13 +172,6 @@ export async function POST(request: Request) {
         })
         if (error) throw error
       }
-    }
-
-    if (prior?.status === 'sent' || prior?.status === 'disabled') {
-      return NextResponse.json({ success: true, duplicate: true, status: prior.status })
-    }
-    if (prior?.status === 'sending' && Date.now() - Date.parse(prior.updated_at ?? '') < 5 * 60_000) {
-      return NextResponse.json({ success: true, duplicate: true, status: 'sending' })
     }
 
     const { data: settings, error: settingsError } = await admin.from('business_notification_settings').select('business_id,telegram_enabled').eq('business_id', auth.profile!.business_id).maybeSingle()

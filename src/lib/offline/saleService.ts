@@ -28,6 +28,7 @@ export interface FinalizeSaleInput {
     name: string
     price: number
     quantity: number
+    price_proof?: string
   }>
 
   totalBill: number
@@ -201,6 +202,9 @@ export async function finalizeSale(
 
           unit_price:
             Number(item.price),
+
+          price_proof:
+            item.price_proof,
 
           /*
            * Keep the existing fallback until
@@ -698,6 +702,7 @@ export async function finalizeSale(
         product_name: item.name,
         quantity: Number(item.quantity),
         unit_price: Number(item.price),
+        price_proof: item.price_proof,
       })),
       totalAmount: 0,
       saleId: localId,

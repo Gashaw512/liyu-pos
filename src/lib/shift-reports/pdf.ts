@@ -9,10 +9,13 @@ export interface ShiftReportPdfData {
   products: Array<{ name: string; quantity: number; sales: number }>
   lowStockProducts?: Array<{ product_name: string; current_stock: number; minimum_threshold: number }>
   custodyInventory?: Array<{
-    recipientName: string
-    productName: string
-    quantityReceived: number
-    physicalCount: number | null
+    recipient_name: string
+    product_name: string
+    accepted_float: number
+    sold_qty: number
+    expected_stock: number
+    actual_count: number | null
+    variance: number | null
   }>
 }
 
@@ -189,12 +192,15 @@ export function createShiftReportPdf(report: ShiftReportPdfData): Buffer {
   }
 
   if (report.custodyInventory?.length) {
-    section('Custody handover snapshot')
+    section('Station stock variance')
     const drawCustodyHeader = () => {
       text('CUSTODIAN', 50, y, 8, true, '0.45 0.38 0.35')
-      text('PRODUCT', 210, y, 8, true, '0.45 0.38 0.35')
-      text('RECEIVED', 410, y, 8, true, '0.45 0.38 0.35')
-      text('COUNTED', 490, y, 8, true, '0.45 0.38 0.35')
+      text('PRODUCT', 128, y, 8, true, '0.45 0.38 0.35')
+      text('ACCEPTED', 248, y, 7, true, '0.45 0.38 0.35')
+      text('SOLD', 310, y, 7, true, '0.45 0.38 0.35')
+      text('EXPECTED', 350, y, 7, true, '0.45 0.38 0.35')
+      text('COUNT', 414, y, 7, true, '0.45 0.38 0.35')
+      text('VARIANCE', 470, y, 7, true, '0.45 0.38 0.35')
       y -= 8
       line(50, y, 545, y)
       y -= 17
@@ -204,20 +210,27 @@ export function createShiftReportPdf(report: ShiftReportPdfData): Buffer {
       if (y < 72) {
         finishPage()
         startPage(true)
-        section('Custody handover snapshot (continued)')
+        section('Station stock variance (continued)')
         drawCustodyHeader()
       }
-      const staff = pdfText(item.recipientName) || 'Staff member'
-      const productName = pdfText(item.productName) || 'Product name unavailable'
-      text(staff.length > 22 ? `${staff.slice(0, 19)}...` : staff, 50, y, 8)
-      text(productName.length > 27 ? `${productName.slice(0, 24)}...` : productName, 210, y, 8)
-      text(item.quantityReceived.toLocaleString('en-US', { maximumFractionDigits: 2 }), 410, y, 8, true)
-      text(item.physicalCount == null ? 'Not counted' : item.physicalCount.toLocaleString('en-US', { maximumFractionDigits: 2 }), 490, y, 8)
+      const staff = pdfText(item.recipient_name) || 'Staff member'
+      const productName = pdfText(item.product_name) || 'Product unavailable'
+      const number = (value: number) => value.toLocaleString('en-US', { maximumFractionDigits: 2 })
+      text(staff.length > 14 ? `${staff.slice(0, 11)}...` : staff, 50, y, 7)
+      text(productName.length > 19 ? `${productName.slice(0, 16)}...` : productName, 128, y, 7)
+      text(number(item.accepted_float), 248, y, 7)
+      text(number(item.sold_qty), 310, y, 7)
+      text(number(item.expected_stock), 350, y, 7)
+      text(item.actual_count == null ? 'Pending' : number(item.actual_count), 414, y, 7)
+      const variance = item.variance == null ? 'Pending' : `${item.variance > 0 ? '+' : ''}${number(item.variance)}`
+      text(variance, 470, y, 7, true, item.variance != null && item.variance !== 0 ? '0.60 0.32 0.08' : '0.18 0.48 0.30')
       y -= 17
       line(50, y + 5, 545, y + 5, '0.93 0.91 0.88')
     }
-    text('Physical counts were not collected by this close action.', 50, y - 4, 8, false, '0.45 0.38 0.35')
-    y -= 20
+    if (report.custodyInventory.some(item => item.actual_count == null)) {
+      text('Pending means the recipient has not submitted a physical count.', 50, y - 4, 8, false, '0.45 0.38 0.35')
+      y -= 20
+    }
   }
 
   y -= 8

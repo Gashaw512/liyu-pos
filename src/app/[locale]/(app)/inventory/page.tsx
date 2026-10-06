@@ -33,7 +33,6 @@ import InventoryCategoryTabs from "@/components/inventory/InventoryCategoryTabs"
 import InventoryValuation from "@/components/inventory/InventoryValuation";
 import InventoryEmptyState from "@/components/inventory/InventoryEmptyState";
 import InventoryProductList from "@/components/inventory/InventoryProductList";
-import StockHandoverPanel from "@/components/inventory/StockHandoverPanel";
 import { useBusinessContext } from "@/lib/auth/useBusinessContext";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
@@ -1179,8 +1178,6 @@ export default function InventoryPage() {
 
       <main className="mx-auto w-full max-w-5xl px-3 py-3 sm:px-5 sm:py-4 lg:px-6">
         <div className="space-y-3">
-          <StockHandoverPanel products={products} isAm={isAm} />
-
           {/* --------------------------------------------------
               STOCK OVERVIEW
           -------------------------------------------------- */}

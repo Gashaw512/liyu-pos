@@ -1,6 +1,7 @@
 // src/app/api/products/templates/route.ts
 
 import { NextResponse } from 'next/server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '../../../../lib/supabase/server'
 import { signPriceProof } from '@/lib/security/price-proof'
 
@@ -42,9 +43,17 @@ function getErrorMessage(error: unknown): string {
   return 'Unknown server error'
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const supabase = await createClient()
+    const authorization = request.headers.get('authorization')
+    const bearerToken = authorization?.match(/^Bearer\s+([^\s]+)$/i)?.[1]
+    const supabase = bearerToken
+      ? createSupabaseClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        { global: { headers: { Authorization: `Bearer ${bearerToken}` } } },
+      )
+      : await createClient()
 
     // ============================================================
     // 1. AUTHENTICATION
@@ -53,7 +62,9 @@ export async function GET() {
     const {
       data: { user },
       error: authError,
-    } = await supabase.auth.getUser()
+    } = bearerToken
+      ? await supabase.auth.getUser(bearerToken)
+      : await supabase.auth.getUser()
 
     if (authError) {
       console.error(

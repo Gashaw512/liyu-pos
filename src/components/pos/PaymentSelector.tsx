@@ -1,7 +1,7 @@
 
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   Banknote,
   Building2,
@@ -83,15 +83,24 @@ const PAYMENT_METHODS: PaymentOption[] = [
     icon: 'bank',
     enabled: true,
   },
+  {
+    id: 'room_charge',
+    name: 'Room charge',
+    nameAm: 'ወደ ክፍል ሂሳብ',
+    icon: 'bank',
+    enabled: true,
+  },
 ]
 
 interface PaymentSelectorProps {
   totalBill: number
   onConfirmPayment: (
     split: PaymentSplit,
+    roomNumber?: string,
   ) => void | Promise<void>
   isAm: boolean
   isSubmitting?: boolean
+  roomChargeEnabled?: boolean
 }
 
 type PaymentKey = keyof PaymentSplit
@@ -114,6 +123,7 @@ const EMPTY_AMOUNTS: PaymentAmounts = {
   awash_bank: 0,
   bank_transfer: 0,
   credit: 0,
+  room_charge: 0,
 }
 
 const roundMoney = (
@@ -140,6 +150,7 @@ export default function PaymentSelector({
   onConfirmPayment,
   isAm,
   isSubmitting = false,
+  roomChargeEnabled = false,
 }: PaymentSelectorProps) {
   /*
    * ============================================================
@@ -149,10 +160,10 @@ export default function PaymentSelector({
 
   const enabledMethods = useMemo(
     () =>
-      PAYMENT_METHODS.filter(
-        (method) => method.enabled,
+      PAYMENT_METHODS.filter((method) =>
+        method.enabled && (method.id !== 'room_charge' || roomChargeEnabled),
       ),
-    [],
+    [roomChargeEnabled],
   )
 
   /*
@@ -162,9 +173,10 @@ export default function PaymentSelector({
    */
 
   const [amounts, setAmounts] =
-    useState<PaymentAmounts>(
-      EMPTY_AMOUNTS,
-    )
+    useState<PaymentAmounts>(() => ({
+      ...EMPTY_AMOUNTS,
+      cash: roundMoney(totalBill),
+    }))
 
   /*
    * IMPORTANT:
@@ -181,34 +193,8 @@ export default function PaymentSelector({
   const [activeMethods, setActiveMethods] =
     useState<PaymentKey[]>(['cash'])
   const [cashReceivedOverride, setCashReceivedOverride] = useState<string | null>(null)
-
-  /*
-   * ============================================================
-   * INITIAL PAYMENT
-   * ============================================================
-   *
-   * Every new bill starts as 100% Cash.
-   */
-
-  useEffect(() => {
-    const firstMethod =
-      enabledMethods[0]?.id
-
-    if (!firstMethod) {
-      setAmounts(EMPTY_AMOUNTS)
-      setActiveMethods([])
-      setCashReceivedOverride(null)
-      return
-    }
-
-    setAmounts({
-      ...EMPTY_AMOUNTS,
-      [firstMethod]: roundMoney(totalBill),
-    })
-
-    setActiveMethods([firstMethod])
-    setCashReceivedOverride(null)
-  }, [totalBill, enabledMethods])
+  const [roomNumber, setRoomNumber] = useState('')
+  const [roomError, setRoomError] = useState('')
 
   /*
    * ============================================================
@@ -259,6 +245,8 @@ export default function PaymentSelector({
   const cashShortfall = cashSettlement.remaining
   const changeDue = cashSettlement.change
   const canSubmit = isBalanced && cashSettlement.isCovered
+  const isRoomCharge = activeMethods.includes('room_charge')
+  const canConfirmPayment = canSubmit && (!isRoomCharge || roomNumber.trim().length > 0)
   const visibleRemaining = Math.max(remainingAmount, cashShortfall)
   const settlementStatus = cashShortfall > 0.009
     ? 'remaining'
@@ -321,7 +309,7 @@ export default function PaymentSelector({
     }
 
     setActiveMethods((current) => [
-      ...current,
+      ...(methodId === 'room_charge' || current.includes('room_charge') ? [] : current),
       methodId,
     ])
     setCashReceivedOverride(null)
@@ -342,10 +330,13 @@ export default function PaymentSelector({
         ),
       )
 
-      return {
-        ...current,
-        [methodId]: remaining,
+      if (methodId === 'room_charge') {
+        return { ...EMPTY_AMOUNTS, room_charge: roundMoney(totalBill) }
       }
+      if (activeMethods.includes('room_charge')) {
+        return { ...EMPTY_AMOUNTS, [methodId]: roundMoney(totalBill) }
+      }
+      return { ...current, [methodId]: remaining }
     })
   }
 
@@ -646,7 +637,7 @@ export default function PaymentSelector({
 
   const handleSplit = () => {
     const methods =
-      enabledMethods.slice(0, 2)
+      enabledMethods.filter((method) => method.id !== 'room_charge').slice(0, 2)
 
     if (methods.length < 2) {
       return
@@ -691,8 +682,30 @@ export default function PaymentSelector({
      * This is an extra safety check.
      */
 
-    if (!canSubmit || isSubmitting) {
+    if (!canConfirmPayment || isSubmitting) {
       return
+    }
+
+    if (isRoomCharge) {
+      setRoomError('')
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        setRoomError(isAm ? 'የክፍል ሂሳብን ለማረጋገጥ ኢንተርኔት ያስፈልጋል።' : 'Internet is required to verify a room folio.')
+        return
+      }
+      try {
+        const response = await fetch('/api/billing/charge-to-room', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ validateOnly: true, roomNumber: roomNumber.trim() }),
+        })
+        const result = await response.json() as { error?: string }
+        if (!response.ok) throw new Error(result.error ?? 'This room has no active guest folio.')
+      } catch (cause) {
+        setRoomError(cause instanceof Error && cause.message !== 'Failed to fetch'
+          ? cause.message
+          : isAm ? 'ክፍሉን ማረጋገጥ አልተቻለም። ቁጥሩን እና ኢንተርኔትን ያረጋግጡ።' : 'Could not verify the room. Check the number and internet connection.')
+        return
+      }
     }
 
     await onConfirmPayment({
@@ -702,7 +715,8 @@ export default function PaymentSelector({
       awash_bank: roundMoney(Number(amounts.awash_bank || 0)),
       bank_transfer: roundMoney(Number(amounts.bank_transfer || 0)),
       credit: roundMoney(Number(amounts.credit || 0)),
-    })
+      room_charge: roundMoney(Number(amounts.room_charge || 0)),
+    }, isRoomCharge ? roomNumber.trim() : undefined)
   }
 
   /*
@@ -1059,6 +1073,7 @@ export default function PaymentSelector({
                         ? ''
                         : amount
                     }
+                    readOnly={method.id === 'room_charge'}
                     onChange={(event) =>
                       handleAmountChange(
                         method.id,
@@ -1108,6 +1123,29 @@ export default function PaymentSelector({
           },
         )}
       </div>
+
+      {isRoomCharge && (
+        <div className="rounded-lg border border-cream-300 bg-cream-50 px-3 py-2">
+          <label htmlFor="room-number" className="mb-1 block text-xs font-black text-coffee-700">
+            {isAm ? 'የክፍል ቁጥር' : 'Guest room number'}
+          </label>
+          <input
+            id="room-number"
+            type="text"
+            value={roomNumber}
+            onChange={(event) => setRoomNumber(event.target.value)}
+            maxLength={30}
+            autoComplete="off"
+            placeholder={isAm ? 'ለምሳሌ 101' : 'e.g. 101'}
+            disabled={isSubmitting}
+            className="h-11 w-full rounded-lg border border-cream-300 bg-cream-100 px-3 text-sm font-bold text-coffee-800 outline-none focus:border-berbere-300 focus:ring-2 focus:ring-berbere-100"
+          />
+          {roomError && <p role="alert" className="mt-1 text-[10px] font-bold text-danger">{roomError}</p>}
+          <p className="mt-1 text-[10px] text-coffee-400">
+            {isAm ? 'ይህ ክፍያ በእንግዳው ክፍል ሂሳብ ላይ ይጨመራል። ለማረጋገጥ ኢንተርኔት ያስፈልጋል።' : 'The bill goes to the guest folio. An internet connection is needed to verify it.'}
+          </p>
+        </div>
+      )}
 
       {activeMethods.includes('cash') && (
         <div className="rounded-lg border border-cream-300 bg-cream-50 px-3 py-2">
@@ -1189,7 +1227,7 @@ export default function PaymentSelector({
       <button
         type="button"
         onClick={submitPayment}
-        disabled={!canSubmit || isSubmitting}
+        disabled={!canConfirmPayment || isSubmitting}
         className="
           flex
           h-11

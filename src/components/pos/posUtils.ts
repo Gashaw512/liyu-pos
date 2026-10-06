@@ -511,6 +511,11 @@ export function normalizePOSProduct(
           0,
       ),
 
+    price_proof:
+      typeof product?.price_proof === 'string'
+        ? product.price_proof
+        : undefined,
+
     image_url:
       product?.image_url ??
       null,
@@ -1166,6 +1171,11 @@ export function restoreCartFromTab(
         name_am:
           normalizeString(item.product_name_am).trim() || null,
 
+        price_proof:
+          typeof item.price_proof === 'string'
+            ? item.price_proof
+            : undefined,
+
         price:
           normalizeNumber(
             item.unit_price ??
@@ -1254,6 +1264,9 @@ export async function saveTableTab(
           normalizeNumber(
             item.price,
           ),
+
+        price_proof:
+          item.price_proof,
       }))
       .filter(
         (item) =>
@@ -1498,6 +1511,7 @@ export function addToCart(
                 normalizeNumber(
                   item.quantity,
                 ) + 1,
+              price_proof: item.price_proof,
             }
           : item,
     )
@@ -1519,6 +1533,7 @@ export function addToCart(
       price,
 
       quantity: 1,
+      price_proof: product.price_proof,
     },
   ]
 }

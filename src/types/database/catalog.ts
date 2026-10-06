@@ -77,6 +77,9 @@ export interface Product {
   price_type: 'fixed' | 'group'
 
   description: string | null
+
+  /** Server-issued integrity proof for a cached offline retail price. */
+  price_proof?: string
 }
 
 export interface Supplier {

@@ -7,7 +7,7 @@ export interface ShiftReportPdfData {
   summary: Array<{ label: string; value: string }>
   payments: Array<{ method: string; amount: number }>
   products: Array<{ name: string; quantity: number; sales: number }>
-  lowStockProducts?: Array<{ name: string; quantity: number; alertLevel: number }>
+  lowStockProducts?: Array<{ product_name: string; current_stock: number; minimum_threshold: number }>
 }
 
 function pdfText(value: unknown): string {
@@ -172,11 +172,11 @@ export function createShiftReportPdf(report: ShiftReportPdfData): Buffer {
         section('Current low-stock products (continued)')
         drawStockHeader()
       }
-      const productName = pdfText(product.name) || 'Product name unavailable'
+      const productName = pdfText(product.product_name) || 'Product name unavailable'
       const truncatedName = productName.length > 48 ? `${productName.slice(0, 45)}...` : productName
       text(truncatedName, 50, y, 9)
-      text(product.quantity.toLocaleString('en-US', { maximumFractionDigits: 2 }), 350, y, 9)
-      text(product.alertLevel.toLocaleString('en-US', { maximumFractionDigits: 2 }), 455, y, 9)
+      text(product.current_stock.toLocaleString('en-US', { maximumFractionDigits: 2 }), 350, y, 9)
+      text(product.minimum_threshold.toLocaleString('en-US', { maximumFractionDigits: 2 }), 455, y, 9)
       y -= 17
       line(50, y + 5, 545, y + 5, '0.93 0.91 0.88')
     }

@@ -76,6 +76,7 @@ export interface LocalOpenTab {
     product_name_am?: string | null;
     quantity: number;
     unit_price: number;
+    price_proof?: string;
   }>;
 
   total_accumulated: number;
@@ -132,7 +133,8 @@ export type PaymentMethod =
   | 'cbe_birr'
   | 'awash_bank'
   | 'bank_transfer'
-  | 'credit';
+  | 'credit'
+  | 'room_charge';
 
 export interface PaymentSplit {
   cash: number
@@ -141,4 +143,5 @@ export interface PaymentSplit {
   awash_bank: number
   bank_transfer: number
   credit: number
+  room_charge: number
 }

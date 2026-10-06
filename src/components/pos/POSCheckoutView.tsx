@@ -17,6 +17,7 @@ interface POSCheckoutViewProps {
   onBack: () => void
   onConfirmPayment: (
     splitPayments: PaymentSplit,
+    roomNumber?: string,
   ) => Promise<void>
   isAm: boolean
 }

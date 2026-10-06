@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 
-import { getAuthorizedProfile } from '@/lib/shift-reports/server'
+import { createAdminDatabaseClient, getAuthorizedProfile } from '@/lib/shift-reports/server'
 import { createClient } from '@/lib/supabase/server'
+import { signPriceProof, verifyPriceProof } from '@/lib/security/price-proof'
 import {
   calculateTableOrderTotal,
   mergeTableOrderChanges,
@@ -12,6 +13,8 @@ import {
 export const dynamic = 'force-dynamic'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+class TableOrderValidationError extends Error {}
 
 function isTableOrdersMigrationMissing(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false
@@ -35,7 +38,8 @@ function parseItems(value: unknown): TableOrderLine[] | null {
       !UUID.test(productId) ||
       !Number.isFinite(quantity) || quantity <= 0 ||
       !Number.isFinite(unitPrice) || unitPrice < 0 ||
-      typeof item.product_name !== 'string'
+      typeof item.product_name !== 'string' ||
+      (item.price_proof != null && (typeof item.price_proof !== 'string' || item.price_proof.length > 2048))
     ) return null
 
     items.push({
@@ -44,10 +48,67 @@ function parseItems(value: unknown): TableOrderLine[] | null {
       product_name_am: typeof item.product_name_am === 'string' ? item.product_name_am.slice(0, 200) : null,
       quantity,
       unit_price: unitPrice,
+      price_proof: typeof item.price_proof === 'string' ? item.price_proof : undefined,
     })
   }
 
   return items
+}
+
+async function validateOrderPrices(
+  client: Awaited<ReturnType<typeof createClient>>,
+  items: TableOrderLine[],
+  context: { businessId: string; branchId: string; userId: string; canOverride: boolean },
+): Promise<TableOrderLine[]> {
+  if (!items.length) return items
+
+  const productIds = [...new Set(items.map((item) => item.product_id))]
+  const { data, error } = await client
+    .from('products')
+    .select('id,business_id,branch_id,name,name_am,retail_price,is_active,deleted_at')
+    .eq('business_id', context.businessId)
+    .in('id', productIds)
+    .eq('is_active', true)
+    .is('deleted_at', null)
+    .or(`branch_id.is.null,branch_id.eq.${context.branchId}`)
+  if (error) throw error
+
+  const products = new Map((data ?? []).map((product) => [product.id, product]))
+  return items.map((item) => {
+    const product = products.get(item.product_id)
+    if (!product) throw new TableOrderValidationError('An order contains a product that is not available in this branch.')
+
+    const priceCents = Math.round(item.unit_price * 100)
+    const catalogPriceCents = Math.round(Number(product.retail_price) * 100)
+    const proof = verifyPriceProof(item.price_proof, {
+      businessId: context.businessId,
+      branchId: context.branchId,
+      productId: product.id,
+      priceCents,
+    })
+
+    const approvedPriceCents = proof || context.canOverride ? priceCents : catalogPriceCents
+
+    const approvedProof = proof
+      ? item.price_proof
+      : signPriceProof({
+          version: 1,
+          businessId: context.businessId,
+          branchId: context.branchId,
+          productId: product.id,
+          priceCents: approvedPriceCents,
+          kind: approvedPriceCents === catalogPriceCents ? 'catalog' : 'manager_override',
+          ...(approvedPriceCents === catalogPriceCents ? {} : { issuedBy: context.userId }),
+        })
+
+    return {
+      ...item,
+      product_name: product.name,
+      product_name_am: product.name_am,
+      unit_price: approvedPriceCents / 100,
+      price_proof: approvedProof,
+    }
+  })
 }
 
 export async function GET() {
@@ -134,6 +195,13 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: 'Invalid table order.' }, { status: 400 })
     }
 
+    if (
+      body.operation === 'save' &&
+      !authorizedRoles.some((role) => ['waiter', 'manager', 'owner'].includes(role))
+    ) {
+      return NextResponse.json({ error: 'Only a waiter, manager, or owner can save a table order.' }, { status: 403 })
+    }
+
     const baseItems = parseItems(body.baseItems)
     const items = parseItems(body.items)
     if (!baseItems || !items || (body.operation === 'save' && items.length === 0)) {
@@ -167,6 +235,27 @@ export async function PUT(request: Request) {
     if (tableError) throw tableError
     if (!table) return NextResponse.json({ error: 'Table not found.' }, { status: 404 })
 
+    // All writes go through this authenticated route so signed price checks
+    // run before the database KOT trigger can inspect the saved snapshot.
+    const admin = createAdminDatabaseClient()
+
+    let validatedItems = items
+    if (body.operation === 'save') {
+      try {
+        validatedItems = await validateOrderPrices(client, items, {
+          businessId: profile.business_id,
+          branchId: profile.branch_id,
+          userId: user.id,
+          canOverride: authorizedRoles.some((role) => role === 'owner' || role === 'manager'),
+        })
+      } catch (error) {
+        if (error instanceof TableOrderValidationError) {
+          return NextResponse.json({ error: error.message }, { status: 400 })
+        }
+        throw error
+      }
+    }
+
     for (let attempt = 0; attempt < 4; attempt += 1) {
       const { data: current, error: currentError } = await client
         .from('open_table_orders')
@@ -183,15 +272,15 @@ export async function PUT(request: Request) {
           return NextResponse.json({ success: true, order: null })
         }
 
-        const { data: inserted, error: insertError } = await client
+        const { data: inserted, error: insertError } = await admin
           .from('open_table_orders')
           .insert({
             business_id: profile.business_id,
             branch_id: profile.branch_id,
             table_id: body.tableId,
             cashier_id: user.id,
-            items,
-            total_amount: calculateTableOrderTotal(items),
+            items: validatedItems,
+            total_amount: calculateTableOrderTotal(validatedItems),
             revision: 1,
             status: 'open',
           })
@@ -205,12 +294,12 @@ export async function PUT(request: Request) {
       }
 
       const nextItems = body.operation === 'save'
-        ? mergeTableOrderChanges(current.items as TableOrderLine[], baseItems, items)
+        ? mergeTableOrderChanges(current.items as TableOrderLine[], baseItems, validatedItems)
         : removeCompletedTableOrderItems(current.items as TableOrderLine[], baseItems)
       const nextStatus = nextItems.length > 0
         ? 'open'
         : body.operation === 'cancel' ? 'cancelled' : 'completed'
-      const { data: updated, error: updateError } = await client
+      const { data: updated, error: updateError } = await admin
         .from('open_table_orders')
         .update({
           items: nextItems,

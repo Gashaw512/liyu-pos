@@ -4,6 +4,7 @@ export interface TableOrderLine {
   product_name_am?: string | null
   quantity: number
   unit_price: number
+  price_proof?: string
 }
 
 export function mergeTableOrderChanges(

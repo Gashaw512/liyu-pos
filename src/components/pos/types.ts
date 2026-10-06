@@ -12,6 +12,7 @@ export interface POSProduct {
   category_name_am?: string | null
   category_id?: string | null
   retail_price?: number
+  price_proof?: string
   image_url?: string | null
   is_active?: boolean
   sku?: string | null
@@ -38,6 +39,7 @@ export interface POSCartItem {
   name_am?: string | null
   price: number
   quantity: number
+  price_proof?: string
 }
 
 export interface POSTable {

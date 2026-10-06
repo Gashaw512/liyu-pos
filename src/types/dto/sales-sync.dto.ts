@@ -56,6 +56,7 @@ export interface CreateSaleDTO {
     cost_price: number;
     quantity: number;
     discount: number;
+    price_proof?: string;
   }>;
 
   /**

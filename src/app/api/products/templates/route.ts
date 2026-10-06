@@ -2,6 +2,7 @@
 
 import { NextResponse } from 'next/server'
 import { createClient } from '../../../../lib/supabase/server'
+import { signPriceProof } from '@/lib/security/price-proof'
 
 export const dynamic = 'force-dynamic'
 
@@ -355,7 +356,19 @@ export async function GET() {
     // 6. BUILD RESPONSE
     // ============================================================
 
-    const products = productsRes.data ?? []
+    const products = (productsRes.data ?? []).map((product) => ({
+      ...product,
+      // The signature travels with the offline catalog entry and proves this
+      // exact price was issued by the server for this tenant and branch.
+      price_proof: signPriceProof({
+        version: 1,
+        businessId,
+        branchId,
+        productId: product.id,
+        priceCents: Math.round(Number(product.retail_price) * 100),
+        kind: 'catalog',
+      }),
+    }))
     const categories = categoriesRes.data ?? []
     const inventory = inventoryRes.data ?? []
 

@@ -7,6 +7,7 @@ import type { LocalOpenTab, PaymentMethod, PaymentSplit } from '@/types/models/p
 
 export interface FinalizeSaleInput {
   splitPayments: PaymentSplit
+  roomNumber?: string
 
   manualTip: string
 
@@ -28,6 +29,7 @@ export interface FinalizeSaleInput {
     name: string
     price: number
     quantity: number
+    price_proof?: string
   }>
 
   totalBill: number
@@ -92,8 +94,16 @@ export async function finalizeSale(
     throw new Error('Missing a valid active-shift context for this sale.')
   }
 
-  const totalAmount =
-    subtotal + parsedTip
+  const totalAmount = subtotal + parsedTip
+  const roomChargeAmount = Number(input.splitPayments.room_charge || 0)
+  if (roomChargeAmount > 0) {
+    const otherTenderTotal = Object.entries(input.splitPayments)
+      .filter(([method]) => method !== 'room_charge')
+      .reduce((sum, [, amount]) => sum + Number(amount || 0), 0)
+    if (!input.roomNumber?.trim() || Math.abs(roomChargeAmount - totalAmount) > 0.009 || otherTenderTotal > 0.009) {
+      throw new Error('Room charges require an active guest room and must cover the full bill.')
+    }
+  }
 
   /* =======================================================
    * INVENTORY WARNINGS
@@ -202,6 +212,9 @@ export async function finalizeSale(
           unit_price:
             Number(item.price),
 
+          price_proof:
+            item.price_proof,
+
           /*
            * Keep the existing fallback until
            * real product cost is available locally.
@@ -222,7 +235,7 @@ export async function finalizeSale(
         id: crypto.randomUUID(),
         method,
         amount: Number(amount),
-        reference_no: null,
+        reference_no: method === 'room_charge' ? input.roomNumber?.trim() ?? null : null,
         status: method === 'credit' ? 'pending' as const : 'completed' as const,
       })),
   }
@@ -698,6 +711,7 @@ export async function finalizeSale(
         product_name: item.name,
         quantity: Number(item.quantity),
         unit_price: Number(item.price),
+        price_proof: item.price_proof,
       })),
       totalAmount: 0,
       saleId: localId,

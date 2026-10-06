@@ -1,32 +1,30 @@
 // src/app/api/reports/exports/route.ts
 import { NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+import { getAuthorizedProfile } from '@/lib/shift-reports/server'
 
-/**
- * Handle Report Exports Generation Requests
- * Safe server-side endpoint compliant with Next.js 16 compiler standards
- */
 export async function GET() {
-  return NextResponse.json(
-    { 
-      success: true, 
-      message: "Liyu POS Reports Export Engine endpoint initialized successfully." 
-    },
-    { status: 200 }
-  )
+  const client = await createClient()
+  const auth = await getAuthorizedProfile(client)
+  if (auth.error) {
+    return NextResponse.json(
+      { error: auth.error },
+      { status: auth.error === 'Unauthorized' ? 401 : 403 },
+    )
+  }
+
+  return NextResponse.json({ available: false, message: 'Report exports are not available yet.' }, { status: 501 })
 }
 
-export async function POST(request: Request) {
-  try {
-    const body = await request.json().catch(() => ({}))
+export async function POST() {
+  const client = await createClient()
+  const auth = await getAuthorizedProfile(client)
+  if (auth.error) {
     return NextResponse.json(
-      { 
-        success: true, 
-        message: "Export generation acknowledged.",
-        received: body
-      },
-      { status: 202 }
+      { error: auth.error },
+      { status: auth.error === 'Unauthorized' ? 401 : 403 },
     )
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
   }
+
+  return NextResponse.json({ error: 'Report exports are not available yet.' }, { status: 501 })
 }

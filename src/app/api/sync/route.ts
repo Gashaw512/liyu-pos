@@ -3,6 +3,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminDatabaseClient, getAssignedProfileRoles } from '@/lib/shift-reports/server'
+import { verifyPriceProof } from '@/lib/security/price-proof'
 
 export const dynamic = 'force-dynamic'
 
@@ -51,6 +52,7 @@ interface SaleRecord {
   tip_amount: number
   total_amount: number
   table_name: string | null
+  table_id: string | null
   status: string
   is_offline_sync: boolean
   created_at: string
@@ -70,6 +72,7 @@ interface PaymentRecord {
   business_id: string
   amount: number
   method: string
+  reference_no: string | null
   status: string
   created_at: string
 }
@@ -647,6 +650,8 @@ async function buildSaleRecord(
         payload.table_number,
       ),
 
+    table_id: toValidUuid(payload.table_id),
+
     status:
       toStringValue(
         payload.status,
@@ -754,6 +759,8 @@ function buildPayments(
           payment.method,
           'cash',
         ),
+
+      reference_no: toNullableString(payment.reference_no),
 
       status: payment.status === 'pending' ? 'pending' : 'completed',
 
@@ -1161,6 +1168,20 @@ async function syncSale(
           timestamp,
         )
 
+      const roomChargePayment = payments.find((payment) => payment.method === 'room_charge')
+      if (roomChargePayment) {
+        if (context.operatorRoles.length !== 1 || context.operatorRoles[0] !== 'cashier') {
+          throw new Error('Only a cashier can charge a guest room.')
+        }
+        const { data: business, error: businessError } = await supabase
+          .from('businesses')
+          .select('is_hotel_integrated')
+          .eq('id', sale.business_id)
+          .maybeSingle()
+        if (businessError) throw businessError
+        if (!business?.is_hotel_integrated) throw new Error('Room charges are not enabled for this business.')
+      }
+
       if (
         items.length === 0
       ) {
@@ -1193,6 +1214,61 @@ async function syncSale(
         existingSaleError
       ) {
         throw existingSaleError
+      }
+
+      // Verify new/partially synced sale lines against the tenant's price
+      // master. Signed catalog proofs preserve the exact price cached while
+      // offline; manager-approved overrides are signed by the table-order API.
+      // Existing completed lines are left untouched on idempotent retries.
+      let needsPriceValidation = !existingSale
+      if (existingSale) {
+        const { data: savedLines, error: savedLinesError } = await supabase
+          .from('sale_items')
+          .select('id')
+          .eq('sale_id', sale.id)
+          .limit(1)
+        if (savedLinesError) throw savedLinesError
+        needsPriceValidation = !savedLines?.length
+      }
+
+      if (needsPriceValidation) {
+        const submittedItems = Array.isArray(payload.items) ? payload.items.map(asRecord) : []
+        const productIds = [...new Set(submittedItems.map((item) => toValidUuid(item.product_id)).filter((id): id is string => Boolean(id)))]
+        if (submittedItems.some((item) => !toValidUuid(item.product_id))) throw new Error('Sale contains an invalid product reference.')
+
+        const { data: products, error: productsError } = await supabase
+          .from('products')
+          .select('id,retail_price')
+          .eq('business_id', sale.business_id)
+          .in('id', productIds)
+          .eq('is_active', true)
+          .is('deleted_at', null)
+          .or(`branch_id.is.null,branch_id.eq.${sale.branch_id}`)
+        if (productsError) throw productsError
+
+        const productById = new Map((products ?? []).map((product) => [product.id, product]))
+        const canOverride = context.operatorRoles.some((role) => role === 'owner' || role === 'manager')
+        for (const item of submittedItems) {
+          const productId = toValidUuid(item.product_id)
+          if (!productId) throw new Error('Sale contains an invalid product reference.')
+          const product = productById.get(productId)
+          const price = Number(item.unit_price)
+          if (!product || !Number.isFinite(price) || price < 0) {
+            throw new Error('Sale contains a product or price that could not be verified.')
+          }
+
+          const priceCents = Math.round(price * 100)
+          const currentPriceCents = Math.round(Number(product.retail_price) * 100)
+          const signedPrice = verifyPriceProof(item.price_proof, {
+            businessId: sale.business_id,
+            branchId: sale.branch_id,
+            productId,
+            priceCents,
+          })
+          if (priceCents !== currentPriceCents && !signedPrice && !canOverride) {
+            throw new Error('Sale price does not match a verified catalog price. Refresh the catalog or ask a manager.')
+          }
+        }
       }
 
       if (!existingSale) {
@@ -1344,6 +1420,16 @@ async function syncSale(
             throw paymentsError
           }
         }
+      }
+
+      if (roomChargePayment) {
+        const { error: folioError } = await supabase.rpc('post_room_charge_for_sale', {
+          p_business_id: sale.business_id,
+          p_branch_id: sale.branch_id,
+          p_sale_id: sale.id,
+          p_actor_id: context.operatorUserId,
+        })
+        if (folioError) throw folioError
       }
 
       /*

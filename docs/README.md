@@ -44,7 +44,13 @@ Delivery records are unique per business and shift. The route short-circuits sen
 
 `inventory_clerk` is the storekeeper/procurement role. Navigation and the current RLS migration grant inventory, purchase, supplier, stock movement, and stock reconciliation access; the sync route accepts inventory transactions for this role and rejects sale transaction sync when no sales-capable role is assigned.
 
-**Catalog write limitation:** the current RLS migration also allows `inventory_clerk` to insert/update/delete product and category records. Product rows contain retail pricing. Therefore the repository does not currently enforce the stricter rule that only owners/managers may change menu items and base prices. Do not claim inventory clerks are restricted only to stock intake, suppliers, and wastage, or that their access to every sales/billing path has been proven blocked, without separately auditing/deploying the relevant API and database policies.
+Catalog writes are restricted to owners and managers by the later `20261006084459_restrict_pos_financial_ledger_writes.sql` RLS policies; the earlier migration is superseded. PostgreSQL grants are shared by all authenticated sessions, so the restriction is enforced by role-aware row policies rather than revoking the shared `authenticated` database role's table grants. Apply the migration before relying on the protection in production.
+
+### Stock handover and custody verification
+
+The inventory screen can issue stock to an active barman, kitchen worker, waiter, or cashier without requiring a monetary POS shift. The recipient confirms the quantity or records a dispute; only the selected recipient can resolve the pending handover. Issuance is tenant/branch scoped and uses a database row lock plus an idempotency key to reserve available stock. On acceptance, the TypeScript handover service opens or reuses the recipient's active `custody_shifts` record, conditionally accepts the voucher, and records its quantity in `custody_shift_inventory`. A unique handover key makes retries safe and allows the service to repair an interrupted ledger write. These custody windows are independent from cash shifts.
+
+Custody records do not mutate `inventory.quantity` or write inventory movements, so they do not double-deduct POS stock or alter FIFO costing. When an owner or manager closes a branch report, one scoped update closes all active custody windows for that branch. Their accepted product quantities are stored in `custody_shift_reconciliations` and added to the report PDF. This workflow records quantities issued to each custodian; it does not collect a physical count. The report labels unprovided counts as **Not counted**. A separate counted-stock/return action is still needed to record actual closing counts and settle unused stock.
 
 ## Verification recorded for this documentation update
 
@@ -129,6 +135,9 @@ Expected: the cashier can work with their own shift and the existing payment/clo
 1. Before a sale, note the on-hand quantity of the tracked test product in Inventory.
 2. Sell a known quantity through POS, then verify on-hand stock decreases by that quantity locally.
 3. When online, allow sync to finish and refresh Inventory. Verify the server-backed quantity agrees.
+
+4. Select an active barman, kitchen worker, waiter, or cashier and issue a test quantity from Inventory without opening a POS cash shift for that person. Confirm the recipient sees the pending handover on **Stock handover** and accepts it. Confirm a custody shift and one inventory-ledger entry are created, and a retry does not duplicate either. Repeat using **Report difference** and verify the disputed status and reason.
+5. As an owner or manager, close the branch report. Confirm active custody shifts in that branch close together and the PDF contains each accepted product quantity with the physical count clearly marked **Not counted**.
 
 The current local sale code deducts stock for a matching local inventory record, permits negative quantities, and warns when stock is insufficient. A missing local inventory record means local stock is not deducted; do not interpret that as a successful inventory integration. The current check validates direct product inventory mapping; it does not test recipes or ingredient consumption.
 

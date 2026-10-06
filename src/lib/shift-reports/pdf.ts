@@ -8,6 +8,12 @@ export interface ShiftReportPdfData {
   payments: Array<{ method: string; amount: number }>
   products: Array<{ name: string; quantity: number; sales: number }>
   lowStockProducts?: Array<{ product_name: string; current_stock: number; minimum_threshold: number }>
+  custodyInventory?: Array<{
+    recipientName: string
+    productName: string
+    quantityReceived: number
+    physicalCount: number | null
+  }>
 }
 
 function pdfText(value: unknown): string {
@@ -180,6 +186,38 @@ export function createShiftReportPdf(report: ShiftReportPdfData): Buffer {
       y -= 17
       line(50, y + 5, 545, y + 5, '0.93 0.91 0.88')
     }
+  }
+
+  if (report.custodyInventory?.length) {
+    section('Custody handover snapshot')
+    const drawCustodyHeader = () => {
+      text('CUSTODIAN', 50, y, 8, true, '0.45 0.38 0.35')
+      text('PRODUCT', 210, y, 8, true, '0.45 0.38 0.35')
+      text('RECEIVED', 410, y, 8, true, '0.45 0.38 0.35')
+      text('COUNTED', 490, y, 8, true, '0.45 0.38 0.35')
+      y -= 8
+      line(50, y, 545, y)
+      y -= 17
+    }
+    drawCustodyHeader()
+    for (const item of report.custodyInventory) {
+      if (y < 72) {
+        finishPage()
+        startPage(true)
+        section('Custody handover snapshot (continued)')
+        drawCustodyHeader()
+      }
+      const staff = pdfText(item.recipientName) || 'Staff member'
+      const productName = pdfText(item.productName) || 'Product name unavailable'
+      text(staff.length > 22 ? `${staff.slice(0, 19)}...` : staff, 50, y, 8)
+      text(productName.length > 27 ? `${productName.slice(0, 24)}...` : productName, 210, y, 8)
+      text(item.quantityReceived.toLocaleString('en-US', { maximumFractionDigits: 2 }), 410, y, 8, true)
+      text(item.physicalCount == null ? 'Not counted' : item.physicalCount.toLocaleString('en-US', { maximumFractionDigits: 2 }), 490, y, 8)
+      y -= 17
+      line(50, y + 5, 545, y + 5, '0.93 0.91 0.88')
+    }
+    text('Physical counts were not collected by this close action.', 50, y - 4, 8, false, '0.45 0.38 0.35')
+    y -= 20
   }
 
   y -= 8

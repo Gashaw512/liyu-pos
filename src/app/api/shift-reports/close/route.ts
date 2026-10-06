@@ -26,20 +26,45 @@ export async function POST(request: Request) {
     if (priorError) throw priorError
     if (prior && prior.shift_report_id !== body.reportId) return NextResponse.json({ success: true, duplicate: true, status: prior.status })
 
-    // Scope the privileged report reads with identifiers resolved from the
-    // authenticated profile. Session RLS claims can be stale and may otherwise
-    // make an existing shift appear to have no sales.
-    const { data: sales, error: salesError } = await admin.from('sales').select('id,receipt_number,total_amount,subtotal,tax_amount,discount_amount,tip_amount,created_at').eq('business_id', auth.profile!.business_id).eq('branch_id', auth.profile!.branch_id).eq('cashier_id', auth.user!.id).eq('status', 'completed').is('deleted_at', null).gte('created_at', openedAt.toISOString()).lte('created_at', closedAt.toISOString()).order('created_at')
+    // Resolve the actual persisted shift first. Reports are tied to that shift
+    // ID so sales from another shift by the same staff member cannot leak in
+    // just because their timestamps overlap.
+    const { data: persistedShift, error: persistedShiftError } = await admin
+      .from('shifts')
+      .select('id')
+      .eq('id', body.reportId)
+      .eq('business_id', auth.profile!.business_id)
+      .eq('branch_id', auth.profile!.branch_id)
+      .eq('cashier_id', auth.user!.id)
+      .maybeSingle()
+    if (persistedShiftError) throw persistedShiftError
+
+    const { data: legacyShift, error: legacyShiftError } = persistedShift
+      ? { data: null, error: null }
+      : await admin
+        .from('shifts')
+        .select('id')
+        .eq('business_id', auth.profile!.business_id)
+        .eq('branch_id', auth.profile!.branch_id)
+        .eq('cashier_id', auth.user!.id)
+        .eq('opened_at', openedAt.toISOString())
+        .maybeSingle()
+    if (legacyShiftError) throw legacyShiftError
+    const shiftId = persistedShift?.id ?? legacyShift?.id ?? body.reportId
+
+    const { data: sales, error: salesError } = await admin.from('sales').select('id,receipt_number,total_amount,subtotal,tax_amount,discount_amount,tip_amount,created_at').eq('business_id', auth.profile!.business_id).eq('branch_id', auth.profile!.branch_id).eq('cashier_id', auth.user!.id).eq('shift_id', shiftId).eq('status', 'completed').is('deleted_at', null).lte('created_at', closedAt.toISOString()).order('created_at')
     if (salesError) throw salesError
     const saleIds = (sales ?? []).map(sale => sale.id)
-    const [paymentResult, itemsResult, expenseResult] = await Promise.all([
+    const [paymentResult, itemsResult, expenseResult, inventoryResult] = await Promise.all([
       admin.from('payments').select('method,amount').in('sale_id', saleIds).eq('status', 'completed'),
       admin.from('sale_items').select('product_name,quantity,unit_price,cost_price,total_amount,sale_id').in('sale_id', saleIds),
-      admin.from('expenses').select('amount').eq('business_id', auth.profile!.business_id).eq('branch_id', auth.profile!.branch_id).eq('recorded_by', auth.user!.id).is('deleted_at', null).gte('created_at', openedAt.toISOString()).lte('created_at', closedAt.toISOString()),
+      admin.from('expenses').select('amount').eq('business_id', auth.profile!.business_id).eq('branch_id', auth.profile!.branch_id).eq('recorded_by', auth.user!.id).eq('shift_id', shiftId).is('deleted_at', null),
+      admin.from('inventory').select('quantity,product:products!inventory_product_id_fkey(name,name_am,low_stock_alert,track_inventory,is_active,deleted_at)').eq('business_id', auth.profile!.business_id).eq('branch_id', auth.profile!.branch_id),
     ])
     if (paymentResult.error) throw paymentResult.error
     if (itemsResult.error) throw itemsResult.error
     if (expenseResult.error) throw expenseResult.error
+    if (inventoryResult.error) throw inventoryResult.error
     const revenue = (sales ?? []).reduce((sum, sale) => sum + money(sale.total_amount), 0)
     const tips = (sales ?? []).reduce((sum, sale) => sum + money(sale.tip_amount), 0)
     const cogs = (itemsResult.data ?? []).reduce((sum, item) => sum + money(item.quantity) * money(item.cost_price), 0)
@@ -52,6 +77,14 @@ export async function POST(request: Request) {
       products.set(item.product_name, row)
     }
     const itemRevenue = (itemsResult.data ?? []).reduce((sum, item) => sum + money(item.total_amount), 0)
+    const lowStockProducts = (inventoryResult.data ?? []).flatMap((row) => {
+      const product = Array.isArray(row.product) ? row.product[0] : row.product
+      if (!product || product.deleted_at || product.is_active === false || product.track_inventory === false) return []
+      const quantity = money(row.quantity)
+      const alertLevel = Math.max(0, money(product.low_stock_alert))
+      if (quantity > alertLevel) return []
+      return [{ name: product.name_am || product.name || 'Product', quantity, alertLevel }]
+    }).sort((first, second) => first.quantity - second.quantity)
     const payments = new Map<string, number>()
     for (const payment of paymentResult.data ?? []) payments.set(payment.method, (payments.get(payment.method) ?? 0) + money(payment.amount))
     const openingCash = money(body.openingCash)
@@ -178,6 +211,7 @@ export async function POST(request: Request) {
       ],
       payments: Array.from(payments, ([method, amount]) => ({ method: paymentLabels[method] || method.replace(/_/g, ' '), amount })),
       products: Array.from(products, ([name, row]) => ({ name, quantity: row.quantity, sales: row.amount })),
+      lowStockProducts,
     })
     const recipientDeliveryRows = recipients.map(recipient => ({ business_id: auth.profile!.business_id!, shift_report_id: body.reportId as string, recipient_id: recipient.id }))
     const { error: recipientSeedError } = await admin.from('shift_report_recipient_deliveries').upsert(recipientDeliveryRows, { onConflict: 'business_id,shift_report_id,recipient_id', ignoreDuplicates: true })

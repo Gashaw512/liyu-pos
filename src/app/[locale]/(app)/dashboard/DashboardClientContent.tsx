@@ -23,6 +23,7 @@ import { LowStockWarningsTable } from '@/components/dashboard/LowStockWarningsTa
 import { DataRow, MetricCard, SectionHeader } from '@/components/shared/ReportPrimitives'
 
 import DashboardPeriodFilter from './DashboardPeriodFilter'
+import OpenShiftsPreview from './OpenShiftsPreview'
 
 /* ============================================================
    TYPES
@@ -645,58 +646,12 @@ export default function DashboardClientContent({
               )}
 
               {/* SHIFT STATUS */}
-
-              <button
-                type="button"
-                onClick={goToSales}
-                className="flex items-center justify-between rounded-xl border border-coffee-100 bg-coffee-50 px-3 py-3 text-left transition hover:bg-coffee-100 sm:col-span-2"
-              >
-                <div className="flex items-center gap-3">
-                  <Wallet
-                    className={`h-4 w-4 ${hasActiveShift
-                        ? 'text-berbere-600'
-                        : 'text-coffee-500'
-                      }`}
-                  />
-
-                  <div>
-                    <p className="text-xs font-black text-coffee-800">
-                      {hasActiveShift
-                        ? `${formatNumber(
-                          openShiftCount,
-                        )} ${openShiftCount ===
-                          1
-                          ? t(
-                            'shift is open',
-                            'ፈረቃ ክፍት ነው',
-                          )
-                          : t(
-                            'shifts are open',
-                            'ፈረቃዎች ክፍት ናቸው',
-                          )
-                        }`
-                        : t(
-                          'No shift is open',
-                          'ምንም ፈረቃ ክፍት የለም',
-                        )}
-                    </p>
-
-                    <p className="mt-0.5 text-[9px] text-coffee-500">
-                      {hasActiveShift
-                        ? t(
-                          'Business is active',
-                          'ንግዱ እየሰራ ነው',
-                        )
-                        : t(
-                          'Open a shift to start',
-                          'ለመጀመር ፈረቃ ይክፈቱ',
-                        )}
-                    </p>
-                  </div>
-                </div>
-
-                <ArrowRight className="h-4 w-4 text-coffee-300" />
-              </button>
+              <OpenShiftsPreview
+                locale={locale}
+                count={openShiftCount}
+                isOwner={roles.includes('owner')}
+                onNavigate={goToSales}
+              />
             </div>
           </section>
 

@@ -16,12 +16,17 @@ import type {
   Profile,
   StaffInvitation,
 } from "@/types/database/users";
+import type { AvailableRole } from "@/services/roles";
+
+type StaffMember = Pick<Profile, "id" | "full_name" | "phone" | "role"> & {
+  roles: AvailableRole[];
+}
 
 type TabId = "active" | "invite" | "pending";
 
 interface StaffWorkspaceTabsProps {
   locale: string;
-  staffMembers?: Profile[];
+  staffMembers?: StaffMember[];
   pendingInvites?: StaffInvitation[];
 }
 

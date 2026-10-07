@@ -10,7 +10,9 @@ import {
 } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
+import { getAssignedProfileRoles } from "@/lib/shift-reports/server";
 import StaffUpdateRoleForm from "@/components/user/StaffUpdateRoleForm";
+import type { AvailableRole } from "@/services/roles";
 
 interface PageProps {
   params: Promise<{
@@ -77,10 +79,13 @@ export default async function StaffProfileDetailPage({
       .eq("id", user.id)
       .single();
 
+  const currentUserRoles = currentUserProfile
+    ? await getAssignedProfileRoles(supabase, user.id, currentUserProfile.role)
+    : []
   if (
     currentUserError ||
     !currentUserProfile?.business_id ||
-    !["owner", "manager"].includes(currentUserProfile.role)
+    !currentUserRoles.some((role) => ["owner", "manager"].includes(role))
   ) {
     redirect(`/${locale}/dashboard` as Route);
   }
@@ -122,10 +127,8 @@ export default async function StaffProfileDetailPage({
     redirect(`/${locale}/management/staff` as Route);
   }
 
-  const roleLabel = getRoleLabel(
-    targetStaff.role,
-    isAm
-  );
+  const targetRoles = await getAssignedProfileRoles(supabase, targetStaff.id, targetStaff.role)
+  const roleLabel = targetRoles.map((role) => getRoleLabel(role, isAm)).join(" + ")
 
   const initials =
     targetStaff.full_name
@@ -283,7 +286,8 @@ export default async function StaffProfileDetailPage({
                 <StaffUpdateRoleForm
                   locale={locale}
                   staffId={targetStaff.id}
-                  currentRole={targetStaff.role}
+                  primaryRole={targetStaff.role as AvailableRole}
+                  assignedRoles={targetRoles as AvailableRole[]}
                 />
               </div>
             )}

@@ -2,6 +2,8 @@
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminDatabaseClient, getAssignedProfileRoles } from '@/lib/shift-reports/server'
+import { verifyPriceProof } from '@/lib/security/price-proof'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,9 +25,10 @@ interface SyncTransaction {
 
 interface SyncContext {
   mainBranchId: string | null
+  profileBranchId: string | null
   activeBusinessId: string
   operatorUserId: string
-  operatorRole: string | null
+  operatorRoles: string[]
 }
 
 interface InventoryChange {
@@ -49,6 +52,7 @@ interface SaleRecord {
   tip_amount: number
   total_amount: number
   table_name: string | null
+  table_id: string | null
   status: string
   is_offline_sync: boolean
   created_at: string
@@ -68,6 +72,7 @@ interface PaymentRecord {
   business_id: string
   amount: number
   method: string
+  reference_no: string | null
   status: string
   created_at: string
 }
@@ -324,7 +329,7 @@ async function resolveSyncContext(
   } = await supabase
     .from('profiles')
     .select(
-      'business_id, role',
+      'business_id, branch_id, role',
     )
     .eq('id', userId)
     .maybeSingle()
@@ -352,6 +357,12 @@ async function resolveSyncContext(
     )
   }
 
+  const operatorRoles = await getAssignedProfileRoles(
+    supabase,
+    userId,
+    profile.role,
+  )
+
   const {
     data: branch,
     error: branchError,
@@ -370,9 +381,31 @@ async function resolveSyncContext(
     throw branchError
   }
 
+  const profileBranchId =
+    toValidUuid(profile.branch_id)
+
+  const {
+    data: profileBranch,
+    error: profileBranchError,
+  } = profileBranchId
+    ? await supabase
+        .from('branches')
+        .select('id')
+        .eq('id', profileBranchId)
+        .eq('business_id', businessId)
+        .maybeSingle()
+    : { data: null, error: null }
+
+  if (profileBranchError) {
+    throw profileBranchError
+  }
+
   return {
     mainBranchId:
       branch?.id ?? null,
+
+    profileBranchId:
+      profileBranch?.id ?? null,
 
     activeBusinessId:
       businessId,
@@ -380,11 +413,7 @@ async function resolveSyncContext(
     operatorUserId:
       userId,
 
-    operatorRole:
-      typeof profile.role ===
-      'string'
-        ? profile.role
-        : null,
+    operatorRoles,
   }
 }
 
@@ -396,17 +425,18 @@ async function resolveBusinessBranch(
   supabase: SupabaseClient,
   payload: Record<string, unknown>,
   context: SyncContext,
+  options: {
+    useAuthenticatedBusiness?: boolean
+  } = {},
 ): Promise<{
   branchId: string
   businessId: string
 }> {
-  const requestedBusinessId =
-    payload.business_id ===
-    'biz_active'
+  const requestedBusinessId = options.useAuthenticatedBusiness
+    ? context.activeBusinessId
+    : payload.business_id === 'biz_active'
       ? context.activeBusinessId
-      : toValidUuid(
-          payload.business_id,
-        )
+      : toValidUuid(payload.business_id)
 
   if (!requestedBusinessId) {
     throw new Error(
@@ -620,6 +650,8 @@ async function buildSaleRecord(
         payload.table_number,
       ),
 
+    table_id: toValidUuid(payload.table_id),
+
     status:
       toStringValue(
         payload.status,
@@ -728,7 +760,9 @@ function buildPayments(
           'cash',
         ),
 
-      status: 'completed',
+      reference_no: toNullableString(payment.reference_no),
+
+      status: payment.status === 'pending' ? 'pending' : 'completed',
 
       created_at:
         timestamp,
@@ -1134,6 +1168,20 @@ async function syncSale(
           timestamp,
         )
 
+      const roomChargePayment = payments.find((payment) => payment.method === 'room_charge')
+      if (roomChargePayment) {
+        if (context.operatorRoles.length !== 1 || context.operatorRoles[0] !== 'cashier') {
+          throw new Error('Only a cashier can charge a guest room.')
+        }
+        const { data: business, error: businessError } = await supabase
+          .from('businesses')
+          .select('is_hotel_integrated')
+          .eq('id', sale.business_id)
+          .maybeSingle()
+        if (businessError) throw businessError
+        if (!business?.is_hotel_integrated) throw new Error('Room charges are not enabled for this business.')
+      }
+
       if (
         items.length === 0
       ) {
@@ -1166,6 +1214,61 @@ async function syncSale(
         existingSaleError
       ) {
         throw existingSaleError
+      }
+
+      // Verify new/partially synced sale lines against the tenant's price
+      // master. Signed catalog proofs preserve the exact price cached while
+      // offline; manager-approved overrides are signed by the table-order API.
+      // Existing completed lines are left untouched on idempotent retries.
+      let needsPriceValidation = !existingSale
+      if (existingSale) {
+        const { data: savedLines, error: savedLinesError } = await supabase
+          .from('sale_items')
+          .select('id')
+          .eq('sale_id', sale.id)
+          .limit(1)
+        if (savedLinesError) throw savedLinesError
+        needsPriceValidation = !savedLines?.length
+      }
+
+      if (needsPriceValidation) {
+        const submittedItems = Array.isArray(payload.items) ? payload.items.map(asRecord) : []
+        const productIds = [...new Set(submittedItems.map((item) => toValidUuid(item.product_id)).filter((id): id is string => Boolean(id)))]
+        if (submittedItems.some((item) => !toValidUuid(item.product_id))) throw new Error('Sale contains an invalid product reference.')
+
+        const { data: products, error: productsError } = await supabase
+          .from('products')
+          .select('id,retail_price')
+          .eq('business_id', sale.business_id)
+          .in('id', productIds)
+          .eq('is_active', true)
+          .is('deleted_at', null)
+          .or(`branch_id.is.null,branch_id.eq.${sale.branch_id}`)
+        if (productsError) throw productsError
+
+        const productById = new Map((products ?? []).map((product) => [product.id, product]))
+        const canOverride = context.operatorRoles.some((role) => role === 'owner' || role === 'manager')
+        for (const item of submittedItems) {
+          const productId = toValidUuid(item.product_id)
+          if (!productId) throw new Error('Sale contains an invalid product reference.')
+          const product = productById.get(productId)
+          const price = Number(item.unit_price)
+          if (!product || !Number.isFinite(price) || price < 0) {
+            throw new Error('Sale contains a product or price that could not be verified.')
+          }
+
+          const priceCents = Math.round(price * 100)
+          const currentPriceCents = Math.round(Number(product.retail_price) * 100)
+          const signedPrice = verifyPriceProof(item.price_proof, {
+            businessId: sale.business_id,
+            branchId: sale.branch_id,
+            productId,
+            priceCents,
+          })
+          if (priceCents !== currentPriceCents && !signedPrice && !canOverride) {
+            throw new Error('Sale price does not match a verified catalog price. Refresh the catalog or ask a manager.')
+          }
+        }
       }
 
       if (!existingSale) {
@@ -1319,6 +1422,31 @@ async function syncSale(
         }
       }
 
+      // The KOT custody ledger is a sub-ledger of the branch inventory ledger.
+      // Allocate only sold quantities to ready, worker-attributed KOT lines;
+      // the existing branch/FIFO deduction below still runs exactly once.
+      // The database transaction locks the sale and ticket lines, so retries
+      // cannot allocate the same prepared quantity twice.
+      if (sale.table_id) {
+        const { error: allocationError } = await supabase.rpc('allocate_ready_kot_lines_for_sale', {
+          p_sale_id: sale.id,
+          p_business_id: sale.business_id,
+          p_branch_id: sale.branch_id,
+          p_table_id: sale.table_id,
+        })
+        if (allocationError) throw allocationError
+      }
+
+      if (roomChargePayment) {
+        const { error: folioError } = await supabase.rpc('post_room_charge_for_sale', {
+          p_business_id: sale.business_id,
+          p_branch_id: sale.branch_id,
+          p_sale_id: sale.id,
+          p_actor_id: context.operatorUserId,
+        })
+        if (folioError) throw folioError
+      }
+
       /*
        * Second idempotency check.
        */
@@ -1394,8 +1522,17 @@ async function syncInventoryCount(
   } =
     await resolveBusinessBranch(
       supabase,
-      payload,
+      {
+        ...payload,
+        // Inventory reconciliation rows can outlive the branch context
+        // that created them. Match the app's authenticated branch context
+        // instead of retrying an obsolete queued branch ID indefinitely.
+        branch_id:
+          context.profileBranchId ??
+          context.mainBranchId,
+      },
       context,
+      { useAuthenticatedBusiness: true },
     )
 
   const productId =
@@ -1474,6 +1611,35 @@ async function syncInventoryCount(
     existingMovement?.length
   ) {
     return tx.id
+  }
+
+  // Inventory counts can remain queued across an account refresh or a
+  // business-context change. Treat the authenticated profile as the tenant,
+  // then confirm the product belongs to that tenant before accepting the count.
+  const {
+    data: product,
+    error: productError,
+  } = await supabase
+    .from('products')
+    .select('id,branch_id')
+    .eq('id', productId)
+    .eq('business_id', businessId)
+    .maybeSingle()
+
+  if (productError) {
+    throw productError
+  }
+
+  if (!product) {
+    throw new Error(
+      'Inventory count product is not available in this business.',
+    )
+  }
+
+  if (product.branch_id && product.branch_id !== branchId) {
+    throw new Error(
+      'Inventory count product is not available in this branch.',
+    )
   }
 
   /*
@@ -1917,6 +2083,13 @@ export async function POST(
         user.id,
       )
 
+    // The queue has already been authenticated and each operation is checked
+    // against this profile's tenant, branch, and role. Use the existing server
+    // database client for the verified write path because sale sync also
+    // records inventory deductions for cashiers under the inventory RLS rules.
+    const syncDatabase =
+      createAdminDatabaseClient() as unknown as SupabaseClient
+
     /* ----------------------------------------------------------
        DEDUPLICATE QUEUE IDS
     ---------------------------------------------------------- */
@@ -2000,9 +2173,21 @@ export async function POST(
         orderedTransactions
     ) {
       try {
+        const canSyncTransaction = tx.type === 'sale'
+          ? context.operatorRoles.some((role) => ['owner', 'manager', 'cashier', 'barman'].includes(role))
+          : context.operatorRoles.some((role) => ['owner', 'manager', 'inventory_clerk'].includes(role))
+
+        if (!canSyncTransaction) {
+          throw new Error(
+            tx.type === 'sale'
+              ? 'This role cannot sync completed sales.'
+              : 'This role cannot sync inventory changes.',
+          )
+        }
+
         const syncedId =
           await processTransaction(
-            supabase,
+            syncDatabase,
             tx,
             context,
           )

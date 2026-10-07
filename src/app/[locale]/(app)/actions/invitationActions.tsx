@@ -2,9 +2,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { randomBytes } from "node:crypto";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 
 import { createClient } from "@/lib/supabase/server";
+import { getAssignedProfileRoles } from "@/lib/shift-reports/server";
 import type { StaffRole } from "@/types/enum";
 
 type CreateStaffInvitationInput = {
@@ -83,11 +85,12 @@ export async function createStaffInvitation(
     throw new Error("Profile not found");
   }
 
+  const roles = await getAssignedProfileRoles(supabase, user.id, profile.role)
   if (!profile.business_id) {
     throw new Error("Missing business context");
   }
 
-  if (!["owner", "manager"].includes(profile.role)) {
+  if (!["owner", "manager"].some((role) => roles.includes(role))) {
     throw new Error("Permission denied");
   }
 
@@ -229,10 +232,7 @@ export async function createStaffInvitation(
      7. Generate invitation code
   ------------------------------------------------------- */
 
-  const code = `LY-${crypto
-    .randomUUID()
-    .slice(0, 6)
-    .toUpperCase()}`;
+  const code = `LY-${randomBytes(8).toString("hex").toUpperCase()}`;
 
   /* -------------------------------------------------------
      8. Create invitation

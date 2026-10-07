@@ -37,7 +37,7 @@ export default function POSCategories({
           <CategoryButton
             key={category.id}
             active={selectedCategoryId === category.id}
-            label={category.name}
+            label={isAm ? category.name_am?.trim() || category.name : category.name}
             icon={<CategoryIcon index={index} />}
             onClick={() => onSelectCategory(category.id)}
           />
@@ -65,7 +65,7 @@ function CategoryButton({
       className={[
         'flex h-11 min-w-[68px] shrink-0 items-center gap-1',
         'justify-center rounded-lg border px-2.5',
-        'text-[11px] font-black transition active:scale-[0.97]',
+        'text-xs font-black transition active:scale-[0.97]',
         active
           ? 'border-berbere-500 bg-berbere-500 text-white shadow-card'
           : 'border-cream-300 bg-cream-50 text-coffee-700 hover:border-berbere-300',

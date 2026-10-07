@@ -8,8 +8,11 @@ export type POSInventoryStatus =
 export interface POSProduct {
   id: string
   name: string
+  name_am?: string | null
+  category_name_am?: string | null
   category_id?: string | null
   retail_price?: number
+  price_proof?: string
   image_url?: string | null
   is_active?: boolean
   sku?: string | null
@@ -25,6 +28,7 @@ export interface POSProduct {
 export interface POSCategory {
   id: string
   name: string
+  name_am?: string | null
   sort_order?: number
   is_active?: boolean
 }
@@ -32,8 +36,10 @@ export interface POSCategory {
 export interface POSCartItem {
   id: string
   name: string
+  name_am?: string | null
   price: number
   quantity: number
+  price_proof?: string
 }
 
 export interface POSTable {
@@ -82,8 +88,4 @@ export interface POSShift {
   updated_at?: string | null
 }
 
-export interface PaymentSplit {
-  cash: number
-  telebirr: number
-  cbeBirr: number
-}
+export type { PaymentSplit } from '@/types/models/pos-cart'

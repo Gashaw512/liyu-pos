@@ -1,10 +1,11 @@
 'use client'
 
 import { useParams, useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Eye, EyeOff, ArrowRight, WifiOff, AlertCircle, Phone } from 'lucide-react'
 import createClient from '../../../../lib/supabase/client'
+import { readLastVisitedRoute } from '@/lib/offline/sessionFallback'
 import { Route } from 'next'
 
 type Lang = 'am' | 'en'
@@ -27,6 +28,22 @@ export default function LoginPage() {
   // Controlled Phone login fields
   const [phone, setPhone]       = useState('')
   const [password, setPassword] = useState('')
+
+  useEffect(() => {
+    if (navigator.onLine) return
+
+    const lastPath = readLastVisitedRoute()
+    if (!lastPath) return
+
+    const destination = new URL(lastPath, window.location.origin)
+    if (
+      destination.origin !== window.location.origin ||
+      !/^\/(en|am)\//.test(destination.pathname) ||
+      /^\/(en|am)\/(login|register|onboarding)(\/|$)/.test(destination.pathname)
+    ) return
+
+    window.location.replace(destination.pathname + destination.search + destination.hash)
+  }, [])
 
   const t = (en: string, am: string) => lang === 'am' ? am : en
 

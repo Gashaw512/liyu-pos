@@ -11,7 +11,9 @@ export function useInventoryActions(
     setRowSavingId: any,
     setIsSaving: any,
     t: (en: string, am: string) => string,
-    isAm: boolean
+    isAm: boolean,
+    businessId: string | null,
+    branchId: string | null,
 ) {
     /* =========================
      * SAVE SINGLE ROW
@@ -53,6 +55,8 @@ export function useInventoryActions(
             )
 
             const store = tx.objectStore('pending_stock_reconciliations')
+            const countBusinessId = businessId ?? activeShift.business_id
+            const countBranchId = branchId ?? activeShift.branch_id
 
             const row = {
                 localId: crypto.randomUUID(),
@@ -60,8 +64,8 @@ export function useInventoryActions(
                 retryCount: 0,
                 syncStatus: 'pending' as const,
                 product_id: targetProduct.id,
-                business_id: activeShift.business_id,
-                branch_id: activeShift.branch_id,
+                business_id: countBusinessId,
+                branch_id: countBranchId,
                 shift_id: activeShift.id,
                 counted_quantity: currentInputValue,
                 system_quantity: currentLiveBaseline,
@@ -126,6 +130,8 @@ export function useInventoryActions(
             )
 
             const store = tx.objectStore('pending_stock_reconciliations')
+            const countBusinessId = businessId ?? activeShift.business_id
+            const countBranchId = branchId ?? activeShift.branch_id
 
             let changes = 0
             const now = new Date().toISOString()
@@ -144,8 +150,8 @@ export function useInventoryActions(
                     retryCount: 0,
                     syncStatus: 'pending' as const,
                     product_id: product.id,
-                    business_id: activeShift.business_id,
-                    branch_id: activeShift.branch_id,
+                    business_id: countBusinessId,
+                    branch_id: countBranchId,
                     shift_id: activeShift.id,
                     counted_quantity: input,
                     system_quantity: system,

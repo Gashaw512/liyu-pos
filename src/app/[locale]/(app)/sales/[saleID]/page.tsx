@@ -31,8 +31,24 @@ export default function SaleReceiptPage() {
     async function fetchSaleDetails() {
       try {
         const db = await getDB()
-        const data = await db.get('pending_sales', saleId as string)
-        setSale(data)
+        const pendingSale = await db.get('pending_sales', saleId as string)
+        if (pendingSale) {
+          setSale(pendingSale)
+          return
+        }
+
+        const historicalSale = await db.get('completed_sales_history', saleId as string)
+        if (historicalSale) {
+          setSale({
+            ...historicalSale,
+            localId: historicalSale.id,
+            table_number: historicalSale.table_name,
+            items: historicalSale.items.map((item) => ({
+              ...item,
+              total_price: item.total_amount,
+            })),
+          })
+        }
       } catch (err) {
         console.error('Error reading receipt from IndexedDB:', err)
       } finally {
@@ -41,6 +57,12 @@ export default function SaleReceiptPage() {
     }
 
     fetchSaleDetails()
+    window.addEventListener('liyu:sync-complete', fetchSaleDetails)
+    window.addEventListener('liyu:sale-sync-status', fetchSaleDetails)
+    return () => {
+      window.removeEventListener('liyu:sync-complete', fetchSaleDetails)
+      window.removeEventListener('liyu:sale-sync-status', fetchSaleDetails)
+    }
   }, [saleId])
 
   // ============================================================
@@ -117,6 +139,9 @@ export default function SaleReceiptPage() {
 
   const items = Array.isArray(sale.items) ? sale.items : []
   const payments = Array.isArray(sale.payments) ? sale.payments : []
+  const isSaleSynced = sale.localSyncStatus === 'synced' || sale.syncStatus === 'success'
+  const saleIsSyncing = sale.syncStatus === 'syncing'
+  const saleSyncFailed = sale.syncStatus === 'failed'
 
   // ============================================================
   // RENDER WITH EMBEDDED SENIOR-GRADE PRINT DESIGNS
@@ -182,6 +207,19 @@ export default function SaleReceiptPage() {
             {sale.receipt_number}
           </p>
         </div>
+
+        {!isSaleSynced && (
+          <div
+            role="status"
+            className={`receipt-no-print rounded-xl px-3 py-2 text-center text-xs font-bold ${saleSyncFailed ? 'bg-gold-50 text-gold-800' : 'bg-cream-100 text-coffee-600'}`}
+          >
+            {saleIsSyncing
+              ? isAm ? 'ሽያጩ እየተላከ ነው...' : 'Syncing sale...'
+              : saleSyncFailed
+              ? isAm ? 'እስካሁን አልተላከም። በራሱ እንደገና ይሞክራል።' : 'Not synced yet. It will retry automatically.'
+              : isAm ? 'በዚህ መሣሪያ ተቀምጧል። ኢንተርኔት ሲኖር ይላካል።' : 'Saved on this device. It will sync when online.'}
+          </div>
+        )}
 
         {/* Table */}
         <div className="flex items-center justify-between rounded-2xl bg-coffee-900 p-4 text-white print:rounded-none print:border print:border-black print:bg-transparent print:text-black">

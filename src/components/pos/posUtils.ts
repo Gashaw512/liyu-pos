@@ -7,20 +7,11 @@ import type {
   POSProduct,
   POSTable,
 } from './types'
+import { FALLBACK_TABLES } from '@/lib/pos/tableDefaults'
 
 // ============================================================
 // CONSTANTS
 // ============================================================
-
-export const FALLBACK_TABLES = [
-  'Table 1',
-  'Table 2',
-  'Table 3',
-  'Table 4',
-  'Table 5',
-  'Table 6',
-  'VIP Box',
-] as const
 
 export const DEFAULT_CASH_FLOAT = '0'
 
@@ -502,6 +493,12 @@ export function normalizePOSProduct(
       ).trim() ||
       'Unnamed Product',
 
+    name_am:
+      normalizeString(product?.name_am).trim() || null,
+
+    category_name_am:
+      normalizeString(product?.category_name_am).trim() || null,
+
     category_id:
       product?.category_id ??
       product?.categoryId ??
@@ -513,6 +510,11 @@ export function normalizePOSProduct(
           product?.price ??
           0,
       ),
+
+    price_proof:
+      typeof product?.price_proof === 'string'
+        ? product.price_proof
+        : undefined,
 
     image_url:
       product?.image_url ??
@@ -734,6 +736,9 @@ export function normalizePOSCategory(
           'Category',
       ).trim(),
 
+    name_am:
+      normalizeString(category?.name_am).trim() || null,
+
     sort_order:
       normalizeNumber(
         category?.sort_order ??
@@ -938,6 +943,7 @@ export interface POSDataSnapshot {
 
 export async function loadPOSDataFromDB(
   db: any,
+  context: { businessId?: string | null; branchId?: string | null } = {},
 ): Promise<POSDataSnapshot> {
   // ----------------------------------------------------------
   // ACTIVE SHIFT
@@ -953,6 +959,9 @@ export async function loadPOSDataFromDB(
     activeShift?.branch_id ??
     activeShift?.branchId ??
     null
+
+  const tableBusinessId = context.businessId ?? activeShift?.business_id ?? null
+  const tableBranchId = context.branchId ?? branchId
 
   // ----------------------------------------------------------
   // PRODUCTS
@@ -985,6 +994,11 @@ export async function loadPOSDataFromDB(
     console.log(
       '[POS] Inventory context:',
       {
+        businessId:
+          activeShift?.business_id ??
+          activeShift?.businessId ??
+          null,
+
         branchId,
 
         productCount:
@@ -1066,8 +1080,11 @@ export async function loadPOSDataFromDB(
     )
   ) {
     openTabs =
-      await db.getAll(
+      (await db.getAll(
         'open_tabs',
+      )).filter((tab: any) =>
+        (!tableBusinessId || !tab.business_id || tab.business_id === tableBusinessId) &&
+        (!tableBranchId || !tab.branch_id || tab.branch_id === tableBranchId),
       )
   }
 
@@ -1090,7 +1107,10 @@ export async function loadPOSDataFromDB(
 
     tables =
       normalizePOSTables(
-        tableRows || [],
+        (tableRows || []).filter((table: any) =>
+          (!tableBusinessId || !table.business_id || table.business_id === tableBusinessId) &&
+          (!tableBranchId || !table.branch_id || table.branch_id === tableBranchId),
+        ),
         openTabs,
       )
   }
@@ -1148,6 +1168,14 @@ export function restoreCartFromTab(
               'Product',
           ).trim(),
 
+        name_am:
+          normalizeString(item.product_name_am).trim() || null,
+
+        price_proof:
+          typeof item.price_proof === 'string'
+            ? item.price_proof
+            : undefined,
+
         price:
           normalizeNumber(
             item.unit_price ??
@@ -1180,6 +1208,9 @@ export interface SaveTableTabInput {
   table: POSTable
   cart: POSCartItem[]
   totalBill: number
+  businessId: string
+  branchId: string
+  cashierId: string
 }
 
 export interface SaveTableTabResult {
@@ -1193,6 +1224,9 @@ export async function saveTableTab(
     table,
     cart,
     totalBill,
+    businessId,
+    branchId,
+    cashierId,
   }: SaveTableTabInput,
 ): Promise<SaveTableTabResult> {
   if (
@@ -1218,6 +1252,9 @@ export async function saveTableTab(
             item.name,
           ).trim(),
 
+        product_name_am:
+          normalizeString(item.name_am).trim() || null,
+
         quantity:
           normalizeNumber(
             item.quantity,
@@ -1227,6 +1264,9 @@ export async function saveTableTab(
           normalizeNumber(
             item.price,
           ),
+
+        price_proof:
+          item.price_proof,
       }))
       .filter(
         (item) =>
@@ -1257,6 +1297,17 @@ export async function saveTableTab(
         ),
     )
 
+    const pendingOrders = db.objectStoreNames.contains('pending_table_orders')
+      ? await db.getAll('pending_table_orders')
+      : []
+    const pendingForTable = pendingOrders
+      .filter((order: any) => order.tableId === table.id)
+      .sort((a: any, b: any) => a.createdAt.localeCompare(b.createdAt))
+    const latestPending = pendingForTable[pendingForTable.length - 1]
+    const baseItems = latestPending
+      ? latestPending.operation === 'save' ? latestPending.items : []
+      : existingTab?.items ?? []
+
   const now =
     new Date().toISOString()
 
@@ -1270,6 +1321,12 @@ export async function saveTableTab(
     table_id:
       table.id,
 
+    business_id: businessId,
+
+    branch_id: branchId,
+
+    cashier_id: cashierId,
+
     table_number:
       getTableNumber(table),
 
@@ -1282,10 +1339,26 @@ export async function saveTableTab(
       now,
   }
 
-  await db.put(
-    'open_tabs',
-    tab,
+  const transaction = db.transaction(
+    ['open_tabs', 'pending_table_orders'],
+    'readwrite',
   )
+  await transaction.objectStore('open_tabs').put(tab)
+  await transaction.objectStore('pending_table_orders').put({
+    localId: crypto.randomUUID(),
+    tableId: table.id,
+    tableNumber: getTableNumber(table),
+    businessId,
+    branchId,
+    cashierId,
+    operation: 'save',
+    baseItems,
+    items,
+    totalAmount: Number(totalBill),
+    createdAt: now,
+    attempts: 0,
+  })
+  await transaction.done
 
   return {
     tabId,
@@ -1438,6 +1511,7 @@ export function addToCart(
                 normalizeNumber(
                   item.quantity,
                 ) + 1,
+              price_proof: item.price_proof,
             }
           : item,
     )
@@ -1453,9 +1527,13 @@ export function addToCart(
       name:
         product.name,
 
+      name_am:
+        product.name_am ?? null,
+
       price,
 
       quantity: 1,
+      price_proof: product.price_proof,
     },
   ]
 }
@@ -1558,6 +1636,9 @@ export function serializeCart(
               item.name,
             ).trim(),
 
+          name_am:
+            normalizeString(item.name_am).trim() || null,
+
           price:
             normalizeNumber(
               item.price,
@@ -1653,6 +1734,8 @@ export function filterPOSProducts({
           product.name,
         ).toLowerCase()
 
+      const nameAm = normalizeString(product.name_am).toLowerCase()
+
       const sku =
         normalizeString(
           product.sku,
@@ -1662,6 +1745,7 @@ export function filterPOSProducts({
         name.includes(
           normalizedSearch,
         ) ||
+        nameAm.includes(normalizedSearch) ||
         sku.includes(
           normalizedSearch,
         )

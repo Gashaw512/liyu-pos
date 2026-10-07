@@ -2,14 +2,12 @@
 
 import { getDB } from './db'
 import { isLegacyContextValue } from './shiftContext'
+import { toLocalHistoricalSale } from './saleHistory'
+import type { LocalOpenTab, PaymentMethod, PaymentSplit } from '@/types/models/pos-cart'
 
 export interface FinalizeSaleInput {
-  splitPayments: {
-    cash: number
-    telebirr: number
-    bank_transfer?: number
-    selected_bank?: string
-  }
+  splitPayments: PaymentSplit
+  roomNumber?: string
 
   manualTip: string
 
@@ -31,6 +29,7 @@ export interface FinalizeSaleInput {
     name: string
     price: number
     quantity: number
+    price_proof?: string
   }>
 
   totalBill: number
@@ -95,8 +94,16 @@ export async function finalizeSale(
     throw new Error('Missing a valid active-shift context for this sale.')
   }
 
-  const totalAmount =
-    subtotal + parsedTip
+  const totalAmount = subtotal + parsedTip
+  const roomChargeAmount = Number(input.splitPayments.room_charge || 0)
+  if (roomChargeAmount > 0) {
+    const otherTenderTotal = Object.entries(input.splitPayments)
+      .filter(([method]) => method !== 'room_charge')
+      .reduce((sum, [, amount]) => sum + Number(amount || 0), 0)
+    if (!input.roomNumber?.trim() || Math.abs(roomChargeAmount - totalAmount) > 0.009 || otherTenderTotal > 0.009) {
+      throw new Error('Room charges require an active guest room and must cover the full bill.')
+    }
+  }
 
   /* =======================================================
    * INVENTORY WARNINGS
@@ -152,6 +159,22 @@ export async function finalizeSale(
       input.selectedTable?.name ??
       'Walk-in',
 
+    table_id:
+      input.selectedTable?.id ??
+      null,
+
+    table_name:
+      input.selectedTable?.name ??
+      null,
+
+    customer_name: null,
+
+    customer_phone: null,
+
+    notes: null,
+
+    device_id: null,
+
     total_amount:
       totalAmount,
 
@@ -184,8 +207,13 @@ export async function finalizeSale(
           quantity:
             Number(item.quantity),
 
+          discount: 0,
+
           unit_price:
             Number(item.price),
+
+          price_proof:
+            item.price_proof,
 
           /*
            * Keep the existing fallback until
@@ -201,44 +229,15 @@ export async function finalizeSale(
         }),
       ),
 
-    payments: [
-      {
-        method:
-          'cash',
-
-        amount:
-          Number(
-            input.splitPayments.cash,
-          ) || 0,
-      },
-
-      {
-        method:
-          'telebirr',
-
-        amount:
-          Number(
-            input.splitPayments
-              .telebirr,
-          ) || 0,
-      },
-
-      {
-        method:
-          input.splitPayments
-            .selected_bank ||
-          'bank_transfer',
-
-        amount:
-          Number(
-            input.splitPayments
-              .bank_transfer,
-          ) || 0,
-      },
-    ].filter(
-      (payment) =>
-        payment.amount > 0,
-    ),
+    payments: (Object.entries(input.splitPayments) as [PaymentMethod, number][])
+      .filter(([, amount]) => Number(amount) > 0)
+      .map(([method, amount]) => ({
+        id: crypto.randomUUID(),
+        method,
+        amount: Number(amount),
+        reference_no: method === 'room_charge' ? input.roomNumber?.trim() ?? null : null,
+        status: method === 'credit' ? 'pending' as const : 'completed' as const,
+      })),
   }
 
   /* =======================================================
@@ -300,30 +299,65 @@ export async function finalizeSale(
    * ======================================================= */
 
   const hasOpenTabs =
-    input.selectedTable &&
+    Boolean(input.selectedTable) &&
     db.objectStoreNames.contains(
       'open_tabs',
     )
+
+  const hasPendingTableOrders =
+    Boolean(input.selectedTable) &&
+    db.objectStoreNames.contains('pending_table_orders')
+
+  let completedTableBaseItems: LocalOpenTab['items'] = []
+
+  if (input.selectedTable && hasPendingTableOrders) {
+    const [tabs, tableOrderEvents] = await Promise.all([
+      hasOpenTabs ? db.getAll('open_tabs') : Promise.resolve([]),
+      db.getAll('pending_table_orders'),
+    ])
+    const savedTab = tabs.find((tab: { id: string }) => tab.id === input.selectedTable!.id)
+    const tableEvents = tableOrderEvents
+      .filter((event: { tableId: string }) => event.tableId === input.selectedTable!.id)
+      .sort((first: { createdAt: string }, second: { createdAt: string }) => first.createdAt.localeCompare(second.createdAt))
+    const firstPendingSave = tableEvents.find((event: { operation: string }) => event.operation === 'save')
+    completedTableBaseItems = firstPendingSave?.baseItems ?? savedTab?.items ?? []
+  }
 
   const stores:
     | [
         'pending_sales',
         'inventory',
+        'completed_sales_history',
       ]
     | [
         'pending_sales',
         'inventory',
         'open_tabs',
+        'completed_sales_history',
+      ]
+    | [
+        'pending_sales',
+        'inventory',
+        'pending_table_orders',
+        'completed_sales_history',
+      ]
+    | [
+        'pending_sales',
+        'inventory',
+        'open_tabs',
+        'pending_table_orders',
+        'completed_sales_history',
       ] =
     hasOpenTabs
-      ? [
-          'pending_sales',
-          'inventory',
-          'open_tabs',
-        ]
+      ? hasPendingTableOrders
+        ? ['pending_sales', 'inventory', 'open_tabs', 'pending_table_orders', 'completed_sales_history']
+        : ['pending_sales', 'inventory', 'open_tabs', 'completed_sales_history']
+      : hasPendingTableOrders
+        ? ['pending_sales', 'inventory', 'pending_table_orders', 'completed_sales_history']
       : [
           'pending_sales',
           'inventory',
+          'completed_sales_history',
         ]
 
   const tx =
@@ -331,6 +365,8 @@ export async function finalizeSale(
       stores,
       'readwrite',
     )
+  const inventoryStore = tx.objectStore('inventory')
+  const inventoryIndex = inventoryStore.index('by-product')
 
   /* =======================================================
    * 4. SAVE SALE
@@ -344,20 +380,9 @@ export async function finalizeSale(
       pendingSale as never,
     )
 
-  /* =======================================================
-   * 5. INVENTORY
-   * ======================================================= */
-
-  const inventoryStore =
-    tx.objectStore(
-      'inventory',
-    )
-
-  const inventoryIndex =
-    inventoryStore.index(
-      'by-product',
-    )
-
+  await tx.objectStore('completed_sales_history').put(
+    toLocalHistoricalSale(pendingSale as never) as never,
+  )
   for (
     const [
       productId,
@@ -661,6 +686,38 @@ export async function finalizeSale(
       .delete(
         input.selectedTable.id,
       )
+  }
+
+  if (input.selectedTable && hasPendingTableOrders) {
+    const tableOrderStore = tx.objectStore('pending_table_orders')
+    const pendingForTable = await tableOrderStore.index('by-table').getAll(input.selectedTable.id)
+    for (const orderEvent of pendingForTable) {
+      if (orderEvent.operation === 'save') {
+        await tableOrderStore.delete(orderEvent.localId)
+      }
+    }
+
+    await tableOrderStore.put({
+      localId: crypto.randomUUID(),
+      tableId: input.selectedTable.id,
+      tableNumber: input.selectedTable.name,
+      businessId: safeBusinessId,
+      branchId: safeBranchId,
+      cashierId: safeCashierId,
+      operation: 'complete',
+      baseItems: completedTableBaseItems,
+      items: input.cart.map((item) => ({
+        product_id: item.id,
+        product_name: item.name,
+        quantity: Number(item.quantity),
+        unit_price: Number(item.price),
+        price_proof: item.price_proof,
+      })),
+      totalAmount: 0,
+      saleId: localId,
+      createdAt: pendingSale.createdAt,
+      attempts: 0,
+    })
   }
 
   /* =======================================================

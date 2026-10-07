@@ -31,6 +31,9 @@ export interface Business {
 
   is_active: boolean;
 
+  /** Enables hotel room folio settlement for this business. */
+  is_hotel_integrated: boolean;
+
   plan: BusinessPlan;
 
   trial_ends_at: string | null;

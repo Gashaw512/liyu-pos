@@ -7,11 +7,14 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Eye, EyeOff, CheckCircle, ArrowRight, AlertCircle } from 'lucide-react'
 import createClient from '@/lib/supabase/client'
+import { normalizeEthiopianPhone } from '@/lib/auth/phone'
 
 const schema = z.object({
-  fullName: z.string().min(2),
-  inviteCode: z.string().min(5),
-  phone: z.string().min(9),
+  fullName: z.string().trim().min(2).max(150),
+  inviteCode: z.string().trim().min(5).max(64),
+  phone: z.string().refine(value => Boolean(normalizeEthiopianPhone(value)), {
+    message: 'Enter a valid Ethiopian phone number',
+  }),
   password: z.string().min(8),
   confirm: z.string()
 }).refine(d => d.password === d.confirm, {
@@ -28,12 +31,16 @@ export default function InviteAcceptPage() {
   const supabase = createClient()
 
   const locale = (params?.locale as string) || 'en'
+  const isAm = locale === 'am'
+  const t = (en: string, am: string) => isAm ? am : en
   const prefilledCode = search.get('code') || ''
 
-  const [step, setStep] = useState<1 | 2>(1)
+  const [step, setStep] = useState<1 | 2 | 3>(1)
   const [loading, setLoading] = useState(false)
   const [showPw, setShowPw] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [verificationPhone, setVerificationPhone] = useState<string | null>(null)
+  const [otp, setOtp] = useState('')
 
   const {
     register,
@@ -59,37 +66,36 @@ export default function InviteAcceptPage() {
     setError(null)
 
     try {
-      const code = watch('inviteCode').trim().toUpperCase()
+      const response = await fetch('/api/auth/invitations/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: watch('inviteCode'),
+          fullName: watch('fullName'),
+          phone: normalizeEthiopianPhone(watch('phone')),
+        }),
+      })
+      const result = await response.json() as { valid?: boolean }
 
-      const { data: invite, error: dbError } = await supabase
-        .from('staff_invitations')
-        .select('id, status, expires_at, code, business_id, role_assigned')
-        .eq('code', code)
-        .maybeSingle()
-
-      if (dbError) {
-        setError('Server error. Try again.')
+      if (!response.ok) {
+        setError(t(
+          'Invitation checking is temporarily unavailable. Please try again.',
+          'የግብዣ ማረጋገጫው ለጊዜው አይሰራም። እባክዎ እንደገና ይሞክሩ።',
+        ))
         return
       }
 
-      if (!invite) {
-        setError('Invalid invitation code')
-        return
-      }
-
-      if (invite.status !== 'pending') {
-        setError('This invitation is already used or expired')
-        return
-      }
-
-      if (invite.expires_at && new Date(invite.expires_at) < new Date()) {
-        setError('This invitation has expired')
+      if (!result.valid) {
+        setError(t(
+          'The code, name, or phone number does not match the pending invitation.',
+          'ኮዱ፣ ስሙ ወይም ስልክ ቁጥሩ ከተጠባባቂው ግብዣ ጋር አይዛመድም።',
+        ))
         return
       }
 
       setStep(2)
     } catch {
-      setError('Connection error. Try again.')
+      setError(t('Connection error. Please try again.', 'የግንኙነት ችግር አለ። እንደገና ይሞክሩ።'))
     } finally {
       setLoading(false)
     }
@@ -101,41 +107,49 @@ export default function InviteAcceptPage() {
     setError(null)
 
     try {
-      const phone = form.phone.startsWith('0')
-        ? '+251' + form.phone.slice(1)
-        : form.phone
-
+      const phone = normalizeEthiopianPhone(form.phone)
       const inviteCode = form.inviteCode.trim().toUpperCase()
 
-      // 1. Get invite again (safe + authoritative)
-      const { data: invite } = await supabase
-        .from('staff_invitations')
-        .select('id, business_id, role_assigned, status, expires_at')
-        .eq('code', inviteCode)
-        .single()
-
-      if (!invite) {
-        setError('Invalid invitation')
+      if (!phone) {
+        setError(t('Enter a valid Ethiopian phone number.', 'ትክክለኛ የኢትዮጵያ ስልክ ቁጥር ያስገቡ።'))
         return
       }
 
-      // 2. Signup user
+      // Revalidate for clear feedback. The database trigger repeats the
+      // checks and consumes the invitation atomically during auth signup.
+      const validationResponse = await fetch('/api/auth/invitations/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: inviteCode, fullName: form.fullName, phone }),
+      })
+      const validation = await validationResponse.json() as { valid?: boolean }
+      if (!validationResponse.ok || !validation.valid) {
+        setError(t(
+          'The invitation could not be verified. Check the code, invited name, and phone number.',
+          'ግብዣውን ማረጋገጥ አልተቻለም። ኮዱን፣ የተጋባዡን ስም እና ስልክ ቁጥር ያረጋግጡ።',
+        ))
+        return
+      }
+
       const { data, error: authError } = await supabase.auth.signUp({
         phone,
         password: form.password,
         options: {
           data: {
-            full_name: form.fullName,
+            full_name: form.fullName.trim().replace(/\s+/g, ' '),
             invite_code: inviteCode,
             is_staff: true,
-            business_id: invite.business_id,
-            role: invite.role_assigned
           }
         }
       })
 
       if (authError) {
-        setError(authError.message)
+        setError(authError.message.toLowerCase().includes('already')
+          ? t('This phone number already has an account. Please sign in.', 'ይህ ስልክ ቁጥር አስቀድሞ መለያ አለው። እባክዎ ይግቡ።')
+          : t(
+            'Account creation failed. The invitation may have been used; check the code, name, and phone number.',
+            'መለያ መፍጠር አልተሳካም። ግብዣው ተጠቅሞ ሊሆን ይችላል፤ ኮዱን፣ ስሙን እና ስልኩን ያረጋግጡ።',
+          ))
         return
       }
 
@@ -144,42 +158,63 @@ export default function InviteAcceptPage() {
         return
       }
 
-      // 3. Assign DEFAULT branch (safe fallback)
-      const { data: defaultBranch } = await supabase
-        .from('branches')
-        .select('id')
-        .eq('business_id', invite.business_id)
-        .eq('is_main', true)
-        .single()
+      if (data.session) {
+        router.replace(`/${locale}/dashboard`)
+        router.refresh()
+        return
+      }
 
-      const branchId = defaultBranch?.id ?? null
+      setVerificationPhone(phone)
+      setStep(3)
 
-      // 4. Create profile (IMPORTANT STEP)
-      await supabase.from('profiles').insert({
-        id: data.user.id,
-        full_name: form.fullName,
-        phone,
-        business_id: invite.business_id,
-        branch_id: branchId,
-        role: invite.role_assigned,
-        is_active: true,
-        onboarding_completed: false
+    } catch (submitError) {
+      console.error('[INVITATION] Signup failed:', submitError)
+      setError(t('Something went wrong. Please try again.', 'ችግር ተፈጥሯል። እንደገና ይሞክሩ።'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const verifyPhone = async () => {
+    if (!verificationPhone || !/^\d{6}$/.test(otp.trim())) {
+      setError(t('Enter the 6-digit SMS code.', 'በSMS የተላከውን 6 አሃዝ ኮድ ያስገቡ።'))
+      return
+    }
+
+    setLoading(true)
+    setError(null)
+    try {
+      const { error: otpError } = await supabase.auth.verifyOtp({
+        phone: verificationPhone,
+        token: otp.trim(),
+        type: 'sms',
       })
+      if (otpError) {
+        setError(t('That code is incorrect or expired. Please try again.', 'ኮዱ የተሳሳተ ወይም ጊዜው ያለፈ ነው። እንደገና ይሞክሩ።'))
+        return
+      }
 
-      // 5. Mark invite as used
-      await supabase
-        .from('staff_invitations')
-        .update({
-          status: 'used',
-          used_at: new Date().toISOString()
-        })
-        .eq('id', invite.id)
-
-      // 6. Redirect (NO onboarding for staff)
-      router.push(`/${locale}/dashboard`)
-
+      router.replace(`/${locale}/dashboard`)
+      router.refresh()
     } catch {
-      setError('Something went wrong')
+      setError(t('Phone verification failed. Please try again.', 'ስልክ ማረጋገጥ አልተሳካም። እንደገና ይሞክሩ።'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const resendPhoneCode = async () => {
+    if (!verificationPhone) return
+    setLoading(true)
+    setError(null)
+    try {
+      const { error: resendError } = await supabase.auth.resend({
+        type: 'sms',
+        phone: verificationPhone,
+      })
+      if (resendError) throw resendError
+    } catch {
+      setError(t('Could not resend the code. Please wait and try again.', 'ኮዱን እንደገና መላክ አልተቻለም። ቆይተው ይሞክሩ።'))
     } finally {
       setLoading(false)
     }
@@ -191,7 +226,7 @@ export default function InviteAcceptPage() {
       <div className="w-full max-w-md bg-white rounded-2xl shadow-lg border border-cream-200 p-5">
 
         <h1 className="text-xl font-bold text-coffee-700 mb-4">
-          Staff Activation
+          {t('Staff Activation', 'የሰራተኛ መለያ ማንቃት')}
         </h1>
 
         {error && (
@@ -207,19 +242,19 @@ export default function InviteAcceptPage() {
             <>
               <input
                 {...register('inviteCode')}
-                placeholder="Invite Code"
+                placeholder={t('Invitation code', 'የግብዣ ኮድ')}
                 className={inputClass + " uppercase font-mono"}
               />
 
               <input
                 {...register('fullName')}
-                placeholder="Full Name"
+                placeholder={t('Invited full name', 'በግብዣው ያለው ሙሉ ስም')}
                 className={inputClass}
               />
 
               <input
                 {...register('phone')}
-                placeholder="Phone (+251...)"
+                placeholder={t('Invited phone number', 'በግብዣው ያለው ስልክ ቁጥር')}
                 className={inputClass}
               />
 
@@ -229,7 +264,7 @@ export default function InviteAcceptPage() {
                 disabled={loading}
                 className="w-full h-[52px] bg-berbere-500 text-white rounded-xl font-bold"
               >
-                {loading ? 'Checking...' : 'Verify Invitation'}
+                {loading ? t('Checking...', 'በማረጋገጥ ላይ...') : t('Verify Invitation', 'ግብዣውን አረጋግጥ')}
                 <ArrowRight className="inline ml-2 w-4 h-4" />
               </button>
             </>
@@ -238,14 +273,14 @@ export default function InviteAcceptPage() {
           {step === 2 && (
             <>
               <div className="text-sm text-coffee-600">
-                Code: <b>{watch('inviteCode')}</b>
+                {t('Invitation code:', 'የግብዣ ኮድ:')} <b>{watch('inviteCode')}</b>
               </div>
 
               <div className="relative">
                 <input
                   {...register('password')}
                   type={showPw ? 'text' : 'password'}
-                  placeholder="Password"
+                  placeholder={t('Create password', 'የይለፍ ቃል ይፍጠሩ')}
                   className={inputClass}
                 />
                 <button
@@ -260,7 +295,7 @@ export default function InviteAcceptPage() {
               <input
                 {...register('confirm')}
                 type="password"
-                placeholder="Confirm Password"
+                placeholder={t('Confirm password', 'የይለፍ ቃሉን ያረጋግጡ')}
                 className={inputClass}
               />
 
@@ -270,9 +305,45 @@ export default function InviteAcceptPage() {
                 className="w-full h-[52px] bg-gold-400 text-white rounded-xl font-bold flex items-center justify-center gap-2"
               >
                 <CheckCircle className="w-4 h-4" />
-                {loading ? 'Activating...' : 'Activate Account'}
+                {loading ? t('Creating account...', 'መለያ በመፍጠር ላይ...') : t('Create Account', 'መለያ ፍጠር')}
               </button>
             </>
+          )}
+
+          {step === 3 && (
+            <div className="space-y-4">
+              <p className="text-sm text-coffee-600">
+                {t(
+                  `Enter the SMS code sent to ${verificationPhone}.`,
+                  `${verificationPhone} ላይ የተላከውን የSMS ኮድ ያስገቡ።`,
+                )}
+              </p>
+              <input
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                value={otp}
+                onChange={event => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder={t('6-digit SMS code', '6 አሃዝ የSMS ኮድ')}
+                className={inputClass + ' text-center font-mono text-lg tracking-[0.3em]'}
+              />
+              <button
+                type="button"
+                onClick={() => void verifyPhone()}
+                disabled={loading}
+                className="w-full h-[52px] bg-berbere-500 text-white rounded-xl font-bold"
+              >
+                {loading ? t('Checking...', 'በማረጋገጥ ላይ...') : t('Verify and continue', 'አረጋግጥ እና ቀጥል')}
+              </button>
+              <button
+                type="button"
+                onClick={() => void resendPhoneCode()}
+                disabled={loading}
+                className="w-full text-sm font-bold text-coffee-500 underline"
+              >
+                {t('Send a new code', 'አዲስ ኮድ ላክ')}
+              </button>
+            </div>
           )}
 
         </form>

@@ -196,6 +196,8 @@ export default function InventoryPage() {
     setIsSaving,
     t,
     isAm,
+    businessId,
+    branchId,
   );
 
   // ==========================================================
@@ -277,7 +279,7 @@ export default function InventoryPage() {
         > = {};
         let nextFifoCostDataAvailable = false;
 
-        if (businessId && branchId) {
+        if (businessId && branchId && navigator.onLine) {
           try {
             const { data, error } = await getSupabaseBrowserClient()
               .from("inventory_cost_layers")
@@ -414,6 +416,13 @@ export default function InventoryPage() {
       preserveEditedCounts: false,
     });
 
+    if (typeof navigator !== "undefined" && navigator.onLine) {
+      // Paint the local snapshot immediately, then replace it with the
+      // authenticated server snapshot when no outbound stock changes are
+      // waiting. refreshCatalog runs outbound sync first when it finds work.
+      void syncEngine.refreshCatalog();
+    }
+
     return () => {
       mountedRef.current = false;
 
@@ -441,9 +450,11 @@ export default function InventoryPage() {
           return;
         }
 
-        void refreshInventory(
-          LIVE_REFRESH_OPTIONS,
-        );
+        if (navigator.onLine) {
+          void syncEngine.refreshCatalog();
+        } else {
+          void refreshInventory(LIVE_REFRESH_OPTIONS);
+        }
       }, AUTO_REFRESH_INTERVAL_MS);
 
     return () => {
@@ -460,6 +471,9 @@ export default function InventoryPage() {
       scheduleInventoryRefresh(
         LIVE_REFRESH_OPTIONS,
       );
+      if (navigator.onLine) {
+        void syncEngine.refreshCatalog();
+      }
     };
 
     const handleVisibility = (): void => {
@@ -481,6 +495,8 @@ export default function InventoryPage() {
       refresh,
     );
 
+    window.addEventListener("online", refresh);
+
     return () => {
       document.removeEventListener(
         "visibilitychange",
@@ -491,6 +507,8 @@ export default function InventoryPage() {
         "focus",
         refresh,
       );
+
+      window.removeEventListener("online", refresh);
     };
   }, [scheduleInventoryRefresh]);
 

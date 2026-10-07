@@ -23,6 +23,7 @@ import { LowStockWarningsTable } from '@/components/dashboard/LowStockWarningsTa
 import { DataRow, MetricCard, SectionHeader } from '@/components/shared/ReportPrimitives'
 
 import DashboardPeriodFilter from './DashboardPeriodFilter'
+import OpenShiftsPreview from './OpenShiftsPreview'
 
 /* ============================================================
    TYPES
@@ -45,6 +46,7 @@ interface LowStockItem {
 interface DashboardClientProps {
   locale: string
   role: string
+  roles?: string[]
   businessName: string
 
   initialProductCount: number
@@ -82,6 +84,7 @@ interface DashboardClientProps {
 export default function DashboardClientContent({
   locale,
   role,
+  roles = [role],
   businessName,
 
   initialProductCount,
@@ -131,8 +134,8 @@ export default function DashboardClientContent({
     openShiftCount > 0
 
   const isOwnerOrManager =
-    role === 'owner' ||
-    role === 'manager'
+    roles.includes('owner') ||
+    roles.includes('manager')
 
   /* ==========================================================
      DERIVED DATA
@@ -196,9 +199,6 @@ export default function DashboardClientContent({
 
   const goToInventory = () =>
     goTo('/inventory')
-
-  const goToShifts = () =>
-    goTo('/shifts')
 
   const goToCloseDay = () =>
     goTo('/dashboard/close-day')
@@ -362,7 +362,7 @@ export default function DashboardClientContent({
         isVoicePlaying={isVoicePlaying}
         onToggleVoice={handleVoiceGuidance}
         activeShift={hasActiveShift}
-        onDayStatusClick={goToShifts}
+        onDayStatusClick={goToSales}
         onCloseDay={
           hasActiveShift
             ? goToCloseDay
@@ -370,7 +370,7 @@ export default function DashboardClientContent({
         }
         onOpenDay={
           !hasActiveShift
-            ? goToShifts
+            ? goToSales
             : undefined
         }
         onSalesClick={goToSales}
@@ -646,58 +646,12 @@ export default function DashboardClientContent({
               )}
 
               {/* SHIFT STATUS */}
-
-              <button
-                type="button"
-                onClick={goToShifts}
-                className="flex items-center justify-between rounded-xl border border-coffee-100 bg-coffee-50 px-3 py-3 text-left transition hover:bg-coffee-100 sm:col-span-2"
-              >
-                <div className="flex items-center gap-3">
-                  <Wallet
-                    className={`h-4 w-4 ${hasActiveShift
-                        ? 'text-berbere-600'
-                        : 'text-coffee-500'
-                      }`}
-                  />
-
-                  <div>
-                    <p className="text-xs font-black text-coffee-800">
-                      {hasActiveShift
-                        ? `${formatNumber(
-                          openShiftCount,
-                        )} ${openShiftCount ===
-                          1
-                          ? t(
-                            'shift is open',
-                            'ፈረቃ ክፍት ነው',
-                          )
-                          : t(
-                            'shifts are open',
-                            'ፈረቃዎች ክፍት ናቸው',
-                          )
-                        }`
-                        : t(
-                          'No shift is open',
-                          'ምንም ፈረቃ ክፍት የለም',
-                        )}
-                    </p>
-
-                    <p className="mt-0.5 text-[9px] text-coffee-500">
-                      {hasActiveShift
-                        ? t(
-                          'Business is active',
-                          'ንግዱ እየሰራ ነው',
-                        )
-                        : t(
-                          'Open a shift to start',
-                          'ለመጀመር ፈረቃ ይክፈቱ',
-                        )}
-                    </p>
-                  </div>
-                </div>
-
-                <ArrowRight className="h-4 w-4 text-coffee-300" />
-              </button>
+              <OpenShiftsPreview
+                locale={locale}
+                count={openShiftCount}
+                isOwner={roles.includes('owner')}
+                onNavigate={goToSales}
+              />
             </div>
           </section>
 
@@ -899,14 +853,22 @@ export default function DashboardClientContent({
               <div>
                 <h3 className="text-sm font-black">
                   {t(
-                    'Open Point of Sale',
+                    role === 'waiter'
+                      ? 'Tables & Orders'
+                      : role === 'cashier'
+                        ? 'Open Bills & Sales'
+                        : 'Open Point of Sale',
                     'አዲስ መሸጫ ክፈት',
                   )}
                 </h3>
 
                 <p className="mt-0.5 text-xs text-cream-300">
                   {t(
-                    'Process customer sales and receipts',
+                    role === 'waiter'
+                      ? 'View tables, create orders, and check order status'
+                      : role === 'cashier'
+                        ? 'Record payments and manage your shift'
+                        : 'Process customer sales and receipts',
                     'የደንበኛ ሽያጭ እና ደረሰኝ ይመዝግቡ',
                   )}
                 </p>
@@ -915,6 +877,16 @@ export default function DashboardClientContent({
 
             <ArrowRight className="h-5 w-5 shrink-0 text-cream-300" />
           </button>
+          {roles.includes('cashier') && (
+            <button
+              type="button"
+              onClick={goToSales}
+              className="flex w-full items-center justify-between rounded-2xl border border-coffee-100 bg-white p-4 text-left shadow-sm transition hover:bg-coffee-50"
+            >
+              <span className="text-sm font-black text-coffee-800">{t('Open POS shift controls', 'ፈረቃዬን በPOS ይክፈቱ')}</span>
+              <ArrowRight className="h-4 w-4 text-coffee-300" />
+            </button>
+          )}
         </div>
       )}
     </div>

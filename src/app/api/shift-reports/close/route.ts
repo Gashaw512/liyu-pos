@@ -12,9 +12,9 @@ const money = (value: unknown) => Number.isFinite(Number(value)) ? Number(value)
 export async function POST(request: Request) {
   try {
     const client = await createClient()
-    const auth = await getAuthorizedProfile(client, ['owner', 'manager', 'cashier', 'waiter'])
+    const auth = await getAuthorizedProfile(client, ['owner', 'manager', 'cashier'])
     if (auth.error) return NextResponse.json({ error: auth.error }, { status: auth.error === 'Unauthorized' ? 401 : 403 })
-    const body = await request.json() as { reportId?: unknown; branchId?: unknown; openedAt?: unknown; closedAt?: unknown; openingCash?: unknown; actualCash?: unknown }
+    const body = await request.json() as { reportId?: unknown; branchId?: unknown; openedAt?: unknown; closedAt?: unknown; actualCash?: unknown }
     if (typeof body.reportId !== 'string' || !UUID.test(body.reportId) || body.branchId !== auth.profile!.branch_id || typeof body.openedAt !== 'string' || typeof body.closedAt !== 'string') return NextResponse.json({ error: 'Invalid shift close details.' }, { status: 400 })
     const openedAt = new Date(body.openedAt)
     const closedAt = new Date(body.closedAt)
@@ -22,24 +22,73 @@ export async function POST(request: Request) {
     if (!auth.profile!.branch_id) return NextResponse.json({ error: 'No branch is assigned to this account.' }, { status: 403 })
 
     const admin = createAdminDatabaseClient()
-    const { data: prior, error: priorError } = await admin.from('shift_report_deliveries').select('shift_report_id,status,attempts,updated_at').eq('business_id', auth.profile!.business_id).eq('cashier_id', auth.user!.id).eq('opened_at', openedAt.toISOString()).maybeSingle()
-    if (priorError) throw priorError
+    const { data: deliveryByShift, error: deliveryByShiftError } = await admin
+      .from('shift_report_deliveries')
+      .select('shift_report_id,status,attempts,updated_at')
+      .eq('business_id', auth.profile!.business_id)
+      .eq('shift_report_id', body.reportId)
+      .maybeSingle()
+    if (deliveryByShiftError) throw deliveryByShiftError
+    const { data: priorByOpenTime, error: priorByOpenTimeError } = deliveryByShift
+      ? { data: null, error: null }
+      : await admin
+        .from('shift_report_deliveries')
+        .select('shift_report_id,status,attempts,updated_at')
+        .eq('business_id', auth.profile!.business_id)
+        .eq('cashier_id', auth.user!.id)
+        .eq('opened_at', openedAt.toISOString())
+        .maybeSingle()
+    if (priorByOpenTimeError) throw priorByOpenTimeError
+    const prior = deliveryByShift ?? priorByOpenTime
     if (prior && prior.shift_report_id !== body.reportId) return NextResponse.json({ success: true, duplicate: true, status: prior.status })
+    if (prior?.status === 'sent' || prior?.status === 'disabled') {
+      return NextResponse.json({ success: true, duplicate: true, status: prior.status })
+    }
+    if (prior?.status === 'sending' && Date.now() - Date.parse(prior.updated_at ?? '') < 5 * 60_000) {
+      return NextResponse.json({ success: true, duplicate: true, status: 'sending' })
+    }
 
-    // Scope the privileged report reads with identifiers resolved from the
-    // authenticated profile. Session RLS claims can be stale and may otherwise
-    // make an existing shift appear to have no sales.
-    const { data: sales, error: salesError } = await admin.from('sales').select('id,receipt_number,total_amount,subtotal,tax_amount,discount_amount,tip_amount,created_at').eq('business_id', auth.profile!.business_id).eq('branch_id', auth.profile!.branch_id).eq('cashier_id', auth.user!.id).eq('status', 'completed').is('deleted_at', null).gte('created_at', openedAt.toISOString()).lte('created_at', closedAt.toISOString()).order('created_at')
+    // Resolve the actual persisted shift first. Reports are tied to that shift
+    // ID so sales from another shift by the same staff member cannot leak in
+    // just because their timestamps overlap.
+    const { data: persistedShift, error: persistedShiftError } = await admin
+      .from('shifts')
+      .select('id,opening_cash')
+      .eq('id', body.reportId)
+      .eq('business_id', auth.profile!.business_id)
+      .eq('branch_id', auth.profile!.branch_id)
+      .eq('cashier_id', auth.user!.id)
+      .maybeSingle()
+    if (persistedShiftError) throw persistedShiftError
+
+    const { data: legacyShift, error: legacyShiftError } = persistedShift
+      ? { data: null, error: null }
+      : await admin
+        .from('shifts')
+        .select('id,opening_cash')
+        .eq('business_id', auth.profile!.business_id)
+        .eq('branch_id', auth.profile!.branch_id)
+        .eq('cashier_id', auth.user!.id)
+        .eq('opened_at', openedAt.toISOString())
+        .maybeSingle()
+    if (legacyShiftError) throw legacyShiftError
+    const authoritativeShift = persistedShift ?? legacyShift
+    if (!authoritativeShift) return NextResponse.json({ error: 'The active shift could not be found. Reopen the shift screen and try again.' }, { status: 404 })
+    const shiftId = authoritativeShift.id
+
+    const { data: sales, error: salesError } = await admin.from('sales').select('id,receipt_number,total_amount,subtotal,tax_amount,discount_amount,tip_amount,created_at').eq('business_id', auth.profile!.business_id).eq('branch_id', auth.profile!.branch_id).eq('cashier_id', auth.user!.id).eq('shift_id', shiftId).eq('status', 'completed').is('deleted_at', null).lte('created_at', closedAt.toISOString()).order('created_at')
     if (salesError) throw salesError
     const saleIds = (sales ?? []).map(sale => sale.id)
-    const [paymentResult, itemsResult, expenseResult] = await Promise.all([
+    const [paymentResult, itemsResult, expenseResult, inventoryResult] = await Promise.all([
       admin.from('payments').select('method,amount').in('sale_id', saleIds).eq('status', 'completed'),
       admin.from('sale_items').select('product_name,quantity,unit_price,cost_price,total_amount,sale_id').in('sale_id', saleIds),
-      admin.from('expenses').select('amount').eq('business_id', auth.profile!.business_id).eq('branch_id', auth.profile!.branch_id).eq('recorded_by', auth.user!.id).is('deleted_at', null).gte('created_at', openedAt.toISOString()).lte('created_at', closedAt.toISOString()),
+      admin.from('expenses').select('amount').eq('business_id', auth.profile!.business_id).eq('branch_id', auth.profile!.branch_id).eq('recorded_by', auth.user!.id).eq('shift_id', shiftId).is('deleted_at', null),
+      admin.from('inventory').select('quantity,product:products!inventory_product_id_fkey(name,name_am,low_stock_alert,track_inventory,is_active,deleted_at)').eq('business_id', auth.profile!.business_id).eq('branch_id', auth.profile!.branch_id),
     ])
     if (paymentResult.error) throw paymentResult.error
     if (itemsResult.error) throw itemsResult.error
     if (expenseResult.error) throw expenseResult.error
+    if (inventoryResult.error) throw inventoryResult.error
     const revenue = (sales ?? []).reduce((sum, sale) => sum + money(sale.total_amount), 0)
     const tips = (sales ?? []).reduce((sum, sale) => sum + money(sale.tip_amount), 0)
     const cogs = (itemsResult.data ?? []).reduce((sum, item) => sum + money(item.quantity) * money(item.cost_price), 0)
@@ -52,9 +101,19 @@ export async function POST(request: Request) {
       products.set(item.product_name, row)
     }
     const itemRevenue = (itemsResult.data ?? []).reduce((sum, item) => sum + money(item.total_amount), 0)
+    const lowStockProducts = (inventoryResult.data ?? []).flatMap((row) => {
+      const product = Array.isArray(row.product) ? row.product[0] : row.product
+      if (!product || product.deleted_at || product.is_active === false || product.track_inventory === false) return []
+      const quantity = money(row.quantity)
+      const alertLevel = Math.max(0, money(product.low_stock_alert))
+      if (quantity > alertLevel) return []
+      return [{ product_name: product.name_am || product.name || 'Product', current_stock: quantity, minimum_threshold: alertLevel }]
+    }).sort((first, second) => first.current_stock - second.current_stock)
     const payments = new Map<string, number>()
     for (const payment of paymentResult.data ?? []) payments.set(payment.method, (payments.get(payment.method) ?? 0) + money(payment.amount))
-    const openingCash = money(body.openingCash)
+    // The opening float is sourced only from the authenticated cashier's
+    // persisted shift. Client-supplied opening amounts are ignored.
+    const openingCash = money(authoritativeShift.opening_cash)
     const actualCash = body.actualCash == null ? null : money(body.actualCash)
     const expectedCash = openingCash + (payments.get('cash') ?? 0)
     const grossProfit = itemRevenue - cogs
@@ -78,7 +137,7 @@ export async function POST(request: Request) {
     const { data: closedShift, error: closeShiftError } = await admin
       .from('shifts')
       .update(shiftValues)
-      .eq('id', body.reportId)
+      .eq('id', shiftId)
       .eq('business_id', auth.profile!.business_id)
       .eq('branch_id', auth.profile!.branch_id)
       .eq('cashier_id', auth.user!.id)
@@ -86,44 +145,208 @@ export async function POST(request: Request) {
       .maybeSingle()
     if (closeShiftError) throw closeShiftError
 
-    if (!closedShift) {
-      const { data: existingShift, error: shiftLookupError } = await admin
-        .from('shifts')
-        .select('id')
+    if (!closedShift) return NextResponse.json({ error: 'The persisted shift could not be updated.' }, { status: 409 })
+
+    // Owner/manager report closure ends all physical custody windows for the
+    // branch in one database update. This is separate from the cashier's cash
+    // shift and never changes inventory quantities or FIFO layers.
+    const custodyInventory: Array<{
+      recipient_name: string
+      product_name: string
+      accepted_float: number
+      sold_qty: number
+      expected_stock: number
+      actual_count: number | null
+      variance: number | null
+    }> = []
+    let custodyShiftCount = 0
+    const canCloseBranch = auth.roles.some(role => role === 'owner' || role === 'manager')
+    if (canCloseBranch) {
+      const closeTimestamp = closedAt.toISOString()
+      const { data: closedCustodyShifts, error: custodyCloseError } = await admin
+        .from('custody_shifts')
+        .update({ status: 'CLOSED', closed_at: closeTimestamp, closed_by: auth.user!.id, close_reason: 'branch_report_close' })
         .eq('business_id', auth.profile!.business_id)
         .eq('branch_id', auth.profile!.branch_id)
-        .eq('cashier_id', auth.user!.id)
-        .eq('opened_at', openedAt.toISOString())
-        .maybeSingle()
-      if (shiftLookupError) throw shiftLookupError
+        .eq('status', 'ACTIVE')
+        .select('id,user_id,opened_at,closed_at')
+      if (custodyCloseError) throw custodyCloseError
 
-      if (existingShift) {
-        const { error } = await admin
-          .from('shifts')
-          .update(shiftValues)
-          .eq('id', existingShift.id)
-          .eq('business_id', auth.profile!.business_id)
-        if (error) throw error
-      } else {
-        const { error } = await admin.from('shifts').insert({
-          id: body.reportId,
-          business_id: auth.profile!.business_id,
-          branch_id: auth.profile!.branch_id,
-          cashier_id: auth.user!.id,
-          opened_by: auth.user!.id,
-          shift_label: 'Full Day',
-          opened_at: openedAt.toISOString(),
-          ...shiftValues,
+      // A repeated close request can find no ACTIVE rows because the previous
+      // request already closed them. Reload the same closure set so the
+      // reconciliation snapshot can be safely repaired/upserted.
+      const { data: sameCloseShifts, error: sameCloseError } = await admin
+        .from('custody_shifts')
+        .select('id,user_id,opened_at,closed_at')
+        .eq('business_id', auth.profile!.business_id)
+        .eq('branch_id', auth.profile!.branch_id)
+        .eq('status', 'CLOSED')
+        .eq('closed_by', auth.user!.id)
+        .eq('closed_at', closeTimestamp)
+        .eq('close_reason', 'branch_report_close')
+      if (sameCloseError) throw sameCloseError
+      const newlyClosedShifts = closedCustodyShifts?.length ? closedCustodyShifts : (sameCloseShifts ?? [])
+      custodyShiftCount = newlyClosedShifts.length
+      const { data: previouslyReconciledShifts, error: priorCustodyError } = await admin
+        .from('custody_shifts')
+        .select('id,user_id,opened_at,closed_at')
+        .eq('business_id', auth.profile!.business_id)
+        .eq('branch_id', auth.profile!.branch_id)
+        .eq('status', 'CLOSED')
+        .eq('close_reason', 'recipient_reconciliation')
+        .gte('closed_at', openedAt.toISOString())
+        .lte('closed_at', closeTimestamp)
+      if (priorCustodyError) throw priorCustodyError
+      const shiftsById = new Map<string, (typeof newlyClosedShifts)[number] | (typeof previouslyReconciledShifts)[number]>()
+      for (const shift of previouslyReconciledShifts ?? []) shiftsById.set(shift.id, shift)
+      for (const shift of newlyClosedShifts) shiftsById.set(shift.id, shift)
+      const custodyShifts = [...shiftsById.values()]
+      const custodyShiftIds = custodyShifts.map(row => row.id)
+
+      if (custodyShiftIds.length) {
+        const { data: custodyEntries, error: custodyEntriesError } = await admin
+          .from('custody_shift_inventory')
+          .select('custody_shift_id,product_id,quantity_received')
+          .in('custody_shift_id', custodyShiftIds)
+        if (custodyEntriesError) throw custodyEntriesError
+
+        const productIds = [...new Set((custodyEntries ?? []).map(row => row.product_id))]
+        const userIds = [...new Set(custodyShifts.map(row => row.user_id))]
+        const minimumOpenedAt = custodyShifts.reduce((minimum, shift) =>
+          shift.opened_at < minimum ? shift.opened_at : minimum, custodyShifts[0].opened_at)
+        const [custodyProducts, custodyUsers, reconciliationResult, allocationResult, kotWastageResult, wastageResult] = await Promise.all([
+          productIds.length
+            ? admin.from('products').select('id,name,name_am,track_inventory').in('id', productIds).eq('business_id', auth.profile!.business_id)
+            : Promise.resolve({ data: [], error: null }),
+          userIds.length
+            ? admin.from('profiles').select('id,full_name').in('id', userIds).eq('business_id', auth.profile!.business_id)
+            : Promise.resolve({ data: [], error: null }),
+          admin.from('custody_shift_reconciliations')
+            .select('custody_shift_id,status,accepted_stock_snapshot,physical_count_snapshot')
+            .in('custody_shift_id', custodyShiftIds),
+          custodyShiftIds.length && productIds.length
+            ? admin.from('kot_sale_allocations').select('custody_shift_id,product_id,quantity,created_at')
+              .eq('business_id', auth.profile!.business_id)
+              .eq('branch_id', auth.profile!.branch_id)
+              .in('custody_shift_id', custodyShiftIds)
+              .in('product_id', productIds)
+              .gte('created_at', minimumOpenedAt)
+              .lte('created_at', closeTimestamp)
+            : Promise.resolve({ data: [], error: null }),
+          custodyShiftIds.length && productIds.length
+            ? admin.from('kot_wastage_allocations').select('custody_shift_id,product_id,quantity,created_at')
+              .eq('business_id', auth.profile!.business_id)
+              .eq('branch_id', auth.profile!.branch_id)
+              .in('custody_shift_id', custodyShiftIds)
+              .in('product_id', productIds)
+              .gte('created_at', minimumOpenedAt)
+              .lte('created_at', closeTimestamp)
+            : Promise.resolve({ data: [], error: null }),
+          userIds.length && productIds.length
+            ? admin.from('inventory_movements').select('user_id,product_id,quantity,created_at')
+              .eq('business_id', auth.profile!.business_id)
+              .eq('branch_id', auth.profile!.branch_id)
+              .eq('movement_type', 'waste')
+              .in('user_id', userIds)
+              .in('product_id', productIds)
+              .gte('created_at', minimumOpenedAt)
+              .lte('created_at', closeTimestamp)
+            : Promise.resolve({ data: [], error: null }),
+        ])
+        if (custodyProducts.error || custodyUsers.error || reconciliationResult.error || allocationResult.error || kotWastageResult.error || wastageResult.error) {
+          throw custodyProducts.error ?? custodyUsers.error ?? reconciliationResult.error ?? allocationResult.error ?? kotWastageResult.error ?? wastageResult.error
+        }
+        const productsById = new Map((custodyProducts.data ?? []).map(row => [row.id, row.name_am || row.name || 'Product']))
+        const usersById = new Map((custodyUsers.data ?? []).map(row => [row.id, row.full_name || 'Staff member']))
+        const trackedProductIds = new Set((custodyProducts.data ?? []).filter(row => row.track_inventory !== false).map(row => row.id))
+        const entriesByShift = new Map<string, Map<string, number>>()
+        for (const entry of custodyEntries ?? []) {
+          if (!trackedProductIds.has(entry.product_id)) continue
+          const byProduct = entriesByShift.get(entry.custody_shift_id) ?? new Map<string, number>()
+          byProduct.set(entry.product_id, (byProduct.get(entry.product_id) ?? 0) + money(entry.quantity_received))
+          entriesByShift.set(entry.custody_shift_id, byProduct)
+        }
+
+        const soldByShift = new Map<string, Map<string, number>>()
+        for (const allocation of allocationResult.data ?? []) {
+          if (!trackedProductIds.has(allocation.product_id)) continue
+          const byProduct = soldByShift.get(allocation.custody_shift_id) ?? new Map<string, number>()
+          byProduct.set(allocation.product_id, (byProduct.get(allocation.product_id) ?? 0) + money(allocation.quantity))
+          soldByShift.set(allocation.custody_shift_id, byProduct)
+        }
+
+        const wasteByShift = new Map<string, Map<string, number>>()
+        for (const allocation of kotWastageResult.data ?? []) {
+          if (!trackedProductIds.has(allocation.product_id)) continue
+          const byProduct = wasteByShift.get(allocation.custody_shift_id) ?? new Map<string, number>()
+          byProduct.set(allocation.product_id, (byProduct.get(allocation.product_id) ?? 0) + money(allocation.quantity))
+          wasteByShift.set(allocation.custody_shift_id, byProduct)
+        }
+        for (const movement of wastageResult.data ?? []) {
+          if (!movement.user_id || !trackedProductIds.has(movement.product_id)) continue
+          const custodyShift = custodyShifts.find(shift =>
+            shift.user_id === movement.user_id
+            && shift.opened_at <= movement.created_at
+            && (shift.closed_at ?? closeTimestamp) >= movement.created_at,
+          )
+          if (!custodyShift) continue
+          const byProduct = wasteByShift.get(custodyShift.id) ?? new Map<string, number>()
+          byProduct.set(movement.product_id, (byProduct.get(movement.product_id) ?? 0) + Math.abs(money(movement.quantity)))
+          wasteByShift.set(custodyShift.id, byProduct)
+        }
+
+        const reconciliationsByShift = new Map((reconciliationResult.data ?? []).map(row => [row.custody_shift_id, row]))
+
+        const reconciliationRows = custodyShifts.map(shift => {
+          const acceptedStock = [...(entriesByShift.get(shift.id) ?? new Map())].map(([productId, quantity]) => ({
+            product_id: productId,
+            product_name: productsById.get(productId) ?? 'Product',
+            quantity_received: quantity,
+            physical_count: null,
+            difference: null,
+          }))
+          const savedReport = reconciliationsByShift.get(shift.id)
+          const submittedLines = Array.isArray(savedReport?.accepted_stock_snapshot) ? savedReport.accepted_stock_snapshot as Array<Record<string, unknown>> : []
+          const physicalLines = Array.isArray(savedReport?.physical_count_snapshot) ? savedReport.physical_count_snapshot as Array<Record<string, unknown>> : []
+          for (const item of acceptedStock) {
+            const soldQty = soldByShift.get(shift.id)?.get(item.product_id) ?? 0
+            const savedLine = submittedLines.find(line => line.product_id === item.product_id)
+            const recordedWastage = wasteByShift.get(shift.id)?.get(item.product_id) ?? 0
+            const enteredWastage = savedReport?.status === 'submitted'
+              ? money(savedLine?.quantity_wasted)
+              : 0
+            const wastageQty = Math.max(recordedWastage, enteredWastage)
+            const expectedStock = item.quantity_received - soldQty - wastageQty
+            const countLine = physicalLines.find(line => line.product_id === item.product_id)
+            const actualCount = savedReport?.status === 'submitted' && countLine?.physical_count != null
+              ? money(countLine.physical_count)
+              : null
+            custodyInventory.push({
+              recipient_name: usersById.get(shift.user_id) ?? 'Staff member',
+              product_name: item.product_name,
+              accepted_float: item.quantity_received,
+              sold_qty: soldQty,
+              expected_stock: expectedStock,
+              actual_count: actualCount,
+              variance: actualCount == null ? null : actualCount - expectedStock,
+            })
+          }
+          return {
+            business_id: auth.profile!.business_id,
+            branch_id: auth.profile!.branch_id,
+            custody_shift_id: shift.id,
+            closed_by: auth.user!.id,
+            closed_at: closeTimestamp,
+            accepted_stock_snapshot: acceptedStock,
+            physical_count_snapshot: null,
+            status: 'not_submitted',
+          }
         })
-        if (error) throw error
+        const { error: reconciliationError } = await admin
+          .from('custody_shift_reconciliations')
+          .upsert(reconciliationRows, { onConflict: 'custody_shift_id', ignoreDuplicates: true })
+        if (reconciliationError) throw reconciliationError
       }
-    }
-
-    if (prior?.status === 'sent' || prior?.status === 'disabled') {
-      return NextResponse.json({ success: true, duplicate: true, status: prior.status })
-    }
-    if (prior?.status === 'sending' && Date.now() - Date.parse(prior.updated_at ?? '') < 5 * 60_000) {
-      return NextResponse.json({ success: true, duplicate: true, status: 'sending' })
     }
 
     const { data: settings, error: settingsError } = await admin.from('business_notification_settings').select('business_id,telegram_enabled').eq('business_id', auth.profile!.business_id).maybeSingle()
@@ -175,9 +398,12 @@ export async function POST(request: Request) {
         { label: 'Expected drawer cash', value: formatMoney(expectedCash) },
         { label: 'Counted cash', value: actualCash == null ? 'Not counted' : formatMoney(actualCash) },
         { label: 'Cash difference', value: actualCash == null ? 'Not counted' : formatMoney(actualCash - expectedCash) },
+        ...(canCloseBranch ? [{ label: 'Custody shifts closed', value: String(custodyShiftCount) }] : []),
       ],
       payments: Array.from(payments, ([method, amount]) => ({ method: paymentLabels[method] || method.replace(/_/g, ' '), amount })),
       products: Array.from(products, ([name, row]) => ({ name, quantity: row.quantity, sales: row.amount })),
+      lowStockProducts,
+      custodyInventory,
     })
     const recipientDeliveryRows = recipients.map(recipient => ({ business_id: auth.profile!.business_id!, shift_report_id: body.reportId as string, recipient_id: recipient.id }))
     const { error: recipientSeedError } = await admin.from('shift_report_recipient_deliveries').upsert(recipientDeliveryRows, { onConflict: 'business_id,shift_report_id,recipient_id', ignoreDuplicates: true })

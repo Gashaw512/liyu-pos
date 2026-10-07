@@ -19,6 +19,7 @@ interface AppShellProps {
   children: ReactNode
   locale: string
   role: string
+  roles?: string[]
   fullName: string
   businessName: string
   noScroll?: boolean
@@ -27,6 +28,7 @@ interface AppShellProps {
 interface ErpStateContextType {
   locale: string
   role: string
+  roles: string[]
   fullName: string
   businessName: string
   isSystemLocked: boolean
@@ -124,6 +126,7 @@ export default function AppShell({
   children,
   locale,
   role,
+  roles = [role],
   fullName,
   businessName,
   noScroll = false,
@@ -170,6 +173,7 @@ const isPOSPage =
       value={{
         locale,
         role,
+        roles,
         fullName,
         businessName,
         isSystemLocked,
@@ -209,8 +213,8 @@ const isPOSPage =
 
             <span>
               {isAm
-                ? 'ግንኙነት ተቋርጧል! የሽያጭ መረጃዎች በአገር ውስጥ (Offline) እየተቀመጡ ነው።'
-                : 'Offline Mode Active! Transactions are currently caching safely inside local atomic browser state.'}
+                ? 'ኢንተርኔት የለም። ሽያጮችና ትዕዛዞች በዚህ መሣሪያ ይቀመጣሉ።'
+                : 'Offline. Sales and orders are saved on this device and will sync when online.'}
             </span>
           </div>
         )}

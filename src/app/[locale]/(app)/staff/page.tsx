@@ -2,9 +2,11 @@ import type { Route } from "next";
 import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
+import { getAssignedProfileRoles } from "@/lib/shift-reports/server";
 import StaffWorkspaceTabs from "@/components/user/StaffWorkspaceTabs";
 
 import type { Profile, StaffInvitation } from "@/types/database/users";
+import type { AvailableRole } from "@/services/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -38,10 +40,13 @@ export default async function StaffManagementPage({
     .eq("id", user.id)
     .single();
 
+  const roles = profile
+    ? await getAssignedProfileRoles(supabase, user.id, profile.role)
+    : []
   if (
     profileError ||
     !profile?.business_id ||
-    (profile.role !== "owner" && profile.role !== "manager")
+    !roles.some((role) => role === "owner" || role === "manager")
   ) {
     redirect(`/${locale}/dashboard`);
   }
@@ -64,7 +69,19 @@ export default async function StaffManagementPage({
     console.error("[STAFF MANAGEMENT] Failed to load staff:", staffError);
   }
 
-  const typedStaff = (staffMembers ?? []) as Profile[];
+  const staffRows = (staffMembers ?? []) as Profile[]
+  const staffIds = staffRows.map((staff) => staff.id)
+  const { data: roleRows, error: roleRowsError } = staffIds.length
+    ? await supabase.from("profile_roles").select("profile_id,role_name").in("profile_id", staffIds)
+    : { data: [], error: null }
+  if (roleRowsError) console.error("[STAFF MANAGEMENT] Failed to load staff roles:", roleRowsError)
+  const rolesByStaff = new Map<string, Set<AvailableRole>>()
+  for (const staff of staffRows) rolesByStaff.set(staff.id, new Set([staff.role as AvailableRole]))
+  for (const assignment of roleRows ?? []) rolesByStaff.get(assignment.profile_id)?.add(assignment.role_name as AvailableRole)
+  const typedStaff = staffRows.map((staff) => ({
+    ...staff,
+    roles: [...(rolesByStaff.get(staff.id) ?? new Set([staff.role as AvailableRole]))],
+  }))
 
   // --------------------------------------------------
   // Pending invitations

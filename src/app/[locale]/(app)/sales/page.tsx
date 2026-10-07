@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react'
 import { useParams, useRouter } from 'next/navigation'
@@ -20,6 +21,7 @@ import {
   toLocalActiveShift,
 } from '@/lib/offline/shiftContext'
 import { useBusinessContext } from '@/lib/auth/useBusinessContext'
+import { useErp } from '@/components/layout/AppShell'
 import createClient from '@/lib/supabase/client'
 
 import POSHeader from '../../../../components/pos/POSHeader'
@@ -80,6 +82,12 @@ export default function SalesPage() {
   const isAm = locale === 'am'
 
   const { toast } = useToast()
+  const { role, roles } = useErp()
+  const assignedRoles = roles.length ? roles : [role]
+  const hasRole = (allowed: string[]) => allowed.some((candidate) => assignedRoles.includes(candidate))
+  const canCheckout = hasRole(['owner', 'manager', 'cashier', 'barman'])
+  const isWaiter = hasRole(['waiter']) && !canCheckout
+  const canViewSalesReport = hasRole(['owner', 'manager', 'cashier', 'barman'])
 
   const {
     businessId,
@@ -105,12 +113,16 @@ export default function SalesPage() {
     useState<POSTable | null>(null)
   const [cart, setCart] = useState<POSCartItem[]>([])
   const [activeShift, setActiveShift] = useState<Shift | null>(null)
+  const closingShiftInstanceRef = useRef<Shift | null>(null)
 
   const [showCheckout, setShowCheckout] = useState(false)
+  const [roomChargeConfiguration, setRoomChargeConfiguration] = useState<{ businessId: string; enabled: boolean } | null>(null)
   const [billOpen, setBillOpen] = useState(false)
   const [savingTab, setSavingTab] = useState(false)
   const [openingShift, setOpeningShift] = useState(false)
   const [closingShift, setClosingShift] = useState(false)
+  const [finalizingSale, setFinalizingSale] = useState(false)
+  const finalizingSaleRef = useRef(false)
   const [closedShiftFeedback, setClosedShiftFeedback] = useState<ClosedShiftFeedback | null>(null)
   const [closeShiftDialogOpen, setCloseShiftDialogOpen] = useState(false)
   const [actualCashCount, setActualCashCount] = useState('')
@@ -125,6 +137,28 @@ export default function SalesPage() {
   const [cashFloat, setCashFloat] =
     useState(DEFAULT_CASH_FLOAT)
   const [manualTip, setManualTip] = useState('')
+
+  const roomChargeEnabled = Boolean(
+    canCheckout && businessId &&
+    roomChargeConfiguration?.businessId === businessId &&
+    roomChargeConfiguration.enabled,
+  )
+
+  useEffect(() => {
+    if (!businessId || !canCheckout) return
+
+    let active = true
+    void fetch('/api/billing/charge-to-room', { cache: 'no-store' })
+      .then(async (response) => response.ok ? response.json() as Promise<{ enabled?: boolean }> : null)
+      .then((result) => {
+        if (active) setRoomChargeConfiguration({ businessId, enabled: result?.enabled === true })
+      })
+      .catch(() => {
+        if (active) setRoomChargeConfiguration({ businessId, enabled: false })
+      })
+
+    return () => { active = false }
+  }, [businessId, canCheckout])
 
   const [hasUnsavedChanges, setHasUnsavedChanges] =
     useState(false)
@@ -250,7 +284,12 @@ export default function SalesPage() {
 
   const resolveExistingOpenShift = useCallback(
     async (): Promise<Shift | null> => {
-      if (!businessId || !branchId || !userId) {
+      if (
+        !businessId ||
+        !branchId ||
+        !userId ||
+        (typeof navigator !== 'undefined' && !navigator.onLine)
+      ) {
         return null
       }
 
@@ -313,12 +352,40 @@ export default function SalesPage() {
             'current',
           )) || null
 
+        let remoteOpenShift: Shift | null = null
         if (businessId && branchId && userId) {
-          const remoteOpenShift = await resolveExistingOpenShift()
-          if (remoteOpenShift) {
-            if (!currentShift || !isSameOpenShiftInstance(currentShift, remoteOpenShift)) {
-              currentShift = remoteOpenShift
-            }
+          remoteOpenShift = await resolveExistingOpenShift()
+        }
+
+        const pendingClosures = await db.getAll('pending_shift_closures')
+        const closeAlreadyQueued = pendingClosures.some((closure) =>
+          [currentShift, remoteOpenShift, closingShiftInstanceRef.current].some((shift) =>
+            isDuplicateShiftClosure(closure, shift),
+          ),
+        )
+
+        const closeInProgress = [currentShift, remoteOpenShift].some((shift) =>
+          isDuplicateShiftClosure({
+            businessId: closingShiftInstanceRef.current?.business_id,
+            branchId: closingShiftInstanceRef.current?.branch_id,
+            cashierId: closingShiftInstanceRef.current?.cashier_id,
+            openedAt: closingShiftInstanceRef.current?.opened_at,
+          }, shift),
+        )
+
+        if (closeAlreadyQueued || closeInProgress) {
+          // A server read may still show the open row while its queued close
+          // is syncing. Do not resurrect that shift in the POS.
+          await db.delete('active_shift', 'current')
+          currentShift = null
+          if (navigator.onLine) {
+            void import('@/lib/offline/syncEngine').then(({ syncEngine }) =>
+              syncEngine.syncAll(),
+            )
+          }
+        } else if (remoteOpenShift) {
+          if (!currentShift || !isSameOpenShiftInstance(currentShift, remoteOpenShift)) {
+            currentShift = remoteOpenShift
           }
         }
 
@@ -367,7 +434,7 @@ export default function SalesPage() {
         }
 
         const data =
-          await loadPOSDataFromDB(db)
+          await loadPOSDataFromDB(db, { businessId, branchId })
 
         /*
          * loadPOSDataFromDB() reads active_shift itself,
@@ -390,6 +457,16 @@ export default function SalesPage() {
         setTables(
           data.tables,
         )
+
+        setSelectedTable((currentTable) => {
+          if (!currentTable) return currentTable
+          return data.tables.find((table) => table.id === currentTable.id) ??
+            data.tables.find((table) =>
+              table.name === currentTable.name ||
+              table.table_number === currentTable.table_number,
+            ) ??
+            currentTable
+        })
       } catch (error) {
         console.error(
           '[POS] Failed to load POS data:',
@@ -418,6 +495,31 @@ export default function SalesPage() {
     businessContextLoading,
     loadPOSData,
   ])
+
+  // POS stock badges use the local snapshot for offline work. Refresh it on
+  // entry and after reconnect/focus so online cashiers see the current branch
+  // quantity. Keep this separate from sync-complete to avoid a refresh loop.
+  useEffect(() => {
+    if (businessContextLoading || !businessId || !branchId || !userId) return
+
+    const refreshOnlineCatalog = (): void => {
+      if (!navigator.onLine) return
+      void import('@/lib/offline/syncEngine').then(({ syncEngine }) =>
+        syncEngine.refreshCatalog(),
+      )
+    }
+
+    refreshOnlineCatalog()
+    window.addEventListener('online', refreshOnlineCatalog)
+    window.addEventListener('focus', refreshOnlineCatalog)
+    document.addEventListener('visibilitychange', refreshOnlineCatalog)
+
+    return () => {
+      window.removeEventListener('online', refreshOnlineCatalog)
+      window.removeEventListener('focus', refreshOnlineCatalog)
+      document.removeEventListener('visibilitychange', refreshOnlineCatalog)
+    }
+  }, [businessContextLoading, businessId, branchId, userId])
 
   useEffect(() => {
     const refreshCatalog = () => {
@@ -491,8 +593,13 @@ export default function SalesPage() {
   // ==========================================================
 
   const loadTableTab = useCallback(
-    async (table: POSTable) => {
+    async (table: POSTable, refreshServer = true) => {
       try {
+        if (refreshServer && typeof navigator !== 'undefined' && navigator.onLine) {
+          const { syncEngine } = await import('@/lib/offline/syncEngine')
+          await syncEngine.refreshOpenTableOrders()
+        }
+
         const db = await getDB()
 
         if (!db.objectStoreNames.contains('open_tabs')) {
@@ -529,6 +636,31 @@ export default function SalesPage() {
     },
     [],
   )
+
+  useEffect(() => {
+    const refreshTableOrders = () => {
+      void loadPOSData()
+      if (selectedTable && !hasUnsavedChanges) {
+        void loadTableTab(selectedTable, false)
+      }
+    }
+
+    window.addEventListener('liyu:table-orders-updated', refreshTableOrders)
+    return () => window.removeEventListener('liyu:table-orders-updated', refreshTableOrders)
+  }, [hasUnsavedChanges, loadPOSData, loadTableTab, selectedTable])
+
+  useEffect(() => {
+    const refreshConfiguredTables = () => {
+      if (!navigator.onLine) return
+      void import('@/lib/offline/syncEngine').then(({ syncEngine }) =>
+        syncEngine.refreshOpenTableOrders(),
+      )
+    }
+
+    refreshConfiguredTables()
+    window.addEventListener('online', refreshConfiguredTables)
+    return () => window.removeEventListener('online', refreshConfiguredTables)
+  }, [])
 
   // ==========================================================
   // SELECT TABLE
@@ -857,6 +989,7 @@ export default function SalesPage() {
 
       setClosedShiftFeedback(null)
       setActualCashCount('')
+      closingShiftInstanceRef.current = null
       setActiveShift(
         newShift,
       )
@@ -911,10 +1044,17 @@ export default function SalesPage() {
   }
 
   const handleCloseShift = async () => {
+    if (!hasRole(['owner', 'manager', 'cashier'])) return
     if (closingShift) return
     if (!activeShift) return
 
-    if (hasUnsavedChanges || (cartHasItems && !selectedTable)) {
+    // Derive this at click time instead of relying only on the effect-updated
+    // flag, so a very fast add-then-close cannot discard an unsaved table item.
+    const hasUncommittedOrder = cartHasItems && (
+      !selectedTable || serializeCart(cart) !== savedCartSnapshot
+    )
+
+    if (hasUncommittedOrder) {
       toast(
         isAm
           ? 'ፈረቃውን ከመዝጋትዎ በፊት ክፍያውን ያጠናቅቁ ወይም ትዕዛዙን ያስቀምጡ።'
@@ -930,6 +1070,7 @@ export default function SalesPage() {
   const closeShift = async (countedCash: number | null) => {
     if (closingShift) return
 
+    closingShiftInstanceRef.current = activeShift
     setClosingShift(true)
 
     try {
@@ -962,10 +1103,15 @@ export default function SalesPage() {
           setManualTip('')
           setBillOpen(false)
 
+          if (navigator.onLine) {
+            const { syncEngine } = await import('@/lib/offline/syncEngine')
+            void syncEngine.syncAll()
+          }
+
           toast(
             isAm
               ? 'ይህ ፈረቃ በሌላ መሣሪያ አስቀድሞ ተዘግቷል። ሪፖርቱ እንደገና አይላክም።'
-              : 'This shift has already been closed elsewhere; the report is not being sent twice.',
+              : 'This shift is already saved as closing. The app will finish it without sending the report twice.',
             'info',
           )
 
@@ -1012,6 +1158,7 @@ export default function SalesPage() {
         void syncEngine.syncAll()
       }
     } catch (error) {
+      closingShiftInstanceRef.current = null
       console.error(
         '[POS] Failed to close shift:',
         error,
@@ -1045,6 +1192,97 @@ export default function SalesPage() {
   // SAVE TABLE ORDER
   // ==========================================================
 
+  const clearCurrentOrder = async () => {
+    const table = selectedTable
+    if (table) {
+      const db = await getDB()
+      const [tabs, queuedOrders] = await Promise.all([
+        db.getAll('open_tabs'),
+        db.getAll('pending_table_orders'),
+      ])
+      const tableTabs = tabs.filter((tab) => tabBelongsToTable(tab, table))
+      const queuedForTable = queuedOrders
+        .filter((order) => order.tableId === table.id)
+        .sort((first, second) => first.createdAt.localeCompare(second.createdAt))
+      const firstSave = queuedForTable.find((order) => order.operation === 'save')
+      const baseItems = firstSave?.baseItems ?? tableTabs[0]?.items ?? []
+      const transaction = db.transaction(['open_tabs', 'pending_table_orders'], 'readwrite')
+      const orderStore = transaction.objectStore('pending_table_orders')
+
+      for (const order of queuedForTable) {
+        if (order.operation === 'save') await orderStore.delete(order.localId)
+      }
+      for (const tab of tableTabs) {
+        await transaction.objectStore('open_tabs').delete(tab.id)
+      }
+
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(table.id)) {
+        await orderStore.put({
+          localId: crypto.randomUUID(),
+          tableId: table.id,
+          tableNumber: table.table_number || table.name,
+          businessId: businessId || activeShift?.business_id || '',
+          branchId: branchId || activeShift?.branch_id || '',
+          cashierId: userId || activeShift?.cashier_id || '',
+          operation: 'cancel',
+          baseItems,
+          items: [],
+          totalAmount: 0,
+          createdAt: new Date().toISOString(),
+          attempts: 0,
+        })
+      }
+
+      await transaction.done
+    }
+
+    setCart([])
+    setSelectedTable(null)
+    setSavedCartSnapshot(EMPTY_CART_SNAPSHOT)
+    setHasUnsavedChanges(false)
+    setShowCheckout(false)
+    setBillOpen(false)
+    setManualTip('')
+    await loadPOSData()
+
+    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      const { syncEngine } = await import('@/lib/offline/syncEngine')
+      void syncEngine.syncAll()
+    }
+  }
+
+  const handleRestoreCartItem = (item: POSCartItem) => {
+    setCart((current) => {
+      const existing = current.find((entry) => entry.id === item.id)
+      if (existing) {
+        return current.map((entry) => entry.id === item.id
+          ? { ...entry, quantity: entry.quantity + item.quantity }
+          : entry)
+      }
+      return [...current, item]
+    })
+    if (selectedTable) setHasUnsavedChanges(true)
+  }
+
+  const handleClearOrder = () => {
+    if (!cartHasItems) return
+
+    setConfirmDialog({
+      open: true,
+      title: isAm ? 'ትዕዛዙን ያጽዱ?' : 'Clear this order?',
+      message: selectedTable
+        ? isAm ? `${selectedTable.name} ላይ ያለውን ትዕዛዝ ሙሉ በሙሉ ማጥፋት ይፈልጋሉ?` : `Remove the saved order for ${selectedTable.name}?`
+        : isAm ? 'ሁሉንም ዕቃዎች ከዚህ ትዕዛዝ ማጥፋት ይፈልጋሉ?' : 'Remove all items from this order?',
+      onConfirm: () => {
+        closeConfirmDialog()
+        void clearCurrentOrder().catch((error) => {
+          console.error('[POS] Failed to clear the current order:', error)
+          toast(isAm ? 'ትዕዛዙን ማጥፋት አልተቻለም' : 'Could not clear this order.', 'error')
+        })
+      },
+    })
+  }
+
   const handleSaveTab = async () => {
     if (
       !selectedTable ||
@@ -1065,27 +1303,42 @@ export default function SalesPage() {
         table: selectedTable,
         cart,
         totalBill,
+        businessId: businessId || activeShift?.business_id || '',
+        branchId: branchId || activeShift?.branch_id || '',
+        cashierId: userId || activeShift?.cashier_id || '',
       })
 
       setSavedCartSnapshot(result.snapshot)
       setHasUnsavedChanges(false)
-
       await loadPOSData()
-
-      setCart([])
-      setSelectedTable(null)
-      setSavedCartSnapshot(EMPTY_CART_SNAPSHOT)
-      setHasUnsavedChanges(false)
-      setShowCheckout(false)
-      setBillOpen(false)
-      setManualTip('')
+      setTables((currentTables) =>
+        currentTables.map((table) =>
+          table.id === selectedTable.id
+            ? { ...table, has_open_tab: true }
+            : table,
+        ),
+      )
+      setSelectedTable((currentTable) =>
+        currentTable?.id === selectedTable.id
+          ? { ...currentTable, has_open_tab: true }
+          : currentTable,
+      )
 
       toast(
         isAm
-          ? 'ትዕዛዙ በጠረጴዛው ላይ ተቀምጧል!'
-          : 'Order saved to table successfully.',
+          ? typeof navigator !== 'undefined' && !navigator.onLine
+            ? 'ትዕዛዙ በዚህ መሣሪያ ተቀምጧል። ኢንተርኔት ሲመለስ ይላካል።'
+            : 'ትዕዛዙ ተቀምጧል።'
+          : typeof navigator !== 'undefined' && !navigator.onLine
+            ? 'Order saved on this device. It will sync when you are online.'
+            : 'Order saved.',
         'success',
       )
+
+      if (typeof navigator !== 'undefined' && navigator.onLine) {
+        const { syncEngine } = await import('@/lib/offline/syncEngine')
+        void syncEngine.syncAll()
+      }
     } catch (error) {
       console.error(
         '[POS] Failed to save table tab:',
@@ -1117,8 +1370,13 @@ export default function SalesPage() {
 
   const handleFinalizeSale = async (
     splitPayments: PaymentSplit,
+    roomNumber?: string,
   ) => {
-    if (!activeShift || cart.length === 0) return
+    if (!canCheckout) return
+    if (finalizingSaleRef.current || !activeShift || cart.length === 0) return
+
+    finalizingSaleRef.current = true
+    setFinalizingSale(true)
 
     try {
       const safeShift = await normalizeActiveShiftContext(activeShift)
@@ -1135,6 +1393,7 @@ export default function SalesPage() {
 
       const sale = await finalizeSale({
         splitPayments,
+        roomNumber,
         manualTip,
         activeShift: safeShift,
         selectedTable,
@@ -1160,8 +1419,12 @@ export default function SalesPage() {
 
       toast(
         isAm
-          ? 'ሽያጩ በተሳካ ሁኔታ ተቀምጧል'
-          : 'Sale completed successfully.',
+          ? typeof navigator !== 'undefined' && !navigator.onLine
+            ? 'ሽያጩ በዚህ መሣሪያ ተቀምጧል። ኢንተርኔት ሲመለስ ይላካል።'
+            : 'ሽያጩ ተቀምጧል።'
+          : typeof navigator !== 'undefined' && !navigator.onLine
+            ? 'Sale saved on this device. It will sync when you are online.'
+            : 'Sale saved.',
         'success',
       )
 
@@ -1197,6 +1460,9 @@ export default function SalesPage() {
           : 'Unable to save the sale locally.',
         'error',
       )
+    } finally {
+      finalizingSaleRef.current = false
+      setFinalizingSale(false)
     }
   }
 
@@ -1222,7 +1488,7 @@ export default function SalesPage() {
   // OPEN SHIFT
   // ==========================================================
 
-  if (!activeShift) {
+  if (!activeShift && !isWaiter) {
     return (
       <div className="flex min-h-full items-start justify-center overflow-y-auto bg-coffee-900 px-3 pb-[calc(5rem+env(safe-area-inset-bottom))] pt-4 sm:items-center sm:p-4">
         <div className="w-full max-w-sm overflow-hidden rounded-3xl bg-cream-50 shadow-elevated">
@@ -1368,6 +1634,9 @@ export default function SalesPage() {
       <div className="relative z-50 shrink-0">
         <POSHeader
           isAm={isAm}
+          canViewSalesReport={canViewSalesReport}
+          canCheckout={canCheckout}
+          canCloseShift={hasRole(['owner', 'manager', 'cashier'])}
           selectedTable={selectedTable}
           totalItems={totalItems}
           totalBill={totalBill}
@@ -1391,7 +1660,7 @@ export default function SalesPage() {
             <SellerDailyStatement
               businessId={businessId}
               branchId={branchId}
-              cashierId={activeShift.cashier_id ?? userId}
+              cashierId={activeShift?.cashier_id ?? userId}
               locale={locale}
               isAm={isAm}
               initiallyExpanded
@@ -1409,14 +1678,18 @@ export default function SalesPage() {
             savingTab={savingTab}
             onIncrease={increaseQuantity}
             onDecrease={decreaseQuantity}
+            onRestoreItem={handleRestoreCartItem}
             onClearItem={clearCartItem}
             onSaveTab={handleSaveTab}
             onCheckout={() => {
+              if (!canCheckout) return
               setShowCheckout(true)
               setBillOpen(false)
             }}
+            onClearCart={handleClearOrder}
             onClose={() => setBillOpen(false)}
             isAm={isAm}
+            canCheckout={canCheckout}
           />
         )}
       </div>
@@ -1583,6 +1856,8 @@ export default function SalesPage() {
                 onBack={() => setShowCheckout(false)}
                 onConfirmPayment={handleFinalizeSale}
                 isAm={isAm}
+                isSubmitting={finalizingSale}
+                roomChargeEnabled={roomChargeEnabled}
               />
             </div>
           </main>
@@ -1599,7 +1874,7 @@ export default function SalesPage() {
         onCancel={closeConfirmDialog}
       />
 
-      <CloseShiftDialog
+      {activeShift && <CloseShiftDialog
         open={closeShiftDialogOpen}
         isAm={isAm}
         openingCash={Number(activeShift?.opening_cash) || 0}
@@ -1608,7 +1883,7 @@ export default function SalesPage() {
         onActualCashChange={setActualCashCount}
         onConfirm={confirmCloseShift}
         onCancel={() => setCloseShiftDialogOpen(false)}
-      />
+      />}
     </div>
   )
 }

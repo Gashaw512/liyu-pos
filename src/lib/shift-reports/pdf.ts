@@ -7,6 +7,16 @@ export interface ShiftReportPdfData {
   summary: Array<{ label: string; value: string }>
   payments: Array<{ method: string; amount: number }>
   products: Array<{ name: string; quantity: number; sales: number }>
+  lowStockProducts?: Array<{ product_name: string; current_stock: number; minimum_threshold: number }>
+  custodyInventory?: Array<{
+    recipient_name: string
+    product_name: string
+    accepted_float: number
+    sold_qty: number
+    expected_stock: number
+    actual_count: number | null
+    variance: number | null
+  }>
 }
 
 function pdfText(value: unknown): string {
@@ -146,6 +156,80 @@ export function createShiftReportPdf(report: ShiftReportPdfData): Buffer {
       text(money(product.sales), 460, y, 9, true)
       y -= 17
       line(50, y + 5, 545, y + 5, '0.93 0.91 0.88')
+    }
+  }
+
+  section('Current low-stock products')
+  const drawStockHeader = () => {
+    text('PRODUCT', 50, y, 8, true, '0.45 0.38 0.35')
+    text('ON HAND', 350, y, 8, true, '0.45 0.38 0.35')
+    text('ALERT LEVEL', 455, y, 8, true, '0.45 0.38 0.35')
+    y -= 8
+    line(50, y, 545, y)
+    y -= 17
+  }
+  const lowStockProducts = report.lowStockProducts ?? []
+  if (!lowStockProducts.length) {
+    text('No low-stock products in this inventory snapshot.', 50, y, 9, false, '0.45 0.38 0.35')
+    y -= 18
+  } else {
+    drawStockHeader()
+    for (const product of lowStockProducts) {
+      if (y < 72) {
+        finishPage()
+        startPage(true)
+        section('Current low-stock products (continued)')
+        drawStockHeader()
+      }
+      const productName = pdfText(product.product_name) || 'Product name unavailable'
+      const truncatedName = productName.length > 48 ? `${productName.slice(0, 45)}...` : productName
+      text(truncatedName, 50, y, 9)
+      text(product.current_stock.toLocaleString('en-US', { maximumFractionDigits: 2 }), 350, y, 9)
+      text(product.minimum_threshold.toLocaleString('en-US', { maximumFractionDigits: 2 }), 455, y, 9)
+      y -= 17
+      line(50, y + 5, 545, y + 5, '0.93 0.91 0.88')
+    }
+  }
+
+  if (report.custodyInventory?.length) {
+    section('Station stock variance')
+    const drawCustodyHeader = () => {
+      text('CUSTODIAN', 50, y, 8, true, '0.45 0.38 0.35')
+      text('PRODUCT', 128, y, 8, true, '0.45 0.38 0.35')
+      text('ACCEPTED', 248, y, 7, true, '0.45 0.38 0.35')
+      text('SOLD', 310, y, 7, true, '0.45 0.38 0.35')
+      text('EXPECTED', 350, y, 7, true, '0.45 0.38 0.35')
+      text('COUNT', 414, y, 7, true, '0.45 0.38 0.35')
+      text('VARIANCE', 470, y, 7, true, '0.45 0.38 0.35')
+      y -= 8
+      line(50, y, 545, y)
+      y -= 17
+    }
+    drawCustodyHeader()
+    for (const item of report.custodyInventory) {
+      if (y < 72) {
+        finishPage()
+        startPage(true)
+        section('Station stock variance (continued)')
+        drawCustodyHeader()
+      }
+      const staff = pdfText(item.recipient_name) || 'Staff member'
+      const productName = pdfText(item.product_name) || 'Product unavailable'
+      const number = (value: number) => value.toLocaleString('en-US', { maximumFractionDigits: 2 })
+      text(staff.length > 14 ? `${staff.slice(0, 11)}...` : staff, 50, y, 7)
+      text(productName.length > 19 ? `${productName.slice(0, 16)}...` : productName, 128, y, 7)
+      text(number(item.accepted_float), 248, y, 7)
+      text(number(item.sold_qty), 310, y, 7)
+      text(number(item.expected_stock), 350, y, 7)
+      text(item.actual_count == null ? 'Pending' : number(item.actual_count), 414, y, 7)
+      const variance = item.variance == null ? 'Pending' : `${item.variance > 0 ? '+' : ''}${number(item.variance)}`
+      text(variance, 470, y, 7, true, item.variance != null && item.variance !== 0 ? '0.60 0.32 0.08' : '0.18 0.48 0.30')
+      y -= 17
+      line(50, y + 5, 545, y + 5, '0.93 0.91 0.88')
+    }
+    if (report.custodyInventory.some(item => item.actual_count == null)) {
+      text('Pending means the recipient has not submitted a physical count.', 50, y - 4, 8, false, '0.45 0.38 0.35')
+      y -= 20
     }
   }
 

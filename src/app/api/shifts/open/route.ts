@@ -11,7 +11,7 @@ const SHIFT_LABELS = new Set(['Morning', 'Afternoon', 'Evening', 'Night', 'Full 
 export async function POST(request: Request) {
   try {
     const client = await createClient()
-    const auth = await getAuthorizedProfile(client, ['owner', 'manager', 'cashier', 'waiter'])
+    const auth = await getAuthorizedProfile(client, ['owner', 'manager', 'cashier'])
     if (auth.error) {
       return NextResponse.json({ error: auth.error }, { status: auth.error === 'Unauthorized' ? 401 : 403 })
     }

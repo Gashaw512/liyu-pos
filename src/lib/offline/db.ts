@@ -17,6 +17,7 @@ import type {
   LocalPendingSale,
   LocalHistoricalSale,
   LocalOpenTab,
+  LocalPendingTableOrder,
   LocalTableConfiguration,
 } from '../../types/models/pos-cart'
 
@@ -352,6 +353,15 @@ interface LiyuPOSDBSchema extends DBSchema {
     value: LocalOpenTab
   }
 
+  pending_table_orders: {
+    key: string
+    value: LocalPendingTableOrder
+    indexes: {
+      'by-table': string
+      'by-created': string
+    }
+  }
+
   /* -------------------------------------------------------
    * TABLES
    * ------------------------------------------------------- */
@@ -371,7 +381,7 @@ const DB_NAME = 'liyu-pos-core'
 /**
  * Store upgrades are additive so existing local data is preserved.
  */
-const DB_VERSION = 14
+const DB_VERSION = 16
 
 /* =========================================================
  * DATABASE INITIALIZATION
@@ -640,6 +650,12 @@ export const getDB = (): Promise<
               keyPath: 'id',
             }
           )
+        }
+
+        if (!db.objectStoreNames.contains('pending_table_orders')) {
+          const store = db.createObjectStore('pending_table_orders', { keyPath: 'localId' })
+          store.createIndex('by-table', 'tableId')
+          store.createIndex('by-created', 'createdAt')
         }
 
         /* ===================================================

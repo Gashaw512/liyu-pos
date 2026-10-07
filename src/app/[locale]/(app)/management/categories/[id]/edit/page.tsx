@@ -16,6 +16,7 @@ import {
   updateCategory,
 } from '@/queries/useCategoryQueries'
 import { getBusinessId } from '@/lib/auth/getBusinessId'
+import { PreparationStationSelect, type PreparationStation } from '@/components/management/PreparationStationSelect'
 
 const ICONS = [
   '📦',
@@ -46,6 +47,7 @@ interface CategoryForm {
   name_am: string
   icon: string
   color: string
+  preparation_station: PreparationStation
 }
 
 export default function EditCategoryPage() {
@@ -64,6 +66,7 @@ export default function EditCategoryPage() {
     name_am: '',
     icon: '📦',
     color: '#8B2635',
+    preparation_station: 'kitchen',
   })
 
   /* ───────────────── LOAD ───────────────── */
@@ -94,6 +97,7 @@ export default function EditCategoryPage() {
         name_am: category.name_am ?? '',
         icon: category.icon ?? '📦',
         color: category.color ?? '#8B2635',
+        preparation_station: category.preparation_station ?? 'kitchen',
       })
     } catch (error) {
       console.error('[CATEGORIES] Failed to load category:', error)
@@ -144,6 +148,7 @@ export default function EditCategoryPage() {
       await updateCategory(id, businessId, {
         name: form.name.trim(),
         name_am: form.name_am.trim(),
+        preparation_station: form.preparation_station,
         icon: form.icon,
         color: form.color,
       })
@@ -257,6 +262,12 @@ export default function EditCategoryPage() {
 
       {/* FORM */}
       <form onSubmit={handleSave} className="space-y-4">
+
+        <PreparationStationSelect
+          value={form.preparation_station}
+          locale={locale}
+          onChange={(preparation_station) => setForm((previous) => ({ ...previous, preparation_station: preparation_station as PreparationStation }))}
+        />
 
         {/* ENGLISH NAME */}
         <div className="rounded-2xl border bg-white p-4">

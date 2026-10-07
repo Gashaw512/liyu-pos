@@ -28,6 +28,9 @@ export interface CreateSaleDTO {
   discount_amount: number;
   total_amount: number;
   tip_amount: number;
+  payment_status?: 'paid' | 'partial' | 'unpaid';
+  amount_paid?: number;
+  outstanding_amount?: number;
 
   status: TransactionStatus;
 

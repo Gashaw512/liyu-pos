@@ -43,7 +43,12 @@ export default function POSCheckout({
   isSubmitting = false,
   roomChargeEnabled = false,
 }: POSCheckoutProps) {
-  const amountDue = totalBill + (Number(manualTip) || 0)
+  const taxRate = Math.max(0, Number(cart[0]?.business_tax_rate) || 0)
+  const exclusiveTax = cart.reduce((sum, item) => {
+    if (item.tax_inclusive !== false) return sum
+    return sum + Number(item.price || 0) * Number(item.quantity || 0) * taxRate / 100
+  }, 0)
+  const amountDue = Math.round((totalBill + exclusiveTax + (Number(manualTip) || 0) + Number.EPSILON) * 100) / 100
 
   const totalItems = cart.reduce(
     (sum, item) =>

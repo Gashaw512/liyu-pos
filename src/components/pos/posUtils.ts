@@ -516,6 +516,11 @@ export function normalizePOSProduct(
         ? product.price_proof
         : undefined,
 
+    tax_inclusive: product?.tax_inclusive !== false,
+    business_tax_rate: Number.isFinite(Number(product?.business_tax_rate))
+      ? Number(product.business_tax_rate)
+      : 0,
+
     image_url:
       product?.image_url ??
       null,
@@ -1154,7 +1159,20 @@ export function restoreCartFromTab(
     .map(
       (
         item: any,
-      ): POSCartItem => ({
+      ): POSCartItem => {
+        const proof = typeof item.price_proof === 'string' ? item.price_proof : undefined
+        let proofClaims: { taxRateBps?: number; taxInclusive?: boolean } = {}
+        try {
+          const encodedClaims = proof?.split('.')[0]
+          if (encodedClaims && typeof atob === 'function') {
+            const normalized = encodedClaims.replace(/-/g, '+').replace(/_/g, '/')
+            proofClaims = JSON.parse(atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')))
+          }
+        } catch {
+          // The server validates the proof; this decode is only for checkout display.
+        }
+
+        return {
         id:
           normalizeString(
             item.product_id ??
@@ -1171,10 +1189,16 @@ export function restoreCartFromTab(
         name_am:
           normalizeString(item.product_name_am).trim() || null,
 
-        price_proof:
-          typeof item.price_proof === 'string'
-            ? item.price_proof
-            : undefined,
+        price_proof: proof,
+
+        tax_inclusive: typeof proofClaims.taxInclusive === 'boolean'
+          ? proofClaims.taxInclusive
+          : item.tax_inclusive !== false,
+        business_tax_rate: Number.isFinite(Number(proofClaims.taxRateBps))
+          ? Number(proofClaims.taxRateBps) / 100
+          : Number.isFinite(Number(item.business_tax_rate))
+            ? Number(item.business_tax_rate)
+          : 0,
 
         price:
           normalizeNumber(
@@ -1188,7 +1212,8 @@ export function restoreCartFromTab(
             item.quantity ??
               1,
           ),
-      }),
+        }
+      },
     )
     .filter(
       (
@@ -1534,6 +1559,8 @@ export function addToCart(
 
       quantity: 1,
       price_proof: product.price_proof,
+      tax_inclusive: product.tax_inclusive,
+      business_tax_rate: product.business_tax_rate,
     },
   ]
 }

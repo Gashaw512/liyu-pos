@@ -13,6 +13,8 @@ export interface POSProduct {
   category_id?: string | null
   retail_price?: number
   price_proof?: string
+  tax_inclusive?: boolean
+  business_tax_rate?: number
   image_url?: string | null
   is_active?: boolean
   sku?: string | null
@@ -40,6 +42,8 @@ export interface POSCartItem {
   price: number
   quantity: number
   price_proof?: string
+  tax_inclusive?: boolean
+  business_tax_rate?: number
 }
 
 export interface POSTable {

@@ -22,6 +22,7 @@ export interface CreateCategoryPayload {
   business_id: string
   name: string
   name_am?: string | null
+  preparation_station?: 'kitchen' | 'bar' | 'none'
   icon?: string | null
   color?: string | null
   sort_order?: number
@@ -30,6 +31,7 @@ export interface CreateCategoryPayload {
 export interface UpdateCategoryPayload {
   name?: string
   name_am?: string | null
+  preparation_station?: 'kitchen' | 'bar' | 'none'
   icon?: string | null
   color?: string | null
   sort_order?: number
@@ -165,6 +167,7 @@ export async function createCategory(
       business_id: payload.business_id,
       name,
       name_am: nameAm,
+      preparation_station: payload.preparation_station ?? 'kitchen',
       icon,
       color,
       sort_order: sortOrder,
@@ -231,6 +234,10 @@ export async function updateCategory(
 
   if (payload.name_am !== undefined) {
     updates.name_am = payload.name_am?.trim() || null
+  }
+
+  if (payload.preparation_station !== undefined) {
+    updates.preparation_station = payload.preparation_station
   }
 
   if (payload.icon !== undefined) {

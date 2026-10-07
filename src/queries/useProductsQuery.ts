@@ -52,6 +52,7 @@ interface ProductQueryRow extends Product {
 export interface CreateProductPayload {
   business_id: string
   category_id: string
+  preparation_station?: 'kitchen' | 'bar' | 'none' | null
 
   name: string
   name_am: string
@@ -94,6 +95,7 @@ export interface CreateProductPayload {
 
 export interface UpdateProductPayload {
   category_id?: string | null
+  preparation_station?: 'kitchen' | 'bar' | 'none' | null
 
   name?: string
   name_am?: string | null
@@ -362,6 +364,7 @@ export async function createProduct(
   const {
     business_id,
     category_id,
+    preparation_station,
 
     name,
     name_am,
@@ -396,6 +399,7 @@ export async function createProduct(
     .insert({
       business_id,
       category_id,
+      preparation_station: preparation_station ?? null,
 
       name: name.trim(),
 

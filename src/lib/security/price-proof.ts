@@ -6,6 +6,9 @@ export type PriceProofClaims = {
   branchId: string
   productId: string
   priceCents: number
+  /** Tax configuration captured with the catalog snapshot for offline checkout. */
+  taxRateBps?: number
+  taxInclusive?: boolean
   kind: 'catalog' | 'manager_override'
   issuedBy?: string
 }
@@ -46,6 +49,8 @@ export function verifyPriceProof(
       claims.productId !== expected.productId ||
       !Number.isSafeInteger(claims.priceCents) ||
       claims.priceCents !== expected.priceCents ||
+      (claims.taxRateBps !== undefined && (!Number.isSafeInteger(claims.taxRateBps) || claims.taxRateBps < 0 || claims.taxRateBps > 10000)) ||
+      (claims.taxInclusive !== undefined && typeof claims.taxInclusive !== 'boolean') ||
       !['catalog', 'manager_override'].includes(claims.kind)
     ) return null
     return claims

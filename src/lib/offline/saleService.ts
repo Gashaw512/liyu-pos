@@ -35,6 +35,9 @@ export interface FinalizeSaleInput {
     price_proof?: string
     tax_inclusive?: boolean
     business_tax_rate?: number
+    is_inventory_tracked?: boolean | null
+    inventory_id?: string | null
+    inventory_quantity?: number | null
   }>
 
   totalBill: number
@@ -278,6 +281,7 @@ export async function finalizeSale(
 
   const quantityByProduct =
     new Map<string, number>()
+  const inventorySnapshotByProduct = new Map<string, FinalizeSaleInput['cart'][number]>()
 
   for (
     const item of input.cart
@@ -313,6 +317,7 @@ export async function finalizeSale(
         ) ?? 0
       ) + quantity,
     )
+    inventorySnapshotByProduct.set(productId, item)
   }
 
   /* =======================================================
@@ -424,9 +429,34 @@ export async function finalizeSale(
      * Nothing can be deducted locally.
      * ===================================================== */
 
-    if (
-      !inventoryRecords.length
-    ) {
+    if (!inventoryRecords.length) {
+      const snapshot = inventorySnapshotByProduct.get(productId)
+      const snapshotQuantity = snapshot?.inventory_quantity == null
+        ? null
+        : Number(snapshot.inventory_quantity)
+      if (
+        snapshot?.is_inventory_tracked === true &&
+        snapshotQuantity !== null &&
+        Number.isFinite(snapshotQuantity) &&
+        Number.isFinite(quantityToDeduct)
+      ) {
+        // The catalog may have reached the product grid before the inventory
+        // row was hydrated into IndexedDB. Seed the local projection from the
+        // already-cached branch snapshot, then apply this sale once. The
+        // server independently revalidates and persists the authoritative
+        // movement during sync.
+        const seededInventory = {
+          id: snapshot.inventory_id || crypto.randomUUID(),
+          business_id: safeBusinessId,
+          branch_id: safeBranchId,
+          product_id: productId,
+          quantity: snapshotQuantity - quantityToDeduct,
+          updated_at: new Date().toISOString(),
+        }
+        await inventoryStore.put(seededInventory)
+        continue
+      }
+
       inventoryWarnings.push({
         productId,
 

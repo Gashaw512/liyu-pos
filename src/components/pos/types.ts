@@ -44,6 +44,9 @@ export interface POSCartItem {
   price_proof?: string
   tax_inclusive?: boolean
   business_tax_rate?: number
+  is_inventory_tracked?: boolean | null
+  inventory_id?: string | null
+  inventory_quantity?: number | null
 }
 
 export interface POSTable {

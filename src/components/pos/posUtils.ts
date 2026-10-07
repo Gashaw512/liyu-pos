@@ -1561,6 +1561,9 @@ export function addToCart(
       price_proof: product.price_proof,
       tax_inclusive: product.tax_inclusive,
       business_tax_rate: product.business_tax_rate,
+      is_inventory_tracked: product.is_inventory_tracked,
+      inventory_id: product.inventory_id,
+      inventory_quantity: product.inventory_quantity,
     },
   ]
 }

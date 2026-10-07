@@ -1120,8 +1120,48 @@ export type Database = {
           },
         ]
       }
+      credit_settlements: {
+        Row: {
+          actor_id: string
+          amount: number
+          branch_id: string
+          business_id: string
+          created_at: string
+          id: string
+          idempotency_key: string
+          method: string
+          reference_no: string | null
+          sale_id: string
+        }
+        Insert: {
+          actor_id: string
+          amount: number
+          branch_id: string
+          business_id: string
+          created_at?: string
+          id?: string
+          idempotency_key: string
+          method: string
+          reference_no?: string | null
+          sale_id: string
+        }
+        Update: {
+          actor_id?: string
+          amount?: number
+          branch_id?: string
+          business_id?: string
+          created_at?: string
+          id?: string
+          idempotency_key?: string
+          method?: string
+          reference_no?: string | null
+          sale_id?: string
+        }
+        Relationships: []
+      }
       sales: {
         Row: {
+          amount_paid: number
           branch_id: string
           business_id: string
           cashier_id: string | null
@@ -1133,8 +1173,10 @@ export type Database = {
           id: string
           is_offline_sync: boolean | null
           notes: string | null
+          outstanding_amount: number
           offline_id: string | null
           receipt_number: string
+          payment_status: string
           shift_id: string | null
           status: string | null
           subtotal: number
@@ -1147,6 +1189,7 @@ export type Database = {
           voided_by: string | null
         }
         Insert: {
+          amount_paid?: number
           branch_id: string
           business_id: string
           cashier_id?: string | null
@@ -1158,8 +1201,10 @@ export type Database = {
           id?: string
           is_offline_sync?: boolean | null
           notes?: string | null
+          outstanding_amount?: number
           offline_id?: string | null
           receipt_number: string
+          payment_status?: string
           shift_id?: string | null
           status?: string | null
           subtotal?: number
@@ -1172,6 +1217,7 @@ export type Database = {
           voided_by?: string | null
         }
         Update: {
+          amount_paid?: number
           branch_id?: string
           business_id?: string
           cashier_id?: string | null
@@ -1183,8 +1229,10 @@ export type Database = {
           id?: string
           is_offline_sync?: boolean | null
           notes?: string | null
+          outstanding_amount?: number
           offline_id?: string | null
           receipt_number?: string
+          payment_status?: string
           shift_id?: string | null
           status?: string | null
           subtotal?: number
@@ -1567,6 +1615,23 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      commit_pos_sale: {
+        Args: { p_items: Json; p_payments: Json; p_sale: Json }
+        Returns: string
+      }
+      settle_credit_sale: {
+        Args: {
+          p_actor_id: string
+          p_amount: number
+          p_branch_id: string
+          p_business_id: string
+          p_idempotency_key: string
+          p_method: string
+          p_reference_no?: string | null
+          p_sale_id: string
+        }
+        Returns: { amount_paid: number; outstanding_amount: number; payment_status: string }[]
+      }
       assert_security_context: {
         Args: { allowed_roles: string[] }
         Returns: boolean

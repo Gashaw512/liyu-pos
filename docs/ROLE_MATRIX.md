@@ -32,6 +32,7 @@ Legend: **Allow** means intended and present in reviewed code. **Deny** means ex
 | View Bar KDS | All stations | All stations | Deny | Deny | Deny | Bar only | Deny | Same station boundary |
 | Update Bar KOT | Oversight/state role | Oversight/state role | Deny | Deny | Deny | Bar station | Deny | Custody shift is attributed at ready |
 | POS sale/payment | Allow | Allow | Allow | Deny payment completion | Deny | Role may appear in own operational paths; confirm before enabling cash | Deny | Sale role gates must be tested on direct sync API |
+| Credit sale/settlement API | Allow | Allow | Allow | Deny | Deny | Deny | Deny | Debtor name/phone required; collection UI is not integrated; migration and branch RLS must be verified |
 | Room charge | Denied by endpoint allow-list | Denied | **Only exact cashier role** | Denied | Denied | GET validation may be allowed, POST denied | Denied | Any additional assigned role makes cashier-only check fail |
 | Open/close monetary shift | Allow | Allow | Allow | Deny | Deny | Deny | Deny | Custody shifts are separate from monetary shifts |
 | Reports | Allow | Allow | Shift/self report where route allows | Deny | Deny | Deny | Deny | Scope and RLS need staging check |
@@ -49,7 +50,7 @@ Day-to-day operations, catalog and staff administration within manager rules, re
 
 ### Cashier
 
-Checkout, tender recording, own shift and shift close. Must not change product prices or owner settings. Credit should remain disabled for real balances until debtor identity, outstanding amount, collection and settlement are implemented.
+Checkout, tender recording, own shift and shift close. Must not change product prices or owner settings. Credit balances and a settlement API exist in source, but keep credit disabled for real balances until the cashier has a usable collection workflow and staging verifies the ledger.
 
 ### Waiter
 

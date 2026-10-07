@@ -34,7 +34,7 @@ The `20261006092213_hospitality_kot_and_room_folios.sql` migration adds branch/b
 
 The Kitchen page reads tickets through `/api/kitchen/tickets`, scopes them to the user's business and branch, and filters by station role. A station worker moves a ticket through `pending → preparing → ready`. On the ready transition, the server resolves that authenticated worker's active custody shift and records the worker and shift on each normalized KOT line. The transition is serialized by `transition_kot_ticket` so retries and competing updates do not attribute the same transition twice. The page listens to Supabase Realtime changes and refreshes every 10 seconds as a fallback. `/api/print/kot-queue` provides pending station tickets and accepts acknowledgements. It accepts the normal authenticated session or a Supabase bearer access token verified server-side; access is checked against the user's role and branch. Ensure Realtime publication and the KOT migrations are present in the target database.
 
-The TypeScript table-order route creates `kitchen_order_ticket_lines` after the existing KOT trigger creates a ticket. The trigger still routes products and creates quantity deltas; it does not decide who prepared them. Existing tickets are backfilled without a worker attribution and are deliberately excluded from custody sale allocation.
+The TypeScript table-order route creates `kitchen_order_ticket_lines` after the KOT trigger creates a ticket. Station routing is configured explicitly by category with a nullable product override; the one-time migration backfill preserves the previous English heuristic for existing menus. Existing tickets are backfilled without worker attribution and are deliberately excluded from custody sale allocation. Apply and review the station migration before using this configuration.
 
 ### Hotel integration and room charges
 
@@ -48,7 +48,7 @@ Room lookup requires an online request and checks an active folio within the use
 
 Delivery records are unique per business and shift. The route short-circuits sent/disabled reports and recent in-progress attempts, and claims pending/failed or stale sending rows with a conditional update before delivery. Per-recipient status rows prevent successful recipients from being needlessly resent when another recipient fails. Delivery may be disabled or queued independently of the shift close.
 
-**Cash reconciliation limitation:** the current close request still supplies `openingCash`, `openedAt`, and `closedAt`; the route validates identity, branch, and time range, but uses the submitted opening cash when calculating expected drawer cash and writing the shift summary. Do not describe the opening float as server-authoritative until the close route is changed to read it from the persisted shift. Actual sales/payment totals are read from server records.
+The close route reads opening cash from the persisted shift. The POS requires connectivity, attempts outbound sync before closing, and keeps the shift open if sales for that shift remain queued. A queued close/report remains retryable after a transient failure; staging must verify the cutoff and duplicate-close behavior.
 
 ### Inventory clerk boundary (current implementation)
 

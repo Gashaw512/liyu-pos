@@ -35,11 +35,12 @@ For lint review of a patch, also run ESLint against every changed TypeScript/TSX
 
 - [ ] Price proof accepts the exact product/business/branch/price and rejects a modified price or foreign tenant.
 - [ ] Offline cached signed catalog price succeeds only with its valid proof; stale price behavior is understood by the owner.
-- [ ] Client-modified sale subtotal/total/tax/discount are rejected or replaced with server-derived amounts. **Do not release before this passes.**
+- [ ] Manipulate client subtotal, total, tax, and discount independently; persisted values are server-derived from verified item lines, business tax rate, and product tax-inclusive settings. Unauthorized discounts fail.
 - [ ] Tender total equals bill total or the explicitly supported outstanding/credit amount; status reflects paid, partial or unpaid correctly.
 - [ ] Cash exact payment, overpayment/change, split tender, Telebirr, CBE Birr, bank/card, failed request and retry.
-- [ ] Credit cannot be enabled for customer balances until debtor identity, amount owed, original sale, actor/time, collections and remaining balance are persisted and tested.
+- [ ] Credit requires debtor name/phone; server stores amount paid/outstanding/status; partial and full settlement store actor/time/sale/method and reject overpayment/retry duplication. Do not pilot credit until a cashier-facing collection workflow is in place.
 - [ ] Duplicate submit/double-click/reconnect produces one sale, one payment set and one stock movement.
+- [ ] Sale header, line/FIFO trigger effects, and tender failure at each stage roll back together through the transaction function.
 - [ ] Sale void, cancellation before KOT, correction after KOT, refund and wastage are separate states with actor, timestamp, reason/value where required.
 
 ## 5. Inventory and FIFO
@@ -73,7 +74,7 @@ For lint review of a patch, also run ESLint against every changed TypeScript/TSX
 - [ ] Cash sales increase drawer; non-cash payments do not; cash expenses and cash refunds reduce it; non-cash expenses do not.
 - [ ] Actual cash omitted, zero, valid positive, negative, string, NaN-like payload and duplicate close.
 - [ ] Two simultaneous close requests: exactly one state transition; identical retry is safe; changed actual count is rejected.
-- [ ] Offline close queued and replayed after reconnect; include a sale created offline before and after the close timestamp. Require explicit cutoff behavior and no missing sale.
+- [ ] Offline shift close is blocked with a clear message. Online close first syncs matching sales and leaves the shift open while any remain queued.
 - [ ] Manager/owner review authorization and branch custody close; cashier cannot close another user's shift.
 - [ ] Compare shift PDF and database rows with manually calculated fixture values, including FIFO `cost_total`.
 - [ ] Telegram disabled, send success, provider failure, retry, concurrent retry and multiple business recipients; no cross-business recipient receives a PDF.
@@ -96,7 +97,7 @@ Do not mark tenant or RLS PASS based on service-role route tests alone.
 
 ## 9. Offline and resilience checks
 
-Use a real browser profile/device with the installed PWA. Do not clear storage during the test.
+Use at least one Android phone/tablet and one desktop/laptop browser profile with the installed PWA. Do not clear storage during the test. Record browser/OS/PWA version, storage estimate, network transitions, timestamps, and server row IDs.
 
 1. Start online, sign in, load catalog/tables, open a shift, and verify required stock/cache exists locally.
 2. Disconnect. Save a table order and complete a sale if the existing workflow allows it. Verify local receipt/history and local inventory response.
@@ -106,9 +107,28 @@ Use a real browser profile/device with the installed PWA. Do not clear storage d
 6. Reopen the app after browser restart; confirm pending/failed items remain recoverable.
 7. Test stale signed catalog, duplicate checkout, double tap and two-device table revision conflict.
 
-Offline support is not proven until these checks pass on the target mobile browser/PWA. Browser storage eviction and device loss remain risks even after a successful test.
+Offline support is not proven until these checks pass on both target devices. Browser storage eviction and device loss remain risks even after a successful test.
 
-## 10. Role usability and performance evidence
+## 10. Disaster and retry scenario matrix
+
+Record each result against staging database rows, not only the UI. Re-run after the migration is applied.
+
+| Failure | Required final state | Idempotent? | Authoritative record | User recovery message |
+|---|---|---|---|---|
+| Double-click Complete Sale | One sale, one tender set, one FIFO stock movement | Yes, sale UUID lock | `sales`, `payments`, `inventory_movements` | Show one success receipt; second click is ignored |
+| Refresh immediately after payment | Sale/receipt remains locally; server result resolves by the same sale ID | Yes | local receipt history, then server sale | Show saved/syncing/complete state |
+| Network lost after sale submission | Local outbox retains sale; server has either zero or one committed sale | Yes | `pending_sales` then `sales` | Say saved locally / will sync; never imply server completion yet |
+| Network lost during sync | Atomic core is all-or-nothing; retry completes once | Yes | committed sale transaction plus outbox acknowledgment | Explain sync is pending and retry is automatic |
+| Ambiguous sync timeout then retry | Same sale ID returns the original result, no second payment or movement | Yes | sale UUID and movement reference | Avoid duplicate checkout; show final state after lookup/retry |
+| Two devices sell final stock | Both commits serialize inventory rows; record actual resulting quantity and enforce the configured negative-stock policy | Retry-safe; concurrent separate sales are distinct | branch `inventory` and sale movement rows | Warn if stock becomes negative; no silent stale count |
+| Two users close same shift | One close transition; identical retry returns prior result, different values conflict | Yes | persisted `shifts` row and report delivery key | Show already closed or retrying report |
+| Two users update same order | One revision commits; stale conflicting update is returned for reload/merge | Revision guarded | `open_table_orders` revision | Ask waiter to reload latest order |
+| KOT transition retry | One expected-state transition and one worker/custody attribution | Yes | KOT ticket/line rows | Show current state if another transition won |
+| Handover acceptance retry | One accepted voucher and one custody quantity addition | Yes | `stock_handovers` and custody ledger | Show already accepted, no second stock addition |
+| Room-charge retry | One folio charge per sale | Yes | folio charge ledger unique sale reference | Show already charged or pending sync |
+| Telegram/report retry | One recipient delivery per shift; already-sent recipient is not sent twice | Yes | delivery and recipient status rows | Shift stays closed; report delivery can remain queued |
+
+## 11. Role usability and performance evidence
 
 For each role and English/Amharic locale, record first screen, primary task/button, confusing labels, recovery from a mistake, offline message, and whether a low-literacy user can complete the workflow without help.
 
@@ -125,10 +145,11 @@ Measure with browser performance tooling on staging/device; do not infer from so
 
 Check network panel for duplicate queries, realtime subscription count, oversized payloads, unbounded report ranges and N+1 requests. Save metrics with device/network and fixture size.
 
-## 11. Required release sign-off
+## 12. Required release sign-off
 
 - [ ] All local checks pass; any pre-existing lint issue is listed separately.
 - [ ] Migration history and `20261007065456_explicit_preparation_stations.sql` verified on staging.
+- [ ] Migration history and `20261007071854_atomic_sale_checkout_and_credit_ledger.sql` verified on staging.
 - [ ] Role, tenant, branch and direct-API tests pass against staging RLS.
 - [ ] Financial and inventory duplicate/retry tests pass after deliberate interruption.
 - [ ] Offline mobile workflow and receipt/history behavior pass on target device.
@@ -137,8 +158,8 @@ Check network panel for duplicate queries, realtime subscription count, oversize
 
 ## Recommended implementation order
 
-1. Server-derived sale totals, tender balance/status, and complete idempotent transaction commit/recovery.
-2. Credit/debtor minimum lifecycle or disable credit for live pilot.
+1. Deploy and verify server-derived sale totals, tender balance/status, and atomic transaction commit/recovery.
+2. Add a cashier-facing credit balance/settlement workflow or disable credit for live pilot.
 3. Align custody used/sold/returned/waste definitions and ensure returned stock is posted exactly once.
 4. Apply migrations and run two-tenant/role/RLS staging matrix.
 5. Run offline interruption, shift-close cutoff and physical-device QA.

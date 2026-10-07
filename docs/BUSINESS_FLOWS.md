@@ -38,15 +38,14 @@ Table-order persistence is shared and server-mediated. Offline table events can 
 
 ## 4. Sale lifecycle
 
-1. POS builds the cart and local payment rows.
-2. `finalizeSale()` writes the pending sale, local receipt history, local stock cache change, and related local order state in an IndexedDB read/write transaction.
-3. The sync engine submits the sale through `/api/sync`; the server resolves the business/branch/operator from authenticated context.
-4. For a new sale, the route checks product existence and verifies a signed cached price proof or a management override.
-5. Sale, sale-item and payment writes are performed through server code. A stable sale ID and movement lookups are used to avoid duplicate replay effects.
-6. For table sales, the server invokes ready-KOT allocation. For hotel settlement, it verifies the business flag and exact cashier-only role, then posts the folio entry with a database function.
-7. The route performs the branch inventory deduction and verifies an inventory movement before acknowledging completion.
+1. POS builds a local cart, receipt, and tender allocation. A credit tender requires debtor name and phone; the local receipt marks the amount paid/unpaid/partial separately.
+2. `finalizeSale()` stores the pending sale, receipt history, local stock cache change, and table state in an IndexedDB read/write transaction.
+3. `/api/sync` resolves business/branch/operator from the authenticated profile, then validates product identity and signed cached price proof. It normalizes prices to cents and ignores client subtotal/tax/total values.
+4. The server derives subtotal from validated lines, tax from a verified catalog tax snapshot (for offline continuity) or current `businesses.tax_rate`, and the signed product tax-inclusive setting. Discounts are accepted only for owner/manager-authorized requests. It checks that tender allocations equal the derived total.
+5. `commit_pos_sale` commits sale header, sale lines, FIFO cost allocation/branch inventory trigger effects, tender rows, and paid/outstanding status in one transaction. A transaction-scoped sale-ID lock serializes retries. A failure rolls the entire core sale transaction back.
+6. For table sales, ready-KOT allocation follows the core transaction and is retry-safe. For room settlement, the online folio function follows the sale transaction and is idempotent. If either downstream step fails, the sale remains committed and the outbox retry continues the missing step without another sale or stock deduction.
 
-**Important correctness limits:** the server currently accepts client-submitted sale totals, tax, discount and some payment values rather than deriving the entire amount from authoritative lines/configuration. Credit creates a pending payment but the local sale is marked paid and does not require a debtor. These are blockers for production accounting. A client-visible success receipt means locally saved until sync confirms the server record.
+**Remaining limits:** the application migration is not yet deployed or database-tested. Credit now records debtor name/phone, server-derived paid/outstanding fields, and a retry-safe settlement RPC/API with settlement history; the UI for finding and settling outstanding balances is not yet integrated into a cashier workflow. A local success receipt means saved on the device until sync confirms the server record.
 
 ## 5. Shift lifecycle
 
@@ -57,7 +56,7 @@ Table-order persistence is shared and server-mediated. Offline table events can 
 | Open | Close | owner, manager, cashier close-report endpoint; normal UI uses its current close flow | Persisted shift becomes closed with expected/actual/difference | Close update requires open state; identical closed retry may continue report work; changed values reject |
 | Closed | Send report | Configured owner/admin Telegram recipients | Delivery row and per-recipient rows progress pending/sending/sent/failed/disabled | Shift key and conditional claim prevent concurrent duplicate sends |
 
-The opening float is entered at opening and stored. Close ignores a client-supplied opening amount. Expected drawer cash is computed from persisted opening cash, completed cash payments, refunded cash tenders, and cash expenses. Actual counted cash is the only cash value supplied at close. The report-close route currently resolves the shift to the authenticated cashier, even though owner/manager roles are in its allow list; do not interpret that allow list as an owner/manager ability to close any cashier's monetary shift. Offline sales still syncing at close remain a required staging scenario; do not assume close waits for every outbox item.
+The opening float is entered at opening and stored. Close ignores a client-supplied opening amount. Expected drawer cash is computed from persisted opening cash, completed cash payments, refunded cash tenders, and cash expenses. Actual counted cash is the only cash value supplied at close. POS shift close requires connectivity, runs sync first, and keeps the shift open if that shift still has pending sales. The route resolves the shift to the authenticated cashier; owner/manager roles do not thereby gain permission to close another cashier's monetary shift. Verify the policy with interrupted-sync staging cases.
 
 ## 6. Inventory and custody lifecycle
 
@@ -114,7 +113,7 @@ This requires the room-folio migration and deployed database function. Offline r
 ## 10. Not implemented as complete business workflows
 
 - Recipe/ingredient consumption for dishes and drinks.
-- Fully identified debtor ledger and credit settlement lifecycle.
+- Cashier-facing credit balance search/settlement workflow; the scoped API, atomic settlement ledger, and history rows exist, but are not yet presented as a complete POS UI.
 - Complete immutable manager-authorized void/refund/correction workflow across sale, payment, inventory, custody and audit history.
 - Production-ready fiscal/VAT/TOT declaration and Ministry of Revenues integration.
 - Proven all-device offline support under browser eviction/device loss.

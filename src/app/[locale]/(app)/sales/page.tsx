@@ -1070,25 +1070,70 @@ export default function SalesPage() {
   const closeShift = async (countedCash: number | null) => {
     if (closingShift) return
 
+    if (typeof navigator === 'undefined' || !navigator.onLine) {
+      toast(
+        isAm
+          ? 'áˆáˆ¨á‰ƒáŠ• áˆˆáˆ˜á‹áŒ‹á‰µ áŠ¢áŠ•á‰°áˆ­áŠ”á‰µ áŠ á‹«áˆµáˆáˆá¢ áˆ½á‹«áŒ®á‰½áŠ• áˆáŒ áˆáˆ á‹­áŒ á‰¥á‰'
+          : 'Connect to the internet and sync sales before closing this shift.',
+        'warning',
+      )
+      return
+    }
+
     closingShiftInstanceRef.current = activeShift
     setClosingShift(true)
 
     try {
       const db = await getDB()
 
-      if (activeShift) {
+      // Push queued sales first. A final cash reconciliation must not use a
+      // server snapshot that is missing sales still waiting on this device.
+      const { syncEngine } = await import('@/lib/offline/syncEngine')
+      await syncEngine.syncAll()
+      let shiftToClose = activeShift
+      const syncedActiveShift = await db.get('active_shift', 'current')
+      if (syncedActiveShift) {
+        shiftToClose = syncedActiveShift
+        closingShiftInstanceRef.current = syncedActiveShift
+      }
+      const pendingShiftOpenings = await db.getAll('pending_shift_openings')
+      if (pendingShiftOpenings.some((opening) => opening.reportId === shiftToClose?.report_id)) {
+        toast(
+          isAm
+            ? 'ፈረቃው ገና ከሰርቨሩ ጋር አልተመሳሰለም። ኢንተርኔት ሲኖር እንደገና ይሞክሩ።'
+            : 'This shift has not synced to the server yet. Keep it open and try again when connected.',
+          'warning',
+        )
+        return
+      }
+      const pendingSalesBeforeClose = await db.getAll('pending_sales')
+      const shiftIds = new Set([
+        shiftToClose?.real_database_id,
+        shiftToClose?.report_id,
+      ].filter((id): id is string => Boolean(id)))
+      if (pendingSalesBeforeClose.some((sale) => shiftIds.has(sale.shift_id ?? ''))) {
+        toast(
+          isAm
+            ? 'አንዳንድ ሽያጮች ገና አልተላኩም። ፈረቃውን ክፍት ያቆዩና ኢንተርኔት ሲመለስ እንደገና ይሞክሩ።'
+            : 'Some sales are still waiting to sync. Keep this shift open and try again when sync finishes.',
+          'warning',
+        )
+        return
+      }
+
+      if (shiftToClose) {
         const pendingClosures = await db.getAll('pending_shift_closures')
         const existingQueuedClosure = pendingClosures.find((closure) =>
-          isDuplicateShiftClosure(closure, activeShift),
+          isDuplicateShiftClosure(closure, shiftToClose!),
         )
 
         if (existingQueuedClosure) {
           console.warn('[POS] Prevented duplicate shift-close report for the same shared shift.', {
             reportId: existingQueuedClosure.reportId,
-            businessId: activeShift.business_id,
-            branchId: activeShift.branch_id,
-            cashierId: activeShift.cashier_id,
-            openedAt: activeShift.opened_at,
+            businessId: shiftToClose.business_id,
+            branchId: shiftToClose.branch_id,
+            cashierId: shiftToClose.cashier_id,
+            openedAt: shiftToClose.opened_at,
           })
 
           await db.delete('active_shift', 'current')
@@ -1118,15 +1163,15 @@ export default function SalesPage() {
           return
         }
 
-        const reportId = activeShift.report_id || activeShift.real_database_id || crypto.randomUUID()
+        const reportId = shiftToClose.report_id || shiftToClose.real_database_id || crypto.randomUUID()
         await db.put('pending_shift_closures', {
           reportId,
-          businessId: activeShift.business_id,
-          branchId: activeShift.branch_id,
-          cashierId: activeShift.cashier_id,
-          openedAt: activeShift.opened_at,
+          businessId: shiftToClose.business_id,
+          branchId: shiftToClose.branch_id,
+          cashierId: shiftToClose.cashier_id,
+          openedAt: shiftToClose.opened_at,
           closedAt: new Date().toISOString(),
-          openingCash: Number(activeShift.opening_cash) || 0,
+          openingCash: Number(shiftToClose.opening_cash) || 0,
           actualCash: countedCash,
           attempts: 0,
         })
@@ -1371,6 +1416,7 @@ export default function SalesPage() {
   const handleFinalizeSale = async (
     splitPayments: PaymentSplit,
     roomNumber?: string,
+    debtor?: { name: string; phone: string },
   ) => {
     if (!canCheckout) return
     if (finalizingSaleRef.current || !activeShift || cart.length === 0) return
@@ -1394,6 +1440,8 @@ export default function SalesPage() {
       const sale = await finalizeSale({
         splitPayments,
         roomNumber,
+        customerName: debtor?.name,
+        customerPhone: debtor?.phone,
         manualTip,
         activeShift: safeShift,
         selectedTable,

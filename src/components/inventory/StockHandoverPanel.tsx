@@ -477,13 +477,23 @@ export default function StockHandoverPanel({ isAm }: { isAm: boolean }) {
           <span className="rounded-full bg-cream-100 px-3 py-1 text-xs font-black text-coffee-600">{data?.handovers.length ?? 0}</span>
         </header>
         {data?.handovers.length ? (
-          <ul className="mt-4 space-y-2">{data.handovers.map((handover) => voucherCard(handover, handover.canVerify))}</ul>
+          <>
+            <ul className="mt-4 space-y-2">{data.handovers.slice(0, 5).map((handover) => voucherCard(handover, handover.canVerify))}</ul>
+            {data.handovers.length > 5 && (
+              <details className="mt-3 rounded-xl border border-cream-200 bg-cream-50 px-3">
+                <summary className="min-h-11 cursor-pointer py-3 text-xs font-black text-coffee-700">
+                  {isAm ? 'የቆዩ ርክክቦች' : `View ${data.handovers.length - 5} older handovers`}
+                </summary>
+                <ul className="space-y-2 pb-3">{data.handovers.slice(5).map((handover) => voucherCard(handover, handover.canVerify))}</ul>
+              </details>
+            )}
+          </>
         ) : (
           <p className="py-9 text-center text-sm text-coffee-400">{isAm ? 'ገና ርክክብ አልተመዘገበም።' : 'No handovers have been recorded yet.'}</p>
         )}
         {data?.canIssue && data.custodyReports.length > 0 && (
-          <div className="mt-6 border-t border-cream-200 pt-5">
-            <h3 className="text-sm font-black text-coffee-800">{isAm ? 'የተዘጉ የእቃ ቆጠራዎች' : 'Custody counts and differences'}</h3>
+          <details className="mt-5 border-t border-cream-200 pt-3">
+            <summary className="min-h-11 cursor-pointer text-sm font-black text-coffee-800">{isAm ? 'የተዘጉ የእቃ ቆጠራዎች' : `Custody counts and differences (${data.custodyReports.length})`}</summary>
             <div className="mt-3 space-y-3">
               {data.custodyReports.map((report) => (
                 <article key={report.id} className="rounded-xl border border-cream-200 bg-cream-50 p-3">
@@ -518,7 +528,7 @@ export default function StockHandoverPanel({ isAm }: { isAm: boolean }) {
                 </article>
               ))}
             </div>
-          </div>
+          </details>
         )}
       </section>
     </div>

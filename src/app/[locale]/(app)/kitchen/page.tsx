@@ -7,6 +7,7 @@ import createClient from '@/lib/supabase/client'
 
 type Ticket = {
   id: string
+  order_id: string
   table_number: string
   waiter_name: string
   item_payload: Array<{ product_id: string; name: string; name_am?: string | null; quantity: number }>
@@ -20,6 +21,7 @@ export default function KitchenDisplayPage() {
   const params = useParams()
   const isAm = String(params.locale ?? 'en') === 'am'
   const [tickets, setTickets] = useState<Ticket[]>([])
+  const [readyTickets, setReadyTickets] = useState<Ticket[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -28,9 +30,10 @@ export default function KitchenDisplayPage() {
   const loadTickets = useCallback(async () => {
     try {
       const response = await fetch('/api/kitchen/tickets', { cache: 'no-store' })
-      const result = await response.json() as { tickets?: Ticket[]; error?: string }
+      const result = await response.json() as { tickets?: Ticket[]; readyTickets?: Ticket[]; error?: string }
       if (!response.ok) throw new Error(result.error ?? 'Could not load kitchen tickets.')
       setTickets(result.tickets ?? [])
+      setReadyTickets(result.readyTickets ?? [])
       setError('')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not load kitchen tickets.')
@@ -95,7 +98,7 @@ export default function KitchenDisplayPage() {
       {error && <div role="alert" className="mb-3 rounded-xl border border-danger/20 bg-danger-bg px-4 py-3 text-sm text-danger">{error}</div>}
       {loading ? (
         <div className="flex min-h-48 items-center justify-center gap-2 text-sm font-bold text-coffee-500"><Loader2 className="h-5 w-5 animate-spin" />{isAm ? 'በመጫን ላይ...' : 'Loading orders...'}</div>
-      ) : tickets.length === 0 ? (
+      ) : tickets.length === 0 && readyTickets.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-coffee-200 bg-white p-10 text-center text-sm font-bold text-coffee-400">{isAm ? 'አሁን የሚዘጋጅ ትዕዛዝ የለም።' : 'No orders to prepare right now.'}</div>
       ) : (
         <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -123,6 +126,29 @@ export default function KitchenDisplayPage() {
               </div>
             </article>
           ))}
+        </section>
+      )}
+
+      {!loading && readyTickets.length > 0 && (
+        <section className="mt-6 rounded-2xl border border-success/20 bg-success-bg/60 p-4 sm:p-5">
+          <header className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-black text-coffee-800">{isAm ? 'ዝግጁ የሆኑ ትዕዛዞች' : 'Ready for service'}</h2>
+              <p className="mt-1 text-xs text-coffee-600">{isAm ? 'አስተናጋጁ ያቅርብ፤ ገንዘብ ተቀባዩ በሽያጭ ገጽ ክፍያ ይቀበል።' : 'Tell the waiter to serve. The cashier opens this table in Sales to take payment.'}</p>
+            </div>
+            <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-success">{readyTickets.length}</span>
+          </header>
+          <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {readyTickets.map((ticket) => (
+              <li key={ticket.id} className="rounded-xl border border-success/20 bg-white px-3 py-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-black text-coffee-800">{ticket.table_number}</span>
+                  <span className="text-[11px] font-bold text-success">{isAm ? 'ለማቅረብ ዝግጁ' : 'Ready'}</span>
+                </div>
+                <p className="mt-1 text-xs text-coffee-500">{ticket.item_payload.map((item) => `${item.quantity} × ${isAm && item.name_am ? item.name_am : item.name}`).join(', ')}</p>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
     </main>

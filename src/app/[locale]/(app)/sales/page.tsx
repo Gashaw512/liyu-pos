@@ -570,7 +570,7 @@ export default function SalesPage() {
   // ==========================================================
 
   useEffect(() => {
-    if (!selectedTable || !cartHasItems) {
+    if (!selectedTable) {
       setHasUnsavedChanges(false)
       return
     }
@@ -580,7 +580,6 @@ export default function SalesPage() {
     )
   }, [
     cart,
-    cartHasItems,
     selectedTable,
     savedCartSnapshot,
   ])
@@ -1331,10 +1330,25 @@ export default function SalesPage() {
   const handleSaveTab = async () => {
     if (
       !selectedTable ||
-      !cartHasItems ||
       !hasUnsavedChanges ||
       savingTab
     ) {
+      return
+    }
+
+    // Saving an empty table cart means the waiter removed every remaining
+    // line. Queue the existing cancel operation so the deletion survives
+    // refresh/offline use and syncs through the normal outbox.
+    if (!cartHasItems) {
+      setSavingTab(true)
+      try {
+        await clearCurrentOrder()
+      } catch (error) {
+        console.error('[POS] Failed to save the empty table order:', error)
+        toast(isAm ? 'á‰µá‹•á‹›á‹™áŠ• áˆ›áˆµá‰€áˆáŒ¥ áŠ áˆá‰°á‰»áˆˆáˆ' : 'Could not save the removed items.', 'error')
+      } finally {
+        setSavingTab(false)
+      }
       return
     }
 
@@ -1708,7 +1722,7 @@ export default function SalesPage() {
             setBillOpen(false)
           }}
           hasUnsavedTableOrder={Boolean(
-            selectedTable && cartHasItems && hasUnsavedChanges,
+            selectedTable && hasUnsavedChanges,
           )}
           savingTab={savingTab}
           onSaveOrder={handleSaveTab}

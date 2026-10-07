@@ -219,6 +219,7 @@ export type Database = {
           is_active: boolean | null
           name: string
           name_am: string | null
+          preparation_station: string
           sort_order: number | null
           updated_at: string | null
         }
@@ -233,6 +234,7 @@ export type Database = {
           is_active?: boolean | null
           name: string
           name_am?: string | null
+          preparation_station?: string
           sort_order?: number | null
           updated_at?: string | null
         }
@@ -247,6 +249,7 @@ export type Database = {
           is_active?: boolean | null
           name?: string
           name_am?: string | null
+          preparation_station?: string
           sort_order?: number | null
           updated_at?: string | null
         }
@@ -692,6 +695,7 @@ export type Database = {
           branch_id: string | null
           business_id: string
           category_id: string | null
+          preparation_station: string | null
           cost_price: number
           created_at: string | null
           deleted_at: string | null
@@ -715,6 +719,7 @@ export type Database = {
           branch_id?: string | null
           business_id: string
           category_id?: string | null
+          preparation_station?: string | null
           cost_price?: number
           created_at?: string | null
           deleted_at?: string | null
@@ -738,6 +743,7 @@ export type Database = {
           branch_id?: string | null
           business_id?: string
           category_id?: string | null
+          preparation_station?: string | null
           cost_price?: number
           created_at?: string | null
           deleted_at?: string | null

@@ -2,6 +2,14 @@
 
 This guide describes the hospitality and POS behavior currently present in the repository. It separates implemented controls from deployment-dependent checks and known limits, so a demo or security review does not mistake intended behavior for verified production behavior.
 
+For the current production audit and source-of-truth detail, see:
+
+- [Production readiness and blocker assessment](./PRODUCTION_READINESS.md)
+- [Operational business flows](./BUSINESS_FLOWS.md)
+- [Role and permission matrix](./ROLE_MATRIX.md)
+- [Data and authoritative values](./DATA_AND_SOURCE_OF_TRUTH.md)
+- [Pre-production test and release checklist](./PRE_PRODUCTION_CHECKLIST.md)
+
 ## Implemented architecture and security boundaries
 
 ### Tenant and role context

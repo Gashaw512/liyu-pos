@@ -6,6 +6,20 @@ import { processRecipientDeliveries } from '../src/lib/shift-reports/delivery.ts
 import { isAllowedNotificationRole, selectEnabledBusinessRecipients } from '../src/lib/shift-reports/routing.ts'
 import { telegramSendDocument, telegramSendMessage } from '../src/lib/shift-reports/telegram.ts'
 import { signPriceProof, verifyPriceProof } from '../src/lib/security/price-proof.ts'
+import { calculateExpectedDrawerCash } from '../src/lib/shift-reports/cash-reconciliation.ts'
+
+test('cash reconciliation uses persisted opening float, cash payments, cash refunds, and cash expenses only', () => {
+  const expected = calculateExpectedDrawerCash(500, [
+    { method: 'cash', amount: 400, status: 'completed' },
+    { method: 'cash', amount: 50, status: 'refunded' },
+    { method: 'telebirr', amount: 300, status: 'completed' },
+    { method: 'cash', amount: 900, status: 'pending' },
+  ], [
+    { amount: 25, payment_method: 'cash' },
+    { amount: 75, payment_method: 'telebirr' },
+  ])
+  assert.equal(expected, 825)
+})
 
 test('price proofs are bound to tenant, branch, product, and exact price', () => {
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-server-only-secret'

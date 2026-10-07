@@ -8,7 +8,9 @@ import {
   ArrowRight,
   BarChart3,
   Boxes,
+  ChefHat,
   CheckCircle2,
+  PackageCheck,
   RefreshCw,
   ShoppingCart,
   TrendingUp,
@@ -209,6 +211,69 @@ export default function DashboardClientContent({
   const goToExpenses = () =>
     goTo('/dashboard/expenses')
 
+  const operationalActions = [
+    ...(roles.some((assignedRole) => ['waiter', 'cashier'].includes(assignedRole))
+      ? [{
+          key: 'sales',
+          title: roles.includes('waiter') && roles.includes('cashier')
+            ? t('Tables, bills & payments', 'ጠረጴዛዎች፣ ሂሳቦች እና ክፍያዎች')
+            : roles.includes('waiter')
+              ? t('Tables & orders', 'ጠረጴዛዎች እና ትዕዛዞች')
+              : t('Bills & payments', 'ሂሳቦች እና ክፍያዎች'),
+          detail: roles.includes('waiter')
+            ? t('Open a table, add items, or continue an order.', 'ጠረጴዛ ይክፈቱ፣ ዕቃ ይጨምሩ ወይም ትዕዛዝ ይቀጥሉ።')
+            : t('Complete bills and manage the current shift.', 'ሂሳብ ያጠናቅቁ እና የአሁኑን ፈረቃ ያስተዳድሩ።'),
+          action: t('Open sales', 'ሽያጭ ክፈት'),
+          icon: ShoppingCart,
+          onClick: goToSales,
+        }]
+      : []),
+    ...(roles.includes('inventory_clerk')
+      ? [
+          {
+            key: 'inventory',
+            title: t('Stock & receiving', 'ክምችት እና ተቀባይነት'),
+            detail: t('Receive deliveries, count stock, and review low items.', 'የመጡ ዕቃዎችን ይቀበሉ፣ ክምችት ይቁጠሩ እና ዝቅተኛ ዕቃዎችን ይመልከቱ።'),
+            action: t('Open inventory', 'ክምችት ክፈት'),
+            icon: Boxes,
+            onClick: goToInventory,
+          },
+          {
+            key: 'handover',
+            title: t('Issue / hand over stock', 'እቃ ማስረከብ'),
+            detail: t('Record stock given to a named staff member for custody.', 'ለተመረጠ ሰራተኛ የተሰጠ እቃ ይመዝግቡ።'),
+            action: t('Open handovers', 'ርክክብ ክፈት'),
+            icon: PackageCheck,
+            onClick: () => goTo('/stock-handover'),
+          },
+        ]
+      : []),
+    ...(roles.some((assignedRole) => ['kitchen', 'barman'].includes(assignedRole))
+      ? [{
+          key: 'station',
+          title: roles.includes('barman') && !roles.includes('kitchen')
+            ? t('Bar preparation queue', 'የባር ዝግጅት ዝርዝር')
+            : roles.includes('kitchen') && !roles.includes('barman')
+              ? t('Kitchen preparation queue', 'የኩሽና ዝግጅት ዝርዝር')
+              : t('Kitchen & bar queues', 'የኩሽና እና ባር ዝርዝሮች'),
+          detail: t('Start new tickets and mark prepared orders ready to serve.', 'አዲስ ትዕዛዞችን ይጀምሩ እና የተዘጋጁትን ዝግጁ ብለው ያመልክቱ።'),
+          action: t('Open preparation queue', 'የዝግጅት ዝርዝር ክፈት'),
+          icon: ChefHat,
+          onClick: () => goTo('/kitchen'),
+        }]
+      : []),
+    ...(roles.some((assignedRole) => ['barman', 'kitchen', 'waiter', 'cashier'].includes(assignedRole))
+      ? [{
+          key: 'custody-inbox',
+          title: t('Stock to confirm', 'እቃ ለማረጋገጥ'),
+          detail: t('Check and confirm stock handed to you.', 'የተረከቡትን እቃ ይፈትሹ እና ያረጋግጡ።'),
+          action: t('Open stock handovers', 'የእቃ ርክክብ ክፈት'),
+          icon: PackageCheck,
+          onClick: () => goTo('/stock-handover'),
+        }]
+      : []),
+  ]
+
   /* ==========================================================
      VOICE BRIEFING
   ========================================================== */
@@ -398,6 +463,44 @@ export default function DashboardClientContent({
 
       {isOwnerOrManager ? (
         <div className="space-y-4">
+          {roles.includes('manager') && !roles.includes('owner') && (
+            <section className="rounded-2xl border border-coffee-100 bg-white p-4 shadow-sm" aria-labelledby="manager-attention-title">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h2 id="manager-attention-title" className="text-sm font-black text-coffee-800">{t('Needs attention', 'ትኩረት የሚፈልጉ')}</h2>
+                  <p className="mt-1 text-xs text-coffee-500">{t('Check stock and open shifts, then take action.', 'ክምችትን እና የተከፈቱ ፈረቃዎችን ይመልከቱ እና እርምጃ ይውሰዱ።')}</p>
+                </div>
+                <div className="flex flex-wrap gap-2 text-[11px] font-black">
+                  {(outOfStockCount > 0 || lowStockCount > 0) && (
+                    <span className="rounded-full bg-gold-50 px-3 py-1.5 text-gold-800">
+                      {formatNumber(outOfStockCount + lowStockCount)} {t('low / out of stock', 'ዝቅተኛ / ከክምችት ውጭ')}
+                    </span>
+                  )}
+                  {openShiftCount > 0 && (
+                    <span className="rounded-full bg-cream-100 px-3 py-1.5 text-coffee-700">
+                      {formatNumber(openShiftCount)} {t('open shifts', 'የተከፈቱ ፈረቃዎች')}
+                    </span>
+                  )}
+                  {outOfStockCount === 0 && lowStockCount === 0 && openShiftCount === 0 && (
+                    <span className="rounded-full bg-berbere-50 px-3 py-1.5 text-berbere-700">{t('Nothing urgent', 'አስቸኳይ ነገር የለም')}</span>
+                  )}
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {[
+                  [t('Sales', 'ሽያጭ'), goToSales],
+                  [t('Inventory', 'ክምችት'), goToInventory],
+                  [t('Staff', 'ሰራተኞች'), () => goTo('/management/staff')],
+                  [t('Expenses', 'ወጪዎች'), goToExpenses],
+                  [t('Reports', 'ሪፖርቶች'), goToReports],
+                ].map(([label, action]) => (
+                  <button key={String(label)} type="button" onClick={action as () => void} className="min-h-10 rounded-xl border border-cream-200 px-3 text-xs font-bold text-coffee-700 hover:bg-cream-50">
+                    {label as string}
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
           {/* ==================================================
               QUICK ACTIONS
           ================================================== */}
@@ -823,6 +926,50 @@ export default function DashboardClientContent({
             <ArrowRight className="h-4 w-4 text-coffee-300" />
           </button>
         </div>
+      ) : operationalActions.length > 0 ? (
+        <section className="space-y-3" aria-labelledby="staff-home-title">
+          <header className="rounded-xl border border-cream-200 bg-cream-50 p-4">
+            <h2 id="staff-home-title" className="text-sm font-black text-coffee-800">
+              {t('Your work today', 'የዛሬ ስራዎ')}
+            </h2>
+            <p className="mt-1 text-xs text-coffee-500">
+              {roles.includes('inventory_clerk')
+                ? t(`${lowStockCount + outOfStockCount} stock items need attention.`, `${lowStockCount + outOfStockCount} የክምችት ዕቃዎች ትኩረት ይፈልጋሉ።`)
+                : roles.includes('cashier') && pendingSyncCount > 0
+                  ? t(`${pendingSyncCount} sale(s) are saved on this device and waiting to sync.`, `${pendingSyncCount} ሽያጭ በዚህ መሳሪያ ተቀምጠው ለማመሳሰል እየጠበቁ ነው።`)
+                  : roles.includes('waiter')
+                    ? t('Open a table or continue an order.', 'ጠረጴዛ ይክፈቱ ወይም ትዕዛዝ ይቀጥሉ።')
+                    : t('Choose the task you need to do next.', 'ቀጥሎ የሚሰሩትን ስራ ይምረጡ።')}
+            </p>
+          </header>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {operationalActions.map((item, index) => {
+              const Icon = item.icon
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={item.onClick}
+                  className={`flex min-h-24 items-center justify-between gap-3 rounded-2xl border p-4 text-left shadow-sm transition active:scale-[0.99] ${index === 0 ? 'border-coffee-800 bg-coffee-800 text-white hover:bg-coffee-700' : 'border-coffee-100 bg-white text-coffee-800 hover:bg-coffee-50'}`}
+                >
+                  <span className="flex min-w-0 items-center gap-3">
+                    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${index === 0 ? 'bg-berbere-500 text-white' : 'bg-berbere-50 text-berbere-600'}`}>
+                      <Icon className="h-5 w-5" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-black">{item.title}</span>
+                      <span className={`mt-1 block text-xs leading-5 ${index === 0 ? 'text-cream-300' : 'text-coffee-500'}`}>{item.detail}</span>
+                    </span>
+                  </span>
+                  <span className={`inline-flex shrink-0 items-center gap-1 text-[11px] font-black ${index === 0 ? 'text-cream-100' : 'text-berbere-600'}`}>
+                    <span className="hidden md:inline">{item.action}</span>
+                    <ArrowRight className="h-4 w-4" />
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </section>
       ) : (
         /* ======================================================
            OPERATIONAL STAFF

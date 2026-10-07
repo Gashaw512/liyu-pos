@@ -17,7 +17,7 @@ export const navigationConfig: NavItem[] = [
     nameEn: "Home",
     path: "/dashboard",
     icon: Home,
-    roles: ["owner", "manager", "cashier", "inventory_clerk", "waiter", "kitchen"]
+    roles: ["owner", "manager", "cashier", "inventory_clerk", "waiter", "kitchen", "barman"]
   },
   {
     key: "inventory",

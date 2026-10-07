@@ -111,7 +111,7 @@ export async function GET() {
       status: string
       canReconcile: boolean
       reconciliationStatus: string | null
-      lines: Array<{ productId: string; productName: string; productNameAm: string | null; quantityIssued: number }>
+      lines: Array<{ productId: string; productName: string; productNameAm: string | null; quantityIssued: number; soldQuantity: number }>
       reconciliation: unknown
     } | null = null
     if (canReceive && !canIssue) {
@@ -165,7 +165,14 @@ export async function GET() {
           .eq('business_id', profile.business_id)
           .eq('branch_id', profile.branch_id)
           .eq('custody_shift_id', custodyShift.id)
-        if (custodyEntriesError) throw custodyEntriesError
+      if (custodyEntriesError) throw custodyEntriesError
+        const { data: soldAllocations, error: soldAllocationsError } = await admin
+          .from('kot_sale_allocations')
+          .select('product_id,quantity')
+          .eq('business_id', profile.business_id)
+          .eq('branch_id', profile.branch_id)
+          .eq('custody_shift_id', custodyShift.id)
+        if (soldAllocationsError) throw soldAllocationsError
         if (!reconciliation) {
           const { data: report, error: reportError } = await admin
             .from('custody_shift_reconciliations')
@@ -182,8 +189,12 @@ export async function GET() {
         if (custodyProductsError) throw custodyProductsError
         const custodyProductMap = new Map((custodyProducts ?? []).map((product) => [product.id, product]))
         const issuedByProduct = new Map<string, number>()
+        const soldByProduct = new Map<string, number>()
         for (const entry of custodyEntries ?? []) {
           issuedByProduct.set(entry.product_id, (issuedByProduct.get(entry.product_id) ?? 0) + Number(entry.quantity_received || 0))
+        }
+        for (const allocation of soldAllocations ?? []) {
+          soldByProduct.set(allocation.product_id, (soldByProduct.get(allocation.product_id) ?? 0) + Number(allocation.quantity || 0))
         }
         custody = {
           id: custodyShift.id,
@@ -199,6 +210,7 @@ export async function GET() {
               productName: product?.name ?? 'Product',
               productNameAm: product?.name_am ?? null,
               quantityIssued,
+              soldQuantity: soldByProduct.get(productId) ?? 0,
             }
           }),
           reconciliation: reconciliation?.status === 'submitted'

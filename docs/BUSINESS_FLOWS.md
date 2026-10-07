@@ -73,9 +73,13 @@ Product catalog
 
 The branch inventory balance and staff custody are intentionally separate ledgers. Handover issuance/acceptance must not be treated as a branch stock deduction. KOT sale allocation is accountability attribution, not inventory movement. Wastage is recorded separately from sale where the current KOT/custody paths support it. A single custody reconciliation request persists accepted float, used, returned, wasted, physical count and difference; its request UUID protects retry.
 
+For custody reconciliation, the server reads accepted quantities and the recipient's KOT sale allocations. It subtracts allocated sales, additional use entered by the recipient, returned units, and wastage before comparing with the physical count. The existing transactional RPC stores sales together with `quantity_used`; the API response keeps `soldQuantity` distinct for the on-screen calculation. For example, 20 accepted, 2 sold, and 18 counted produces expected 18 and zero variance.
+
 Current limits:
 
 - Do not subtract both custody issuance and sale from branch stock.
+- `inventory.quantity` remains the total unsold branch balance, including accepted stock physically held by staff. Handover capacity checks reserve pending and active custody quantities, but there is no separate stockroom balance. Do not present `inventory.quantity` as stockroom-available after a handover.
+- Custody sales are read before calling the reconciliation RPC. A sale allocation racing with count submission still needs staging/concurrency verification; the current code does not lock KOT allocations and the custody row in one database transaction.
 - The checked-in custody SQL functions are not “pure TypeScript”; they are required database RPCs.
 - Verify returned stock is actually posted back into branch inventory by the chosen workflow; do not assume a custody reconciliation count alone transfers it.
 - Branch inventory permits negative stock in the current POS flow. A missing local inventory row means local stock is not deducted; server sync creates a zero row for recognized products before sale deduction.

@@ -14,6 +14,7 @@ import { CheckCircle2, Clock3, Coins, LayoutGrid, Loader2, Search, Send, WifiOff
 import { getDB } from '../../../../lib/offline/db'
 import type { Shift } from '../../../../types/database/operations'
 import { finalizeSale } from '@/lib/offline/saleService'
+import { getCancellationBaseItems } from '@/lib/offline/tableOrderSync'
 import {
   sanitizeActiveShiftContext,
   isSameOpenShiftInstance,
@@ -1249,8 +1250,7 @@ export default function SalesPage() {
       const queuedForTable = queuedOrders
         .filter((order) => order.tableId === table.id)
         .sort((first, second) => first.createdAt.localeCompare(second.createdAt))
-      const firstSave = queuedForTable.find((order) => order.operation === 'save')
-      const baseItems = firstSave?.baseItems ?? tableTabs[0]?.items ?? []
+      const baseItems = getCancellationBaseItems(queuedForTable, tableTabs[0]?.items)
       const transaction = db.transaction(['open_tabs', 'pending_table_orders'], 'readwrite')
       const orderStore = transaction.objectStore('pending_table_orders')
 
@@ -1452,6 +1452,14 @@ export default function SalesPage() {
       notifyInventoryUpdated(sale.localId)
 
       await loadPOSData()
+
+      // The sale is already safe in the atomic local outbox. Start server sync
+      // immediately while leaving the receipt and cashier flow responsive.
+      if (typeof navigator !== 'undefined' && navigator.onLine) {
+        void import('@/lib/offline/syncEngine')
+          .then(({ syncEngine }) => syncEngine.syncAll())
+          .catch((error) => console.warn('[POS] Sale queued; immediate sync will retry.', error))
+      }
 
       setCart([])
       setSelectedTable(null)

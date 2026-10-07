@@ -16,7 +16,7 @@ Legend: **Allow** means intended and present in reviewed code. **Deny** means ex
 
 | Capability | Owner | Manager | Cashier | Waiter | Kitchen | Barman | Inventory clerk | Combined-role caution |
 |---|---|---|---|---|---|---|---|---|
-| Dashboard | Allow | Allow | Compact operations | Compact operations | Kitchen workflow | Bar workflow | Inventory workflow | Navigation is not API authorization |
+| Home / primary task | Owner business dashboard | Needs-attention summary plus existing business view | Bills, payments, shift and sync message | Tables and orders | Kitchen queue and own stock inbox | Bar queue and own stock inbox | Inventory, receiving and stock handovers | Combined roles see actions for each assigned operational role |
 | Business settings / hotel toggle | Allow | Deny by intended settings route | Deny | Deny | Deny | Deny | Deny | Test settings API, not only controls |
 | Staff role management | Allow; operational + manager | Allow; operational only | Deny | Deny | Deny | Deny | Deny | Owner role is not assignable via staff editor |
 | Product/category read | Allow | Allow | Operational catalog | Operational catalog | Ticket snapshots | Ticket snapshots | Read for counts | Check RLS role policies staging |
@@ -46,7 +46,7 @@ Business setup, staff assignment, catalog/prices, financial review, branch opera
 
 ### Manager
 
-Day-to-day operations, catalog and staff administration within manager rules, reports and oversight. Business-level owner-only settings must remain denied at the API.
+Day-to-day operations, catalog and staff administration within manager rules, reports and oversight. Home adds low/out-of-stock and open-shift attention counts with quick links. Business-level owner-only settings must remain denied at the API.
 
 ### Cashier
 
@@ -58,11 +58,11 @@ Select products, manage open table orders, and save additions. Waiter-only canno
 
 ### Kitchen / Barman
 
-See and update only their station's tickets. Marking ready records authenticated preparer and a custody shift. They are not automatically financial cashiers.
+Home links directly to the station queue and the user's own handover inbox. See and update only their station's tickets. Marking ready records authenticated preparer and a custody shift. The POS page currently still recognizes `barman` as checkout-capable while the sync route also accepts barman sales; align this role policy before asserting that barman-only users cannot take payment. They are not automatically permitted to open a monetary shift.
 
 ### Inventory clerk
 
-Receive and count stock; issue custody vouchers. Product/category retail-price writes are restricted by the role-boundary migration. This role must not complete sales or access cash analytics. Validate all direct endpoints and database policies on staging.
+Home links to inventory receiving/counts and stock handovers, with a low-stock attention count. Receive and count stock; issue custody vouchers. Product/category retail-price writes are restricted by the role-boundary migration. This role must not complete sales or access cash analytics. Validate all direct endpoints and database policies on staging.
 
 ## Required combined-role tests
 

@@ -8,7 +8,7 @@ This document distinguishes authoritative persisted values from client caches an
 |---|---|---|---|
 | Product retail price | `products.retail_price` or signed catalog snapshot for this business/branch/product | Valid signed cached snapshot may preserve its issued price; manager/owner may authorize override | Sync verifies proof and normalizes to cents. Stale offline prices remain the price snapshot held by that device. |
 | Product cost | FIFO cost layer consumed by sale | `inventory_cost_layers` -> immutable `inventory_cost_allocations` -> `sale_items.cost_total`; product `cost_price` is fallback only | FIFO allocation runs in the sale transaction. Local offline receipt still uses an approximate 70% cost placeholder until sync, so it is not an authoritative profit figure. |
-| Inventory quantity | `inventory.quantity` per business/branch/product, changed by movements | Inventory row plus `inventory_movements`; IndexedDB holds a local working snapshot | Receipt/sale triggers/functions update balance. Confirm migration deployment and one movement per request. Local missing rows can prevent immediate deduction; server can seed zero rows and allow negative stock. |
+| Inventory quantity | `inventory.quantity` per business/branch/product, changed by movements | Inventory row plus `inventory_movements`; IndexedDB holds a local working snapshot | Receipt/sale triggers/functions update balance. This is total unsold branch stock, including stock physically accepted into staff custody; it is not a stockroom-only balance. Confirm migration deployment and one movement per request. Local missing rows can prevent immediate deduction; server can seed zero rows and allow negative stock. |
 | Opening cash | Persisted `shifts.opening_cash` | Cashier enters opening float when opening; close reads persisted shift | Client close payload opening amount is ignored. Opening amount itself is user-entered at open and saved. |
 | Cash sales | Completed `payments` with `method='cash'` for completed sale IDs in shift | Persisted payment rows | Shift close also subtracts cash-refunded payment rows, when present. A complete refund workflow was not found. |
 | Non-cash sales | Completed `payments` grouped by method | Persisted payment rows | Payment rows represent recorded tenders, not proof of settlement from an external wallet API. |
@@ -21,7 +21,7 @@ This document distinguishes authoritative persisted values from client caches an
 | KOT status | `kitchen_order_tickets.preparation_status` and line state | KOT ticket/line rows | API transition checks expected state. Ticket station derives from explicit product/category fields only after new migration is deployed. |
 | Custody quantity | Accepted vouchers in `custody_shift_inventory` linked to a custody shift | `stock_handovers` + verified/accepted inventory rows | Pending vouchers reserve availability; they do not decrease branch stock. Custody is a sub-ledger. |
 | Wastage | Immutable KOT wastage allocation or inventory movement with `movement_type='waste'` | `kot_wastage_allocations`, submitted reconciliation wastage and/or `inventory_movements` | Multiple paths exist; prevent counting the same wastage in both KOT allocation and submitted reconciliation. Actor/reason completeness requires staging review. |
-| Stock variance | Physical count minus expected station quantity | `custody_shift_reconciliations` snapshots; report builder combines accepted, sold allocations, wastage and count | The close-report formula does not yet clearly reconcile `quantity_used`, `quantity_returned`, KOT-allocated sale, and wastage semantics. Validate the business meaning and avoid double-subtracting sales. |
+| Stock variance | Physical count minus expected station quantity | Reconciliation API adds server-read KOT sale allocations to recipient-entered non-sale use, returns, and wastage before invoking the transactional RPC; shift report derives expected quantity from these records | Reconciliation snapshots store sold quantity together with `quantity_used`, while the API response keeps sold separate. The allocation read and RPC are separate requests, so a sale-allocation race still requires staging verification. |
 
 ## Calculation definitions to enforce
 
@@ -40,7 +40,8 @@ Non-cash tenders and non-cash expenses do not affect physical drawer cash. Actua
 ### Inventory and cost
 
 ```text
-Branch on hand = prior branch quantity + receipts + returns + adjustments - sales - wastage
+Branch total on hand = prior branch quantity + receipts + posted return movements + adjustments - sales - wastage
+Stockroom available = branch total on hand - pending handovers - accepted active custody balance
 Sale COGS = sum of FIFO layer allocations consumed by each sale line
 ```
 
@@ -56,7 +57,7 @@ accepted stock
 - quantities physically returned to branch inventory
 ```
 
-The repository currently has both KOT allocations and a recipient-entered `used_quantity` in custody reconciliation. The business must specify whether `used_quantity` means an extra non-sale consumption amount or duplicates sold quantity. Until that is resolved, staff variance totals are not a certified accounting result.
+Recipient-entered `used_quantity` means additional non-sale use. The server separately reads KOT allocations and subtracts sales once. Returned quantities currently affect the custody count but a submitted custody count does not itself post a return movement into branch inventory. Staff variance totals still require staging verification, especially a concurrent sale during count submission.
 
 ## Record relationships
 

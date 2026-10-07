@@ -335,7 +335,16 @@ export async function POST(request: Request) {
               ? money(savedLine?.quantity_wasted)
               : 0
             const wastageQty = Math.max(recordedWastage, enteredWastage)
-            const expectedStock = item.quantity_received - soldQty - wastageQty
+            // The custody RPC stores server-allocated sales together with
+            // manually recorded use in quantity_used. Subtract sales only
+            // once, then include additional use and returned stock.
+            const usedQty = savedReport?.status === 'submitted'
+              ? Math.max(0, money(savedLine?.quantity_used) - soldQty)
+              : 0
+            const returnedQty = savedReport?.status === 'submitted'
+              ? money(savedLine?.quantity_returned)
+              : 0
+            const expectedStock = item.quantity_received - soldQty - usedQty - returnedQty - wastageQty
             const countLine = physicalLines.find(line => line.product_id === item.product_id)
             const actualCount = savedReport?.status === 'submitted' && countLine?.physical_count != null
               ? money(countLine.physical_count)

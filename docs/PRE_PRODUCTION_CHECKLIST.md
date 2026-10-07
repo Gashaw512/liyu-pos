@@ -53,6 +53,8 @@ For lint review of a patch, also run ESLint against every changed TypeScript/TSX
 - [ ] Accept/dispute voucher as the selected recipient only; verify accepted custody quantity and its shift identity.
 - [ ] Sell prepared goods: branch stock decreases once; KOT custody allocation only attributes sale quantity and does not deduct branch stock again.
 - [ ] Submit used/returned/wasted/count reconciliation. Verify definitions do not double-count sale quantity or wastage; returned amount is transferred to branch inventory exactly once if the workflow promises that transfer.
+- [ ] Accept 20 units into custody, allocate 2 completed KOT sale units, then count 18. The server-derived expected custody stock must be 18 with zero variance; repeat with extra use/return/waste and reject consumption greater than accepted stock.
+- [ ] Race a completed sale allocation against custody count submission. Verify exactly one sale allocation and a reconciliation that either includes it or clearly remains pending for retry; this has not yet been verified on staging.
 - [ ] Confirm recipe/ingredient inventory is not implied by direct product stock; test only menu-product stock unless a recipe system is added.
 
 ## 6. KOT and kitchen/bar routing

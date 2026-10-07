@@ -26,7 +26,7 @@ type Handover = {
 
 type Recipient = { id: string; name: string }
 type ProductOption = { id: string; name: string; name_am: string | null }
-type CustodyLine = { productId: string; productName: string; productNameAm: string | null; quantityIssued: number }
+type CustodyLine = { productId: string; productName: string; productNameAm: string | null; quantityIssued: number; soldQuantity: number }
 type ReconciledLine = {
   product_id: string
   product_name: string
@@ -352,7 +352,7 @@ export default function StockHandoverPanel({ isAm }: { isAm: boolean }) {
             <form onSubmit={(event) => void submitCustodyReconciliation(event)} className="space-y-3 p-4 sm:p-6">
               {data.custody.lines.map((line) => {
                 const amounts = custodyForm.amounts[line.productId] ?? { used: '0', returned: '0', wasted: '0', counted: '' }
-                const expected = line.quantityIssued - Number(amounts.used || 0) - Number(amounts.returned || 0) - Number(amounts.wasted || 0)
+                const expected = line.quantityIssued - line.soldQuantity - Number(amounts.used || 0) - Number(amounts.returned || 0) - Number(amounts.wasted || 0)
                 const counted = amounts.counted === '' ? null : Number(amounts.counted)
                 const difference = counted == null || !Number.isFinite(counted) ? null : counted - expected
                 const setAmount = (key: 'used' | 'returned' | 'wasted' | 'counted', value: string) => setCustodyForm((current) => ({
@@ -364,6 +364,7 @@ export default function StockHandoverPanel({ isAm }: { isAm: boolean }) {
                     <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                       <h3 className="font-black text-coffee-800">{isAm && line.productNameAm ? line.productNameAm : line.productName}</h3>
                       <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-coffee-600">{isAm ? 'የተረከቡ' : 'Issued'}: {line.quantityIssued}</span>
+                      <span className="rounded-full bg-berbere-50 px-3 py-1 text-xs font-bold text-berbere-700">{isAm ? 'የተሸጡ' : 'Sold'}: {line.soldQuantity}</span>
                     </div>
                     <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                       {([

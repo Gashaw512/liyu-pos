@@ -328,23 +328,22 @@ export default function StockHandoverPanel({ isAm, view = 'home' }: { isAm: bool
     history: isAm ? 'የእቃ ታሪክ' : 'Stock history',
   }
   const pageHeader = (
-    <header className="sticky top-0 z-40 -mx-3 mb-4 border-b border-cream-200 bg-white px-3 py-2 shadow-sm sm:-mx-5 sm:px-5">
+    <header className="sticky top-0 z-40 -mx-3 -mt-4 mb-4 border-b border-cream-200 bg-white px-3 py-2 shadow-sm sm:-mx-5 sm:px-5">
       <div className="mx-auto flex max-w-5xl items-center justify-between gap-2">
         <h1 className="shrink-0 text-sm font-black text-coffee-800 sm:text-base">{viewTitle[activeView]}</h1>
         {pageActions.length > 0 && (
-          <nav aria-label={isAm ? 'የእቃ ስራዎች' : 'Stock actions'} className="flex min-w-0 flex-1 flex-nowrap justify-start gap-1 overflow-x-auto sm:justify-end">
+          <nav aria-label={isAm ? 'የእቃ ስራዎች' : 'Stock actions'} className="ml-auto flex min-w-0 flex-1 flex-nowrap items-center justify-end gap-2 overflow-x-auto">
             {pageActions.map((action) => (
               <Link
                 key={action.path}
                 href={`/${locale}/stock-handover/${action.path}` as Route}
                 aria-current={activeView === action.view ? 'page' : undefined}
                 style={activeView === action.view
-                  ? { backgroundColor: 'var(--color-berbere-600)', borderColor: 'var(--color-berbere-600)', color: '#fff' }
-                  : { backgroundColor: 'var(--color-cream-50)', borderColor: 'var(--color-cream-300)', color: 'var(--color-coffee-700)' }}
-                className={`inline-flex min-h-10 shrink-0 items-center justify-center rounded-lg border px-3 text-[11px] font-black shadow-sm transition sm:px-3.5 sm:text-xs ${activeView === action.view ? 'hover:brightness-95' : 'hover:bg-cream-100'}`}
+                  ? { backgroundColor: '#7a1f2d', borderColor: '#7a1f2d', color: '#ffffff' }
+                  : { backgroundColor: '#ffffff', borderColor: '#8a756d', color: '#2b1e1a' }}
+                className="inline-flex min-h-10 min-w-max shrink-0 items-center justify-center rounded-md border-2 px-3 text-xs font-bold shadow-sm transition hover:brightness-95 sm:px-3.5"
               >
-                <span className="sm:hidden">{action.shortLabel}</span>
-                <span className="hidden sm:inline">{action.label}</span>
+                {action.label}
               </Link>
             ))}
           </nav>

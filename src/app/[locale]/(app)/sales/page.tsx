@@ -73,6 +73,8 @@ interface ClosedShiftFeedback {
   status: ShiftReportDeliveryStatus
 }
 
+type POSCustodyBalance = { contextKey: string; quantities: Record<string, number> }
+
 function subscribeToOnlineStatus(onChange: () => void) {
   window.addEventListener('online', onChange)
   window.addEventListener('offline', onChange)
@@ -102,6 +104,7 @@ export default function SalesPage() {
   const canCheckout = hasRole(['owner', 'manager', 'cashier', 'barman'])
   const isWaiter = hasRole(['waiter']) && !canCheckout
   const canViewSalesReport = hasRole(['owner', 'manager', 'cashier', 'barman'])
+  const canViewCustody = hasRole(['waiter', 'cashier', 'barman', 'kitchen'])
 
   const {
     businessId,
@@ -110,6 +113,7 @@ export default function SalesPage() {
     loading: businessContextLoading,
     error: businessContextError,
   } = useBusinessContext()
+  const custodyContextKey = `${businessId ?? ''}:${branchId ?? ''}:${userId ?? ''}:${canViewCustody}`
 
   // ==========================================================
   // STATE
@@ -118,6 +122,7 @@ export default function SalesPage() {
   const [loading, setLoading] = useState(true)
   const online = useSyncExternalStore(subscribeToOnlineStatus, getOnlineStatus, getServerOnlineStatus)
   const [pendingSalesCount, setPendingSalesCount] = useState(0)
+  const [custodyBalances, setCustodyBalances] = useState<POSCustodyBalance | null>(null)
   const [products, setProducts] = useState<POSProduct[]>([])
   const [categories, setCategories] = useState<POSCategory[]>([])
   const [tables, setTables] = useState<POSTable[]>([])
@@ -153,6 +158,40 @@ export default function SalesPage() {
       console.warn('[POS] Could not read the local pending-sale count.', error)
     }
   }, [])
+
+  const refreshCustodyBalances = useCallback(async () => {
+    if (!canViewCustody || !businessId || !branchId || !navigator.onLine) return
+    try {
+      const response = await fetch('/api/inventory/handover', {
+        cache: 'no-store',
+        credentials: 'same-origin',
+      })
+      if (!response.ok) return
+      const result = await response.json() as {
+        custody?: { lines?: Array<{ productId: string; remainingQuantity: number }> } | null
+      }
+      const balances: Record<string, number> = {}
+      for (const line of result.custody?.lines ?? []) {
+        const remaining = Number(line.remainingQuantity)
+        if (Number.isFinite(remaining)) balances[line.productId] = remaining
+      }
+      setCustodyBalances({ contextKey: custodyContextKey, quantities: balances })
+    } catch {
+      // Keep the last confirmed value; branch stock remains the POS stock source.
+    }
+  }, [businessId, branchId, canViewCustody, custodyContextKey])
+
+  useEffect(() => {
+    const refresh = () => void refreshCustodyBalances()
+    const initialLoad = window.setTimeout(refresh, 0)
+    window.addEventListener('online', refresh)
+    window.addEventListener('liyu:sync-complete', refresh)
+    return () => {
+      window.clearTimeout(initialLoad)
+      window.removeEventListener('online', refresh)
+      window.removeEventListener('liyu:sync-complete', refresh)
+    }
+  }, [refreshCustodyBalances])
 
   useEffect(() => {
     const initialRefresh = window.setTimeout(() => void refreshPendingSalesCount(), 0)
@@ -1932,6 +1971,7 @@ export default function SalesPage() {
                 <POSProductGrid
                   products={filteredProducts}
                   cartQuantities={cartQuantities}
+                  custodyBalances={custodyBalances?.contextKey === custodyContextKey ? custodyBalances.quantities : {}}
                   onAddProduct={addToCart}
                   onIncreaseQuantity={(id) =>
                     increaseQuantity(id)

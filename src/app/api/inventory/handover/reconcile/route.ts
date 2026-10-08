@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminDatabaseClient, getAuthorizedProfile } from '@/lib/shift-reports/server'
 import { buildCustodyCountLines } from '@/lib/kitchen/custody-stock'
+import { loadCustodyLedger } from '@/lib/kitchen/custody-ledger'
 
 export const dynamic = 'force-dynamic'
 
@@ -73,7 +74,7 @@ export async function POST(request: Request) {
 
   const { data: activeShift, error: activeShiftError } = await admin
     .from('custody_shifts')
-    .select('id')
+    .select('id,opened_at,closed_at')
     .eq('business_id', profile.business_id)
     .eq('branch_id', profile.branch_id)
     .eq('user_id', auth.user!.id)
@@ -84,10 +85,12 @@ export async function POST(request: Request) {
   if (activeShiftError) return NextResponse.json({ error: 'Could not load your active stock custody.' }, { status: 500 })
 
   let custodyShiftId = activeShift?.id ?? null
+  let custodyShiftOpenedAt = activeShift?.opened_at ?? null
+  let custodyShiftClosedAt = activeShift?.closed_at ?? null
   if (!custodyShiftId) {
     const { data: closedShifts, error: closedShiftsError } = await admin
       .from('custody_shifts')
-      .select('id,closed_at')
+      .select('id,opened_at,closed_at')
       .eq('business_id', profile.business_id)
       .eq('branch_id', profile.branch_id)
       .eq('user_id', auth.user!.id)
@@ -105,33 +108,30 @@ export async function POST(request: Request) {
         .eq('status', 'not_submitted')
       if (pendingCountsError) return NextResponse.json({ error: 'Could not load your pending stock count.' }, { status: 500 })
       const pendingIds = new Set((pendingCounts ?? []).map((row) => row.custody_shift_id))
-      custodyShiftId = (closedShifts ?? []).find((shift) => pendingIds.has(shift.id))?.id ?? null
+      const pendingShift = (closedShifts ?? []).find((shift) => pendingIds.has(shift.id))
+      custodyShiftId = pendingShift?.id ?? null
+      custodyShiftOpenedAt = pendingShift?.opened_at ?? null
+      custodyShiftClosedAt = pendingShift?.closed_at ?? null
     }
   }
 
   const soldByProduct = new Map<string, number>()
   const issuedByProduct = new Map<string, number>()
-  if (custodyShiftId) {
-    const [issuedResult, soldResult] = await Promise.all([
-      admin.from('custody_shift_inventory')
-        .select('product_id,quantity_received')
-        .eq('business_id', profile.business_id)
-        .eq('branch_id', profile.branch_id)
-        .eq('custody_shift_id', custodyShiftId),
-      admin.from('kot_sale_allocations')
-        .select('product_id,quantity')
-        .eq('business_id', profile.business_id)
-        .eq('branch_id', profile.branch_id)
-        .eq('custody_shift_id', custodyShiftId),
-    ])
-    if (issuedResult.error || soldResult.error) {
+  if (custodyShiftId && custodyShiftOpenedAt) {
+    try {
+      const ledger = await loadCustodyLedger(admin, {
+        businessId: profile.business_id,
+        branchId: profile.branch_id,
+        custodyShiftId,
+        userId: auth.user!.id,
+        openedAt: custodyShiftOpenedAt,
+        closedAt: custodyShiftClosedAt,
+      })
+      for (const [productId, quantity] of ledger.issuedByProduct) issuedByProduct.set(productId, quantity)
+      for (const [productId, quantity] of ledger.soldByProduct) soldByProduct.set(productId, quantity)
+    } catch (error) {
+      console.error('[STOCK HANDOVER] Could not load custody ledger for reconciliation:', error)
       return NextResponse.json({ error: 'Could not load accepted stock and completed sales.' }, { status: 500 })
-    }
-    for (const row of issuedResult.data ?? []) {
-      issuedByProduct.set(row.product_id, (issuedByProduct.get(row.product_id) ?? 0) + Number(row.quantity_received || 0))
-    }
-    for (const row of soldResult.data ?? []) {
-      soldByProduct.set(row.product_id, (soldByProduct.get(row.product_id) ?? 0) + Number(row.quantity || 0))
     }
   }
 
@@ -147,13 +147,13 @@ export async function POST(request: Request) {
     p_business_id: profile.business_id,
     p_branch_id: profile.branch_id,
     p_actor_id: auth.user!.id,
-    // The existing transactional RPC accepts one used quantity. Add the
-    // server-derived KOT sale allocation so its stock ceiling and snapshot
-    // include sold items exactly once. User-entered use remains separate in
-    // the response above; no branch inventory is changed by this count.
+    // Sale quantities come from the server ledger and are sent separately
+    // from user-entered use. The RPC can record a shortage without trusting
+    // client-submitted sales or changing branch inventory.
     p_lines: countLines.map((line) => ({
       product_id: line.productId,
-      used_quantity: line.usedIncludingSales,
+      sold_quantity: line.soldQuantity,
+      used_quantity: line.usedQuantity,
       returned_quantity: line.returnedQuantity,
       wasted_quantity: line.wastedQuantity,
       physical_count: line.physicalCount,

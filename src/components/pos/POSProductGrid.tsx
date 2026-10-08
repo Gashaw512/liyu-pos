@@ -15,6 +15,7 @@ import type {
 interface POSProductGridProps {
   products: POSProduct[]
   cartQuantities: Map<string, number>
+  custodyBalances?: Record<string, number>
   onAddProduct: (product: POSProduct) => void
   onIncreaseQuantity: (id: string) => void
   onDecreaseQuantity: (id: string) => void
@@ -254,7 +255,7 @@ function getInventoryBadge(
     title:
       isAm
         ? 'የአሁኑ የኢንቬንተሪ መጠን'
-        : 'Current local inventory quantity',
+        : 'Branch stock remaining. Sales update this quantity; stock handover does not.',
   }
 }
 
@@ -265,6 +266,7 @@ function getInventoryBadge(
 export default function POSProductGrid({
   products,
   cartQuantities,
+  custodyBalances = {},
   onAddProduct,
   onIncreaseQuantity,
   onDecreaseQuantity,
@@ -351,6 +353,7 @@ export default function POSProductGrid({
             product,
             isAm,
           )
+        const custodyBalance = custodyBalances[product.id]
 
         return (
           <div
@@ -463,6 +466,17 @@ export default function POSProductGrid({
                 </p>
               </div>
             </button>
+
+            {custodyBalance !== undefined && (
+              <p
+                className={`mt-1 truncate text-[9px] font-bold sm:text-[10px] ${custodyBalance < 0 ? 'text-danger' : 'text-berbere-700'}`}
+                title={isAm
+                  ? 'ይህ የተረከቡት እቃ የተመዘገበ ቀሪ ነው።'
+                  : 'Last server-confirmed custody balance. Branch stock is shown in the badge above.'}
+              >
+                {isAm ? 'የተረከቡት ቀሪ' : 'Custody remaining'}: {custodyBalance}
+              </p>
+            )}
 
             {/* =================================================
                 BOTTOM ROW

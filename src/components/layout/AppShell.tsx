@@ -12,7 +12,6 @@ import { usePathname } from 'next/navigation'
 import TopBar from './TopBar'
 import BottomNav from './BottomNav'
 import SafeAreaWrapper from './SafeAreaWrapper'
-import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { AlertCircle, RotateCcw } from 'lucide-react'
 
 interface AppShellProps {
@@ -134,7 +133,6 @@ export default function AppShell({
   const pathname = usePathname()
 
   const isAm = locale === 'am'
-  const { isOnline } = useOnlineStatus()
 
   const [isSystemLocked, setSystemLocked] = useState(false)
   const [isCollapsed, setIsCollapsed] = useState(false)
@@ -183,42 +181,6 @@ const isPOSPage =
       }}
     >
       <div className="flex h-dvh w-full flex-col overflow-hidden bg-cream-100 font-sans text-coffee-700 antialiased select-none">
-        {/* =====================================================
-            NETWORK STATUS
-        ====================================================== */}
-
-        {mounted && !isOnline && (
-          <div
-            role="alert"
-            className="
-              flex
-              w-full
-              shrink-0
-              items-center
-              justify-center
-              gap-2
-              bg-berbere-600
-              px-3
-              py-1.5
-              text-center
-              text-[11px]
-              font-black
-              tracking-wide
-              text-white
-              shadow-inner
-              animate-slide-down
-            "
-          >
-            <span className="h-2 w-2 animate-ping rounded-full bg-white" />
-
-            <span>
-              {isAm
-                ? 'ኢንተርኔት የለም። ሽያጮችና ትዕዛዞች በዚህ መሣሪያ ይቀመጣሉ።'
-                : 'Offline. Sales and orders are saved on this device and will sync when online.'}
-            </span>
-          </div>
-        )}
-
         {/* =====================================================
             GLOBAL TOP BAR
         ====================================================== */}

@@ -31,6 +31,20 @@ export function calculateLocalPaymentState<T extends object>(total: number, tend
   }
 }
 
+/** Reject folio tenders at the local sale boundary while disconnected. */
+export function assertPaymentMethodsAvailable<T extends object>(
+  tenders: T,
+  isOnline: boolean,
+) {
+  const roomCharge = Number((tenders as Record<string, unknown>).room_charge ?? 0)
+  if (!Number.isFinite(roomCharge) || roomCharge < 0) {
+    throw new Error('Payment amounts are invalid.')
+  }
+  if (roomCharge > 0 && !isOnline) {
+    throw new Error('Room charges require an internet connection to verify an active guest folio.')
+  }
+}
+
 const cents = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100
 
 export function calculateAuthoritativeSale(input: {

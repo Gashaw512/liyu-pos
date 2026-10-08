@@ -3,7 +3,11 @@
 import { getDB } from './db'
 import { isLegacyContextValue } from './shiftContext'
 import { toLocalHistoricalSale } from './saleHistory'
-import { calculateAuthoritativeSale, calculateLocalPaymentState } from '@/lib/sales/authoritative-sale'
+import {
+  assertPaymentMethodsAvailable,
+  calculateAuthoritativeSale,
+  calculateLocalPaymentState,
+} from '@/lib/sales/authoritative-sale'
 import type { LocalOpenTab, PaymentMethod, PaymentSplit } from '@/types/models/pos-cart'
 
 export interface FinalizeSaleInput {
@@ -115,6 +119,10 @@ export async function finalizeSale(
   }
 
   const totalAmount = localAmounts.total
+  assertPaymentMethodsAvailable(
+    input.splitPayments,
+    typeof navigator === 'undefined' || navigator.onLine,
+  )
   const creditAmount = Number(input.splitPayments.credit || 0)
   if (creditAmount > 0 && (!input.customerName?.trim() || !input.customerPhone?.trim())) {
     throw new Error('Credit sales require the customer name and phone number.')

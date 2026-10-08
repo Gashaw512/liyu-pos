@@ -705,6 +705,13 @@ export default function PaymentSelector({
         const result = await response.json() as { error?: string }
         if (!response.ok) throw new Error(result.error ?? 'This room has no active guest folio.')
       } catch (cause) {
+        if (typeof navigator !== 'undefined' && !navigator.onLine
+          || cause instanceof TypeError && /failed to fetch|networkerror|internet connection required/i.test(cause.message)) {
+          setRoomError(isAm
+            ? 'ክፍያውን ለመቀጠል ኢንተርኔት ያስፈልጋል።'
+            : 'Room charges need an internet connection. No sale was saved; reconnect and try again.')
+          return
+        }
         setRoomError(cause instanceof Error && cause.message !== 'Failed to fetch'
           ? cause.message
           : isAm ? 'ክፍሉን ማረጋገጥ አልተቻለም። ቁጥሩን እና ኢንተርኔትን ያረጋግጡ።' : 'Could not verify the room. Check the number and internet connection.')

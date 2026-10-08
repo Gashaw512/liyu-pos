@@ -1045,13 +1045,21 @@ async function syncSale(
         }
       }
 
-      // The DB function commits the sale, line-trigger FIFO allocation, and
-      // payment rows in one transaction. It serializes duplicate sale IDs.
-      const { error: commitError } = await supabase.rpc('commit_pos_sale', {
-        p_sale: sale,
-        p_items: items,
-        p_payments: payments,
-      })
+      // The DB function commits the sale, FIFO/branch inventory effects, and
+      // payments atomically. Room charges also post their folio ledger entry
+      // inside that same transaction.
+      const { error: commitError } = roomChargePayment
+        ? await supabase.rpc('commit_pos_sale_with_room_charge', {
+            p_sale: sale,
+            p_items: items,
+            p_payments: payments,
+            p_actor_id: context.operatorUserId,
+          })
+        : await supabase.rpc('commit_pos_sale', {
+            p_sale: sale,
+            p_items: items,
+            p_payments: payments,
+          })
       if (commitError) throw commitError
 
       // The KOT custody ledger is a sub-ledger of the branch inventory ledger.
@@ -1067,16 +1075,6 @@ async function syncSale(
           p_table_id: sale.table_id,
         })
         if (allocationError) throw allocationError
-      }
-
-      if (roomChargePayment) {
-        const { error: folioError } = await supabase.rpc('post_room_charge_for_sale', {
-          p_business_id: sale.business_id,
-          p_branch_id: sale.branch_id,
-          p_sale_id: sale.id,
-          p_actor_id: context.operatorUserId,
-        })
-        if (folioError) throw folioError
       }
 
       const inventoryProcessed = await hasSaleInventoryMovement(

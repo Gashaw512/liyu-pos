@@ -74,6 +74,15 @@ export default function TopBar({
     router.push(`/${locale}/login` as any)
   }
 
+  const pendingLabel = isAm ? 'በመጠባበቅ ላይ' : isOnline ? 'waiting' : 'pending'
+  const connectionLabel = !mounted
+    ? '...'
+    : pendingCount > 0
+      ? `${pendingCount} ${pendingLabel}`
+      : isOnline
+        ? isAm ? 'መስመር ላይ' : 'Online'
+        : isAm ? 'ከመስመር ውጭ' : 'Offline'
+
   return (
     <header className="
       /* ERP EDGE-TO-EDGE GEOMETRY: Stretches full width, nested inside the shell header bracket wrapper */
@@ -149,7 +158,11 @@ export default function TopBar({
       <div className="flex items-center gap-1.5 shrink-0">
 
         {/* Real-time Hardware Sync Status Badge */}
-        <div className={`
+        <div
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          className={`
           h-8 px-2.5
           rounded-xl
           flex items-center gap-1.5
@@ -163,21 +176,15 @@ export default function TopBar({
                 ? "bg-green-50 border-green-200 text-green-700 shadow-sm shadow-green-100"
                 : "bg-berbere-50 border-berbere-200 text-berbere-700 shadow-sm shadow-berbere-100 animate-pulse"
           }
-        `}>
+        `}
+        >
           {mounted && isOnline ? (
             <Wifi size={12} className="stroke-[2.5]" />
           ) : (
             <WifiOff size={12} className="stroke-[2.5]" />
           )}
 
-          <span className="hidden xs:inline">
-            {!mounted
-              ? "..."
-              : isOnline
-                ? (isAm ? "መስመር ላይ" : "Online")
-                : `${pendingCount} ${isAm ? "ቆሟል" : "Pending"}`
-            }
-          </span>
+          <span className="hidden xs:inline">{connectionLabel}</span>
         </div>
 
         {/* Localization Switcher Button */}

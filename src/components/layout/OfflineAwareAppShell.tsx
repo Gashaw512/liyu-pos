@@ -87,27 +87,5 @@ export default function OfflineAwareAppShell({
     }
   }, [])
 
-  useEffect(() => {
-    const openCachedRoute = (event: MouseEvent) => {
-      if (navigator.onLine || event.defaultPrevented || event.button !== 0) return
-      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
-
-      const target = event.target
-      if (!(target instanceof Element)) return
-
-      const link = target.closest('a[href]')
-      if (!(link instanceof HTMLAnchorElement) || link.target === '_blank') return
-
-      const destination = new URL(link.href, window.location.href)
-      if (destination.origin !== window.location.origin) return
-
-      event.preventDefault()
-      window.location.assign(destination.pathname + destination.search + destination.hash)
-    }
-
-    document.addEventListener('click', openCachedRoute, true)
-    return () => document.removeEventListener('click', openCachedRoute, true)
-  }, [])
-
   return <>{children}</>
 }

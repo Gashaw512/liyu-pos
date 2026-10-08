@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { CheckCircle2, Clock3, Coins, LayoutGrid, Loader2, Search, Send, WifiOff, X } from 'lucide-react'
@@ -72,6 +73,18 @@ interface ClosedShiftFeedback {
   status: ShiftReportDeliveryStatus
 }
 
+function subscribeToOnlineStatus(onChange: () => void) {
+  window.addEventListener('online', onChange)
+  window.addEventListener('offline', onChange)
+  return () => {
+    window.removeEventListener('online', onChange)
+    window.removeEventListener('offline', onChange)
+  }
+}
+
+const getOnlineStatus = () => navigator.onLine
+const getServerOnlineStatus = () => true
+
 // ============================================================
 // PAGE
 // ============================================================
@@ -103,6 +116,8 @@ export default function SalesPage() {
   // ==========================================================
 
   const [loading, setLoading] = useState(true)
+  const online = useSyncExternalStore(subscribeToOnlineStatus, getOnlineStatus, getServerOnlineStatus)
+  const [pendingSalesCount, setPendingSalesCount] = useState(0)
   const [products, setProducts] = useState<POSProduct[]>([])
   const [categories, setCategories] = useState<POSCategory[]>([])
   const [tables, setTables] = useState<POSTable[]>([])
@@ -127,6 +142,28 @@ export default function SalesPage() {
   const [closedShiftFeedback, setClosedShiftFeedback] = useState<ClosedShiftFeedback | null>(null)
   const [closeShiftDialogOpen, setCloseShiftDialogOpen] = useState(false)
   const [actualCashCount, setActualCashCount] = useState('')
+
+  const refreshPendingSalesCount = useCallback(async () => {
+    try {
+      const db = await getDB()
+      setPendingSalesCount(db.objectStoreNames.contains('pending_sales')
+        ? (await db.getAll('pending_sales')).length
+        : 0)
+    } catch (error) {
+      console.warn('[POS] Could not read the local pending-sale count.', error)
+    }
+  }, [])
+
+  useEffect(() => {
+    const initialRefresh = window.setTimeout(() => void refreshPendingSalesCount(), 0)
+    window.addEventListener('liyu:sync-complete', refreshPendingSalesCount)
+    window.addEventListener('liyu:sale-sync-status', refreshPendingSalesCount)
+    return () => {
+      window.clearTimeout(initialRefresh)
+      window.removeEventListener('liyu:sync-complete', refreshPendingSalesCount)
+      window.removeEventListener('liyu:sale-sync-status', refreshPendingSalesCount)
+    }
+  }, [refreshPendingSalesCount])
 
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean
@@ -570,7 +607,7 @@ export default function SalesPage() {
   // ==========================================================
 
   useEffect(() => {
-    if (!selectedTable || !cartHasItems) {
+    if (!selectedTable) {
       setHasUnsavedChanges(false)
       return
     }
@@ -580,7 +617,6 @@ export default function SalesPage() {
     )
   }, [
     cart,
-    cartHasItems,
     selectedTable,
     savedCartSnapshot,
   ])
@@ -1331,10 +1367,25 @@ export default function SalesPage() {
   const handleSaveTab = async () => {
     if (
       !selectedTable ||
-      !cartHasItems ||
       !hasUnsavedChanges ||
       savingTab
     ) {
+      return
+    }
+
+    // Saving an empty table cart means the waiter removed every remaining
+    // line. Queue the existing cancel operation so the deletion survives
+    // refresh/offline use and syncs through the normal outbox.
+    if (!cartHasItems) {
+      setSavingTab(true)
+      try {
+        await clearCurrentOrder()
+      } catch (error) {
+        console.error('[POS] Failed to save the empty table order:', error)
+        toast(isAm ? 'á‰µá‹•á‹›á‹™áŠ• áˆ›áˆµá‰€áˆáŒ¥ áŠ áˆá‰°á‰»áˆˆáˆ' : 'Could not save the removed items.', 'error')
+      } finally {
+        setSavingTab(false)
+      }
       return
     }
 
@@ -1449,6 +1500,8 @@ export default function SalesPage() {
         totalBill,
       })
 
+      await refreshPendingSalesCount()
+
       notifyInventoryUpdated(sale.localId)
 
       await loadPOSData()
@@ -1475,12 +1528,12 @@ export default function SalesPage() {
 
       toast(
         isAm
-          ? typeof navigator !== 'undefined' && !navigator.onLine
-            ? 'ሽያጩ በዚህ መሣሪያ ተቀምጧል። ኢንተርኔት ሲመለስ ይላካል።'
-            : 'ሽያጩ ተቀምጧል።'
-          : typeof navigator !== 'undefined' && !navigator.onLine
-            ? 'Sale saved on this device. It will sync when you are online.'
-            : 'Sale saved.',
+          ? online
+            ? 'ሽያጩ በዚህ መሣሪያ ተቀምጧል። አሁን ከሰርቨሩ ጋር እየተመሳሰለ ነው።'
+            : 'ሽያጩ በዚህ መሣሪያ ተቀምጧል። ኢንተርኔት ሲመለስ ይመሳሰላል።'
+          : online
+            ? 'Sale saved on this device. Syncing with the server…'
+            : 'Sale saved on this device. It will sync when you are online.',
         'success',
       )
 
@@ -1708,7 +1761,7 @@ export default function SalesPage() {
             setBillOpen(false)
           }}
           hasUnsavedTableOrder={Boolean(
-            selectedTable && cartHasItems && hasUnsavedChanges,
+            selectedTable && hasUnsavedChanges,
           )}
           savingTab={savingTab}
           onSaveOrder={handleSaveTab}
@@ -1722,6 +1775,7 @@ export default function SalesPage() {
               initiallyExpanded
             />
           )}
+          pendingSalesCount={pendingSalesCount}
         />
 
         {/* CURRENT BILL */}

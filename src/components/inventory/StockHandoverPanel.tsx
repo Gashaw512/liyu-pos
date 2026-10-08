@@ -7,8 +7,10 @@ import {
   Clock3,
   Loader2,
   PackageCheck,
+  RefreshCw,
   TriangleAlert,
   ClipboardCheck,
+  RotateCcw,
 } from 'lucide-react'
 import { getSupabaseBrowserClient } from '@/lib/supabase/client'
 
@@ -26,6 +28,7 @@ type Handover = {
 
 type Recipient = { id: string; name: string }
 type ProductOption = { id: string; name: string; name_am: string | null }
+type CachedStock = { quantity: number; updatedAt: string | null }
 type CustodyLine = { productId: string; productName: string; productNameAm: string | null; quantityIssued: number; soldQuantity: number }
 type ReconciledLine = {
   product_id: string
@@ -71,15 +74,20 @@ function messageFrom(error: unknown, fallback: string) {
 export default function StockHandoverPanel({ isAm }: { isAm: boolean }) {
   const [data, setData] = useState<HandoverData | null>(null)
   const [products, setProducts] = useState<ProductOption[]>([])
+  const [branchStock, setBranchStock] = useState<Record<string, CachedStock>>({})
   const [productId, setProductId] = useState('')
   const [recipientId, setRecipientId] = useState('')
   const [quantity, setQuantity] = useState('')
   const [busy, setBusy] = useState(false)
   const [custodyForm, setCustodyForm] = useState<{ shiftId: string; amounts: Record<string, { used: string; returned: string; wasted: string; counted: string }> }>({ shiftId: '', amounts: {} })
   const [catalogLoading, setCatalogLoading] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [respondingTo, setRespondingTo] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
 
   const load = useCallback(async () => {
+    setRefreshing(true)
     try {
       const response = await fetch('/api/inventory/handover', {
         cache: 'no-store',
@@ -113,16 +121,26 @@ export default function StockHandoverPanel({ isAm }: { isAm: boolean }) {
           credentials: 'same-origin',
           headers: { Authorization: `Bearer ${accessToken}` },
         })
-        const catalog = await catalogResponse.json() as { products?: ProductOption[]; error?: string }
+        const catalog = await catalogResponse.json() as {
+          products?: ProductOption[]
+          inventory?: Array<{ product_id: string; quantity: number; updated_at: string | null }>
+          error?: string
+        }
         if (!catalogResponse.ok) throw new Error(catalog.error || 'Could not load products for this branch.')
         setProducts(Array.isArray(catalog.products) ? catalog.products : [])
+        setBranchStock(Object.fromEntries((catalog.inventory ?? []).map((row) => [row.product_id, {
+          quantity: Number(row.quantity),
+          updatedAt: row.updated_at,
+        }])))
       } else {
         setProducts([])
+        setBranchStock({})
       }
     } catch (cause) {
       setError(messageFrom(cause, 'Could not load stock handover data.'))
     } finally {
       setCatalogLoading(false)
+      setRefreshing(false)
     }
   }, [])
 
@@ -134,17 +152,43 @@ export default function StockHandoverPanel({ isAm }: { isAm: boolean }) {
   const issue = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!productId || !recipientId || Number(quantity) <= 0 || busy) return
+    const selectedProduct = products.find((product) => product.id === productId)
+    const selectedRecipient = data?.recipients.find((recipient) => recipient.id === recipientId)
+    const stock = branchStock[productId]
+    const fingerprint = `${productId}:${recipientId}:${Number(quantity)}`
+    const requestKey = 'liyu:stock-handover:pending-request'
+    let requestId: string
+    try {
+      const saved = sessionStorage.getItem(requestKey)
+      const parsed = saved ? JSON.parse(saved) as { fingerprint?: string; requestId?: string } : null
+      requestId = parsed?.fingerprint === fingerprint && parsed.requestId ? parsed.requestId : crypto.randomUUID()
+      sessionStorage.setItem(requestKey, JSON.stringify({ fingerprint, requestId }))
+    } catch {
+      requestId = crypto.randomUUID()
+    }
+    const productName = selectedProduct
+      ? isAm && selectedProduct.name_am ? selectedProduct.name_am : selectedProduct.name
+      : 'Product'
+    const stockNote = stock
+      ? `Branch stock at last refresh: ${stock.quantity}. Issuing does not deduct branch inventory; a sale does.`
+      : 'Branch stock is not available in this snapshot. The server will check availability. Issuing does not deduct branch inventory.'
+    if (!window.confirm(`Issue ${quantity} ${productName} to ${selectedRecipient?.name ?? 'staff'}? ${stockNote}`)) return
     setBusy(true)
     setError('')
+    setSuccess('')
     try {
       const response = await fetch('/api/inventory/handover/issue', {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requestId: crypto.randomUUID(), productId, recipientUserId: recipientId, quantity: Number(quantity) }),
+        body: JSON.stringify({ requestId, productId, recipientUserId: recipientId, quantity: Number(quantity) }),
       })
       const result = await response.json() as { error?: string }
       if (!response.ok) throw new Error(result.error || 'Could not issue stock.')
+      try { sessionStorage.removeItem(requestKey) } catch { /* session storage is optional */ }
+      setSuccess(isAm
+        ? `እቃው ለ${selectedRecipient?.name ?? 'ሰራተኛ'} ተሰጥቷል። የቅርንጫፍ ክምችት በዚህ ርክክብ አልተቀነሰም።`
+        : `Stock issued to ${selectedRecipient?.name ?? 'staff'}. Custody is assigned; branch inventory was not deducted by this handover.`)
       setQuantity('')
       await load()
     } catch (cause) {
@@ -152,6 +196,15 @@ export default function StockHandoverPanel({ isAm }: { isAm: boolean }) {
     } finally {
       setBusy(false)
     }
+  }
+
+  const clearIssueForm = () => {
+    if (busy) return
+    setProductId('')
+    setRecipientId('')
+    setQuantity('')
+    setError('')
+    setSuccess('')
   }
 
   const respond = async (handoverId: string, decision: 'accepted' | 'disputed') => {
@@ -162,7 +215,9 @@ export default function StockHandoverPanel({ isAm }: { isAm: boolean }) {
       if (!reason) return
     }
     setBusy(true)
+    setRespondingTo(handoverId)
     setError('')
+    setSuccess('')
     try {
       const response = await fetch('/api/inventory/handover/accept', {
         method: 'POST',
@@ -172,10 +227,14 @@ export default function StockHandoverPanel({ isAm }: { isAm: boolean }) {
       })
       const result = await response.json() as { error?: string }
       if (!response.ok) throw new Error(result.error || 'Could not update handover.')
+      setSuccess(decision === 'accepted'
+        ? (isAm ? 'እቃው ተቀብሏል። አሁን በእርስዎ እቃ ኃላፊነት ስር ነው።' : 'Handover accepted. The quantity is now recorded under your custody.')
+        : (isAm ? 'ልዩነቱ ተመዝግቧል።' : 'Difference recorded for review.'))
       await load()
     } catch (cause) {
       setError(messageFrom(cause, 'Could not update handover.'))
     } finally {
+      setRespondingTo(null)
       setBusy(false)
     }
   }
@@ -292,7 +351,7 @@ export default function StockHandoverPanel({ isAm }: { isAm: boolean }) {
             onClick={() => void respond(handover.id, 'accepted')}
             className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-berbere-600 px-4 text-sm font-black text-white transition hover:bg-berbere-700 disabled:opacity-50"
           >
-            <Check className="h-4 w-4" />
+            {respondingTo === handover.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
             {isAm ? 'እቃውን ተቀብያለሁ' : 'Confirm stock'}
           </button>
           <button
@@ -311,6 +370,8 @@ export default function StockHandoverPanel({ isAm }: { isAm: boolean }) {
   if (data?.isStationRecipient) {
     return (
       <section className="space-y-5">
+        {error && <p role="alert" className="rounded-xl bg-danger-bg px-3 py-2.5 text-sm font-bold text-danger">{error}</p>}
+        {success && <p role="status" className="rounded-xl bg-berbere-50 px-3 py-2.5 text-sm font-bold text-berbere-700">{success}</p>}
         <div className="rounded-2xl border border-coffee-700/10 bg-white p-4 shadow-sm sm:p-6">
           <header className="flex items-start gap-3 border-b border-cream-200 pb-4">
             <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gold-50 text-gold-700">
@@ -327,8 +388,11 @@ export default function StockHandoverPanel({ isAm }: { isAm: boolean }) {
             <span className="ml-auto rounded-full bg-gold-100 px-2.5 py-1 text-xs font-black text-gold-800">
               {pendingHandovers.length}
             </span>
+            <button type="button" onClick={() => void load()} disabled={refreshing} className="flex h-10 shrink-0 items-center gap-2 rounded-lg border border-cream-300 px-3 text-xs font-bold text-coffee-600 disabled:opacity-60" aria-label={isAm ? 'አድስ' : 'Refresh handovers'}>
+              {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              <span className="hidden sm:inline">{isAm ? 'አድስ' : 'Refresh'}</span>
+            </button>
           </header>
-          {error && <p role="alert" className="mt-4 rounded-xl bg-danger-bg px-3 py-2.5 text-sm font-bold text-danger">{error}</p>}
           {pendingHandovers.length ? (
             <ul className="mt-4 space-y-3">{pendingHandovers.map((handover) => voucherCard(handover, true))}</ul>
           ) : (
@@ -424,16 +488,21 @@ export default function StockHandoverPanel({ isAm }: { isAm: boolean }) {
   return (
     <div className="space-y-5">
       {error && <p role="alert" className="rounded-xl bg-danger-bg px-3 py-2.5 text-sm font-bold text-danger">{error}</p>}
+      {success && <p role="status" className="rounded-xl bg-berbere-50 px-3 py-2.5 text-sm font-bold text-berbere-700">{success}</p>}
       {data?.canIssue && (
         <section className="overflow-hidden rounded-2xl border border-coffee-700/10 bg-white shadow-sm">
-          <header className="flex items-center gap-3 border-b border-cream-200 bg-gradient-to-r from-cream-50 to-white px-4 py-4 sm:px-6">
+          <header className="flex flex-wrap items-center gap-3 border-b border-cream-200 bg-gradient-to-r from-cream-50 to-white px-4 py-4 sm:px-6">
             <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-berbere-50 text-berbere-600"><ArrowLeftRight className="h-5 w-5" /></span>
             <div>
               <h2 className="text-base font-black text-coffee-800">{isAm ? 'እቃ ለሰራተኛ መስጠት' : 'Issue stock to staff'}</h2>
               <p className="mt-0.5 text-xs text-coffee-500">{isAm ? 'ሰራተኛው ብዛቱን እንዲያረጋግጥ ይላኩ።' : 'Choose a product, recipient, and quantity.'}</p>
             </div>
+            <button type="button" onClick={() => void load()} disabled={refreshing || busy} className="ml-auto flex h-10 items-center gap-2 rounded-lg border border-cream-300 px-3 text-xs font-bold text-coffee-600 disabled:opacity-60" aria-label={isAm ? 'አድስ' : 'Refresh stock and handovers'}>
+              {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              <span>{refreshing ? (isAm ? 'በማደስ ላይ' : 'Refreshing') : (isAm ? 'አድስ' : 'Refresh')}</span>
+            </button>
           </header>
-          <form onSubmit={(event) => void issue(event)} className="grid gap-4 p-4 sm:grid-cols-2 sm:p-6 lg:grid-cols-[1.25fr_1.25fr_0.7fr_auto] lg:items-end">
+          <form onSubmit={(event) => void issue(event)} className="grid gap-4 p-4 sm:grid-cols-2 sm:p-6 lg:grid-cols-[1.25fr_1.25fr_0.7fr_auto_auto] lg:items-end">
             <label className="block min-w-0 space-y-1.5">
               <span className="text-xs font-bold text-coffee-600">{isAm ? 'ምርት' : 'Product'}</span>
               <select value={productId} onChange={(event) => setProductId(event.target.value)} required disabled={catalogLoading} className="h-11 w-full min-w-0 rounded-xl border border-cream-300 bg-white px-3 text-sm text-coffee-800 outline-none focus:border-berbere-400">
@@ -453,9 +522,24 @@ export default function StockHandoverPanel({ isAm }: { isAm: boolean }) {
               <span className="text-xs font-bold text-coffee-600">{isAm ? 'ብዛት' : 'Quantity'}</span>
               <input type="number" min="0.01" step="0.01" inputMode="decimal" value={quantity} onChange={(event) => setQuantity(event.target.value)} placeholder="0" required className="h-11 w-full min-w-0 rounded-xl border border-cream-300 bg-white px-3 text-sm text-coffee-800 outline-none focus:border-berbere-400" />
             </label>
+            {productId && (() => {
+              const stock = branchStock[productId]
+              return (
+                <p className="text-xs leading-5 text-coffee-500 sm:col-span-2 lg:col-span-5">
+                  {stock
+                    ? `${isAm ? 'የቅርንጫፍ ክምችት' : 'Branch stock'}: ${stock.quantity}${stock.updatedAt ? ` · ${isAm ? 'የተዘመነው' : 'updated'} ${new Date(stock.updatedAt).toLocaleString(isAm ? 'am-ET' : 'en-ET')}` : ''}. `
+                    : `${isAm ? 'የቅርንጫፍ ክምችት' : 'Branch stock'}: ${isAm ? 'በመሣሪያው ላይ አልተጫነም' : 'unavailable in this snapshot'}. `}
+                  {isAm ? 'ርክክብ ክምችትን አይቀንስም፤ ሽያጭ አንድ ጊዜ ይቀንሳል።' : 'A handover changes custody only. A recorded sale deducts branch stock once.'}
+                  {quantity && ` ${isAm ? 'የሚሰጠው' : 'To issue'}: ${quantity}.`}
+                </p>
+              )
+            })()}
             <button type="submit" disabled={busy || catalogLoading || !products.length || !data.recipients.length} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-berbere-600 px-5 text-sm font-black text-white transition hover:bg-berbere-700 disabled:cursor-not-allowed disabled:opacity-50">
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowLeftRight className="h-4 w-4" />}
-              {isAm ? 'እቃ ስጥ' : 'Issue stock'}
+              {busy ? (isAm ? 'በማስረከብ ላይ' : 'Issuing…') : (isAm ? 'እቃ ስጥ' : 'Issue stock')}
+            </button>
+            <button type="button" onClick={clearIssueForm} disabled={busy} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-cream-300 px-4 text-sm font-bold text-coffee-600 transition hover:bg-cream-50 disabled:opacity-50" aria-label={isAm ? 'ምርጫውን አጥራ' : 'Clear issue form'}>
+              <RotateCcw className="h-4 w-4" />{isAm ? 'አጥራ' : 'Clear'}
             </button>
             {!data.recipients.length && <p className="text-xs text-coffee-500 sm:col-span-2 lg:col-span-4">{isAm ? 'በዚህ ቅርንጫፍ የነቁ ተቀባዮች የሉም።' : 'No active eligible staff member is available in this branch.'}</p>}
           </form>
@@ -474,16 +558,32 @@ export default function StockHandoverPanel({ isAm }: { isAm: boolean }) {
               {isAm ? 'በዚህ ቅርንጫፍ የተመዘገቡ ርክክቦች' : 'Branch handovers and recipient confirmations.'}
             </p>
           </div>
-          <span className="rounded-full bg-cream-100 px-3 py-1 text-xs font-black text-coffee-600">{data?.handovers.length ?? 0}</span>
+          <div className="ml-auto flex items-center gap-2">
+            <span className="rounded-full bg-cream-100 px-3 py-1 text-xs font-black text-coffee-600">{data?.handovers.length ?? 0}</span>
+            <button type="button" onClick={() => void load()} disabled={refreshing || busy} className="flex h-10 items-center gap-2 rounded-lg border border-cream-300 px-3 text-xs font-bold text-coffee-600 disabled:opacity-60" aria-label={isAm ? 'አድስ' : 'Refresh handover history'}>
+              {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              <span className="hidden sm:inline">{refreshing ? (isAm ? 'በማደስ ላይ' : 'Refreshing') : (isAm ? 'አድስ' : 'Refresh')}</span>
+            </button>
+          </div>
         </header>
         {data?.handovers.length ? (
-          <ul className="mt-4 space-y-2">{data.handovers.map((handover) => voucherCard(handover, handover.canVerify))}</ul>
+          <>
+            <ul className="mt-4 space-y-2">{data.handovers.slice(0, 5).map((handover) => voucherCard(handover, handover.canVerify))}</ul>
+            {data.handovers.length > 5 && (
+              <details className="mt-3 rounded-xl border border-cream-200 bg-cream-50 px-3">
+                <summary className="min-h-11 cursor-pointer py-3 text-xs font-black text-coffee-700">
+                  {isAm ? 'የቆዩ ርክክቦች' : `View ${data.handovers.length - 5} older handovers`}
+                </summary>
+                <ul className="space-y-2 pb-3">{data.handovers.slice(5).map((handover) => voucherCard(handover, handover.canVerify))}</ul>
+              </details>
+            )}
+          </>
         ) : (
           <p className="py-9 text-center text-sm text-coffee-400">{isAm ? 'ገና ርክክብ አልተመዘገበም።' : 'No handovers have been recorded yet.'}</p>
         )}
         {data?.canIssue && data.custodyReports.length > 0 && (
-          <div className="mt-6 border-t border-cream-200 pt-5">
-            <h3 className="text-sm font-black text-coffee-800">{isAm ? 'የተዘጉ የእቃ ቆጠራዎች' : 'Custody counts and differences'}</h3>
+          <details className="mt-5 border-t border-cream-200 pt-3">
+            <summary className="min-h-11 cursor-pointer text-sm font-black text-coffee-800">{isAm ? 'የተዘጉ የእቃ ቆጠራዎች' : `Custody counts and differences (${data.custodyReports.length})`}</summary>
             <div className="mt-3 space-y-3">
               {data.custodyReports.map((report) => (
                 <article key={report.id} className="rounded-xl border border-cream-200 bg-cream-50 p-3">
@@ -518,7 +618,7 @@ export default function StockHandoverPanel({ isAm }: { isAm: boolean }) {
                 </article>
               ))}
             </div>
-          </div>
+          </details>
         )}
       </section>
     </div>

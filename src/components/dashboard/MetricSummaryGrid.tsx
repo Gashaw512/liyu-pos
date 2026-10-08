@@ -1,6 +1,8 @@
 'use client'
 
 import React from 'react'
+import { useRouter } from 'next/navigation'
+import type { Route } from 'next'
 import {
   ArrowUpRight,
   Receipt,
@@ -50,6 +52,7 @@ export function MetricSummaryGrid({
 
   locale,
 }: MetricSummaryGridProps) {
+  const router = useRouter()
   const isAm = locale === 'am'
 
   const t = (en: string, am: string) =>
@@ -172,8 +175,7 @@ export function MetricSummaryGrid({
           <button
             type="button"
             onClick={() => {
-              window.location.href =
-                `/${locale}/sales`
+              router.push(`/${locale}/sales`)
             }}
             className="
               group
@@ -263,8 +265,7 @@ export function MetricSummaryGrid({
           <button
             type="button"
             onClick={() => {
-              window.location.href =
-                `/${locale}/sales`
+              router.push(`/${locale}/sales`)
             }}
             className="
               group
@@ -343,8 +344,7 @@ export function MetricSummaryGrid({
           <button
             type="button"
             onClick={() => {
-              window.location.href =
-                `/${locale}/expenses`
+              router.push(`/${locale}/expenses` as Route)
             }}
             className="
               group
@@ -415,8 +415,7 @@ export function MetricSummaryGrid({
           <button
             type="button"
             onClick={() => {
-              window.location.href =
-                `/${locale}/reports/profit`
+              router.push(`/${locale}/reports/profit` as Route)
             }}
             className="
               group
@@ -657,8 +656,7 @@ export function MetricSummaryGrid({
         <button
           type="button"
           onClick={() => {
-            window.location.href =
-              `/${locale}/inventory`
+            router.push(`/${locale}/inventory`)
           }}
           className="
             group
@@ -785,8 +783,7 @@ export function MetricSummaryGrid({
       <button
         type="button"
         onClick={() => {
-          window.location.href =
-            `/${locale}/products`
+          router.push(`/${locale}/products` as Route)
         }}
         className="
           group

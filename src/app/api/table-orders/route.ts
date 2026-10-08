@@ -124,24 +124,25 @@ export async function GET() {
       return NextResponse.json({ error: 'No business branch is assigned to this account.' }, { status: 403 })
     }
 
-    const { data: configuredTables, error: configuredTablesError } = await client
-      .from('restaurant_tables')
-      .select('id,name')
-      .eq('business_id', auth.profile!.business_id)
-      .eq('branch_id', auth.profile!.branch_id)
-      .eq('is_active', true)
-      .is('deleted_at', null)
-      .order('name', { ascending: true })
-    if (configuredTablesError) throw configuredTablesError
-
-    const { data, error } = await client
-      .from('open_table_orders')
-      .select('id,business_id,branch_id,table_id,cashier_id,items,total_amount,revision,updated_at')
-      .eq('business_id', auth.profile!.business_id)
-      .eq('branch_id', auth.profile!.branch_id)
-      .eq('status', 'open')
-      .order('updated_at', { ascending: false })
-    if (error) throw error
+    const [tablesResult, ordersResult] = await Promise.all([
+      client.from('restaurant_tables')
+        .select('id,name')
+        .eq('business_id', auth.profile!.business_id)
+        .eq('branch_id', auth.profile!.branch_id)
+        .eq('is_active', true)
+        .is('deleted_at', null)
+        .order('name', { ascending: true }),
+      client.from('open_table_orders')
+        .select('id,business_id,branch_id,table_id,cashier_id,items,total_amount,revision,updated_at')
+        .eq('business_id', auth.profile!.business_id)
+        .eq('branch_id', auth.profile!.branch_id)
+        .eq('status', 'open')
+        .order('updated_at', { ascending: false }),
+    ])
+    if (tablesResult.error) throw tablesResult.error
+    if (ordersResult.error) throw ordersResult.error
+    const configuredTables = tablesResult.data
+    const data = ordersResult.data
 
     const tableNames = new Map((configuredTables ?? []).map((table) => [table.id, table.name]))
 

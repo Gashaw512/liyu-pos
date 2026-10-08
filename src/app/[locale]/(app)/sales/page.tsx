@@ -14,7 +14,9 @@ import { CheckCircle2, Clock3, Coins, LayoutGrid, Loader2, Search, Send, WifiOff
 
 import { getDB } from '../../../../lib/offline/db'
 import type { Shift } from '../../../../types/database/operations'
+import type { LocalOpenTab } from '@/types/models/pos-cart'
 import { finalizeSale } from '@/lib/offline/saleService'
+import { localSaleFailureMessage } from '@/lib/sales/checkout-errors'
 import { getCancellationBaseItems } from '@/lib/offline/tableOrderSync'
 import {
   sanitizeActiveShiftContext,
@@ -687,7 +689,7 @@ export default function SalesPage() {
 
         const allTabs = await db.getAll('open_tabs')
 
-        const existingTab = allTabs.find((tab: any) =>
+        const existingTab = allTabs.find((tab: LocalOpenTab) =>
           tabBelongsToTable(tab, table),
         )
 
@@ -1539,11 +1541,20 @@ export default function SalesPage() {
         totalBill,
       })
 
-      await refreshPendingSalesCount()
+      try {
+        notifyInventoryUpdated(sale.localId)
+      } catch (error) {
+        console.warn('[POS] Sale is saved; local inventory views will refresh on next load.', error)
+      }
 
-      notifyInventoryUpdated(sale.localId)
-
-      await loadPOSData()
+      // Local IndexedDB commit is the checkout boundary. Refreshes must not
+      // leave a committed sale in the cart or report it as failed.
+      void refreshPendingSalesCount().catch((error) =>
+        console.warn('[POS] Sale is saved; pending count refresh will retry.', error),
+      )
+      void loadPOSData().catch((error) =>
+        console.warn('[POS] Sale is saved; POS data refresh will retry.', error),
+      )
 
       // The sale is already safe in the atomic local outbox. Start server sync
       // immediately while leaving the receipt and cashier flow responsive.
@@ -1605,7 +1616,7 @@ export default function SalesPage() {
       toast(
         isAm
           ? 'ሽያጩን ማስቀመጥ አልተሳካም'
-          : 'Unable to save the sale locally.',
+          : localSaleFailureMessage(error),
         'error',
       )
     } finally {

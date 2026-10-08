@@ -7,7 +7,8 @@ import { isAllowedNotificationRole, selectEnabledBusinessRecipients } from '../s
 import { telegramSendDocument, telegramSendMessage } from '../src/lib/shift-reports/telegram.ts'
 import { signPriceProof, verifyPriceProof } from '../src/lib/security/price-proof.ts'
 import { calculateExpectedDrawerCash } from '../src/lib/shift-reports/cash-reconciliation.ts'
-import { calculateAuthoritativeSale, calculateLocalPaymentState } from '../src/lib/sales/authoritative-sale.ts'
+import { assertPaymentMethodsAvailable, calculateAuthoritativeSale, calculateLocalPaymentState } from '../src/lib/sales/authoritative-sale.ts'
+import { localSaleFailureMessage } from '../src/lib/sales/checkout-errors.ts'
 
 test('cash reconciliation uses persisted opening float, cash payments, cash refunds, and cash expenses only', () => {
   const expected = calculateExpectedDrawerCash(500, [
@@ -122,6 +123,43 @@ test('credit tender stays outstanding locally and rejects over-allocation', () =
     status: 'unpaid',
   })
   assert.throws(() => calculateLocalPaymentState(500, { cash: 501, credit: 0 }), /must equal/)
+})
+
+test('offline cash, manual digital tenders, and credit remain recordable', () => {
+  const tenders = (method, amount) => ({
+    cash: method === 'cash' ? amount : 0,
+    telebirr: method === 'telebirr' ? amount : 0,
+    cbe_birr: method === 'cbe_birr' ? amount : 0,
+    awash_bank: method === 'awash_bank' ? amount : 0,
+    bank_transfer: method === 'bank_transfer' ? amount : 0,
+    credit: method === 'credit' ? amount : 0,
+    room_charge: 0,
+  })
+
+  for (const method of ['cash', 'telebirr', 'cbe_birr', 'awash_bank', 'bank_transfer', 'credit']) {
+    assert.doesNotThrow(() => assertPaymentMethodsAvailable(tenders(method, 100), false), method)
+    assert.equal(calculateLocalPaymentState(100, tenders(method, 100)).status, method === 'credit' ? 'unpaid' : 'paid')
+  }
+})
+
+test('room charge is online-only while an online folio-validated charge remains allowed', () => {
+  const roomTender = { cash: 0, room_charge: 100 }
+  assert.throws(() => assertPaymentMethodsAvailable(roomTender, false), /internet connection.*active guest folio/i)
+  assert.doesNotThrow(() => assertPaymentMethodsAvailable(roomTender, true))
+})
+
+test('offline multiple tenders require a complete exact allocation', () => {
+  const split = { cash: 40, telebirr: 35, cbe_birr: 25, awash_bank: 0, bank_transfer: 0, credit: 0, room_charge: 0 }
+  assert.doesNotThrow(() => assertPaymentMethodsAvailable(split, false))
+  assert.equal(calculateLocalPaymentState(100, split).status, 'paid')
+  assert.throws(() => calculateLocalPaymentState(100, { ...split, cash: 39 }), /must equal/i)
+})
+
+test('checkout error messages distinguish shift, debtor, payment, and local storage failures', () => {
+  assert.match(localSaleFailureMessage(new Error('Missing a valid active-shift context for this sale.')), /Open a shift/)
+  assert.match(localSaleFailureMessage(new Error('Credit sales require the customer name and phone number.')), /debtor.*name and phone/i)
+  assert.match(localSaleFailureMessage(new Error('Payment amounts must equal the sale total.')), /do not match the bill/i)
+  assert.match(localSaleFailureMessage(new Error('IndexedDB unavailable')), /cart is still available/i)
 })
 
 test('creates a valid PDF with every product line over multiple pages', () => {

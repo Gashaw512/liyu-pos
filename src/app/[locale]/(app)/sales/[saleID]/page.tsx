@@ -4,6 +4,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import {
   CheckCircle2,
+  Clock3,
   ShoppingCart,
   Printer,
   Coffee,
@@ -197,10 +198,12 @@ export default function SaleReceiptPage() {
 
         {/* Success */}
         <div className="text-center py-2 space-y-1 break-inside-avoid">
-          <CheckCircle2 className="mx-auto h-12 w-12 text-berbere-500 print:text-black" />
+          {isSaleSynced
+            ? <CheckCircle2 className="mx-auto h-12 w-12 text-berbere-500 print:text-black" />
+            : <Clock3 className="mx-auto h-12 w-12 text-gold-600 print:text-black" />}
 
           <h1 className="text-xl font-black text-coffee-900 print:text-black print:text-lg">
-            {isAm ? 'ሽያጩ ተጠናቋል!' : 'Sale Completed!'}
+            {isSaleSynced ? (isAm ? 'ሽያጩ ተረጋግጧል' : 'Sale confirmed') : (isAm ? 'ሽያጩ ለማመሳሰል ይጠብቃል' : 'Sale saved — awaiting confirmation')}
           </h1>
 
           <p className="text-xs font-mono text-coffee-400 print:text-black">

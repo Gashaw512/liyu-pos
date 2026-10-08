@@ -17,7 +17,7 @@ export async function GET() {
   const [activeResult, readyResult] = await Promise.all([
     client.from('kitchen_order_tickets').select(columns)
       .eq('business_id', auth.profile!.business_id).eq('branch_id', auth.profile!.branch_id)
-      .neq('preparation_status', 'ready').order('created_at', { ascending: true }).limit(200),
+      .neq('preparation_status', 'ready').order('created_at', { ascending: false }).limit(200),
     client.from('kitchen_order_tickets').select(columns)
       .eq('business_id', auth.profile!.business_id).eq('branch_id', auth.profile!.branch_id)
       .eq('preparation_status', 'ready').order('created_at', { ascending: false }).limit(50),
@@ -33,7 +33,11 @@ export async function GET() {
     .map((ticket) => ticket.order_id))]
   const openReadyOrderIds = new Set<string>()
   if (readyOrderIds.length) {
-    const { data: openOrders, error: openOrdersError } = await client.from('open_table_orders')
+    // The endpoint has already authenticated the user and constrained tickets
+    // to their business/branch. Use the server client for this scoped join so
+    // station roles do not need direct read access to table-order records.
+    const admin = createAdminDatabaseClient()
+    const { data: openOrders, error: openOrdersError } = await admin.from('open_table_orders')
       .select('id').eq('business_id', auth.profile!.business_id)
       .eq('branch_id', auth.profile!.branch_id).eq('status', 'open').in('id', readyOrderIds)
     if (openOrdersError) return NextResponse.json({ error: 'Could not check which ready orders are still open.' }, { status: 500 })
@@ -219,6 +223,11 @@ export async function PATCH(request: Request) {
       } catch (fallbackError) {
         console.error('[KITCHEN] Ready fallback failed:', fallbackError)
       }
+    }
+    if (error.code === 'P0001') {
+      return NextResponse.json({
+        error: 'This ticket cannot move to the next step yet. Refresh the queue and check that its items and your active station custody are ready.',
+      }, { status: 409 })
     }
     return NextResponse.json({
       error: migrationMissing

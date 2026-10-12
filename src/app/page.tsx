@@ -2,13 +2,13 @@
 
 import Link from 'next/link'
 import { useState } from 'react'
+import { PlanInquiryAction } from '@/components/public/PlanInquiryAction'
+import type { PublicInquiryPlanId } from '@/lib/public-inquiry'
 import {
   WifiOff, TrendingUp, AlertTriangle, BarChart3,
   Shield, Zap, ArrowRight, CheckCircle,
   Beer, Utensils, Store, ChevronDown,
 } from 'lucide-react'
-import page from './[locale]/(puplic)/page'
-import { Route } from 'next'
 
 
 
@@ -30,22 +30,12 @@ const SEGMENTS = [
 ]
 
 const PLANS = [
-  {
-    name: 'Starter', nameAm: 'ጀማሪ',
-    price: '0', period: 'Free forever',
-    highlight: false, href: '/register?plan=starter',
-    cta: 'ይጀምሩ — Free', ctaEn: 'Get Started Free',
-    features: ['1 የሰራተኛ አካውንት', '50 ምርቶች', 'Offline ሽያጭ', 'ዕለታዊ ትርፍ ሪፖርት', 'የጥሬ ገንዘብ ክፍያ'],
-  },
-  {
-    name: 'Business', nameAm: 'ቢዝነስ',
-    price: '999', period: 'per month / በወር',
-    highlight: true, href: '/register?plan=business',
-    cta: '14 ቀን ይሞክሩ', ctaEn: 'Start 14-Day Free Trial',
-    features: ['5 የሰራተኛ አካውንቶች', 'ያልተወሰነ ምርቶች', 'Telebirr + CBE Birr', 'የሺፍት ሪፖርቶች', 'የስርቆት ማስጠንቀቂያ', 'Telegram ሪፖርት'],
-  },
+  { id: 'demo', name: 'Product demo', nameAm: 'የምርት ማሳያ', price: 'No charge', priceAm: 'ክፍያ የለም', period: 'sample-data walkthrough', periodAm: 'የሙከራ መረጃ ማብራሪያ', desc: 'A guided introduction to the current product.', descAm: 'ስለአሁኑ ምርት በመመራት የሚሰጥ ማብራሪያ።', scope: 'Sample data only. No business records or payment required.', scopeAm: 'የሙከራ መረጃ ብቻ። የንግድ መዝገብ ወይም ክፍያ አያስፈልግም።', highlight: false },
+  { id: 'starter', name: 'Starter', nameAm: 'ጀማሪ', price: 'ETB 499', priceAm: '499 ብር', period: 'per outlet / month', periodAm: 'ለአንድ ቦታ / በወር', desc: 'For one cafe, bar, or restaurant beginning with digital sales and stock records.', descAm: 'ዲጂታል ሽያጭና የክምችት መዝገብ ለሚጀምር አንድ ካፌ፣ ባር ወይም ሬስቶራንት።', scope: 'Proposed price. Staff access, support, and pilot scope are agreed in writing.', scopeAm: 'የታሰበ ዋጋ ነው። የሰራተኛ መዳረሻ፣ ድጋፍና የሙከራ ወሰን በጽሁፍ ይስማማሉ።', highlight: false },
+  { id: 'professional', name: 'Professional', nameAm: 'ፕሮፌሽናል', price: 'ETB 999', priceAm: '999 ብር', period: 'per outlet / month', periodAm: 'ለአንድ ቦታ / በወር', desc: 'For one location using table orders, shifts, and configured Kitchen or Bar tickets.', descAm: 'የጠረጴዛ ትዕዛዝ፣ ሺፍትና የኩሽና ወይም ባር ትዕዛዝ ለሚጠቀም አንድ ቦታ።', scope: 'Proposed price. Availability depends on pilot verification and written scope.', scopeAm: 'የታሰበ ዋጋ ነው። መገኘቱ በሙከራ ማረጋገጫና በጽሁፍ ስምምነት ይወሰናል።', highlight: true },
+  { id: 'business', name: 'Business', nameAm: 'ቢዝነስ', price: 'ETB 2,499', priceAm: '2,499 ብር', period: 'per month', periodAm: 'በወር', desc: 'A proposed option for operators managing more than one outlet.', descAm: 'ከአንድ በላይ የንግድ ቦታ ለሚያስተዳድሩ የታሰበ አማራጭ።', scope: 'Multi-outlet availability and setup must be confirmed before an offer.', scopeAm: 'የብዙ ቦታ አገልግሎትና ማዋቀር ከቅናሽ በፊት መረጋገጥ አለበት።', highlight: false },
+  { id: 'enterprise', name: 'Enterprise', nameAm: 'ኢንተርፕራይዝ', price: 'From ETB 7,500', priceAm: 'ከ 7,500 ብር ጀምሮ', period: 'per month', periodAm: 'በወር', desc: 'For larger teams with specific onboarding or support needs.', descAm: 'ልዩ የማስጀመር ወይም የድጋፍ ፍላጎት ላላቸው ትላልቅ ቡድኖች።', scope: 'A quote and service terms are discussed individually.', scopeAm: 'ዋጋና የአገልግሎት ውሎች በተናጠል ይወሰናሉ።', highlight: false },
 ]
-
 /* ─── Mock live-preview data matching HTML prototype ─────────────────────── */
 const MOCK_TRANSACTIONS = [
   { name: 'St. George Beer ×3', method: 'Cash',    amount: '+255',  color: 'text-emerald-600' },
@@ -93,13 +83,13 @@ export default function LandingPage() {
                          hover:text-[#8B2635] transition-colors px-2 py-1">
               {t('Sign in', 'ግባ')}
             </Link>
-            <Link href="/register"
+            <a href="#pricing"
               className="flex items-center gap-1.5 bg-[#8B2635] hover:bg-[#7a1f2d]
                          text-white text-sm font-semibold px-4 py-2 rounded-xl
                          shadow-sm transition-all active:scale-95">
-              {t('Start Free', 'ይጀምሩ')}
+              {t('Request a demo', 'ማሳያ ይጠይቁ')}
               <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
+            </a>
           </div>
         </div>
       </nav>
@@ -127,20 +117,20 @@ export default function LandingPage() {
 
         <p className="mt-4 text-center text-[#5a3e38] text-sm sm:text-base leading-relaxed max-w-xl mx-auto">
           {t(
-            'Replace paper and calculators with a beautiful, Amharic-first POS for bars, restaurants, and cafes — works offline, detects theft, and shows your profit in seconds.',
-            'ወረቀትና ካልኩሌተር ይቀሩ። ለባሮች፣ ምግብ ቤቶች እና ካፌዎች የሚሆን ቆንጆ POS — Offline ይሰራል፣ ስርቆት ያሳውቅዎ፣ ትርፍዎን በሰከንድ ያሳይዎ።'
+            'Manage sales, stock, shifts, and table orders in one place. Liyu POS is preparing for a small, guided pilot with local businesses.',
+            'ሽያጭ፣ ክምችት፣ ሺፍትና የጠረጴዛ ትዕዛዞችን በአንድ ቦታ ያስተዳድሩ። ሊዩ POS ከአካባቢያዊ ንግዶች ጋር ለሚደረግ በመመራት ለሚካሄድ አነስተኛ ሙከራ እየተዘጋጀ ነው።'
           )}
         </p>
 
         {/* CTAs */}
         <div className="mt-7 flex flex-col sm:flex-row justify-center gap-3 px-2">
-          <Link href="/register"
+          <a href="#pricing"
             className="flex items-center justify-center gap-2 bg-[#8B2635] hover:bg-[#7a1f2d]
                        text-white font-semibold text-base px-6 py-4 rounded-xl shadow-md
                        hover:shadow-lg transition-all active:scale-95 min-h-[52px]">
-            {t('Start Free — No Card Needed', 'ነፃ ይጀምሩ — ካርድ አያስፈልግም')}
+            {t('Request a product demo', 'የምርት ማሳያ ይጠይቁ')}
             <ArrowRight className="w-4 h-4 shrink-0" />
-          </Link>
+          </a>
           <a href="#features"
             className="flex items-center justify-center gap-2 bg-white hover:bg-[#F7F4EB]
                        text-[#2B1E1A] font-semibold text-base px-6 py-4 rounded-xl
@@ -334,73 +324,56 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ─── PRICING ───────────────────────────────────────────────────────── */}
-      <section id="pricing" className="max-w-3xl mx-auto px-4 py-14">
-        <h2 className="text-2xl sm:text-3xl font-['Playfair_Display',serif] font-bold
-                       tracking-tight text-center mb-1">
-          {t('Simple, honest pricing', 'ቀላል እና ትክክለኛ ዋጋ')}
+      {/* PRICING */}
+      <section id="pricing" className="max-w-6xl mx-auto px-4 py-14">
+        <h2 className="text-2xl sm:text-3xl font-['Playfair_Display',serif] font-bold tracking-tight text-center mb-2">
+          {t('Pilot pricing options', 'የሙከራ ዋጋ አማራጮች')}
         </h2>
-        <p className="text-center text-[#5a3e38] text-xs mb-8">
-          {t('No hidden fees. Cancel anytime.', 'የተደበቀ ዋጋ የለም። መቼም ቆም ማለት ይቻላል።')}
+        <p className="text-center text-[#5a3e38] text-sm max-w-2xl mx-auto mb-8">
+          {t('Proposed prices for discussion. We agree the scope and fee in writing before a pilot.', 'የታሰቡ ዋጋዎች ለውይይት ናቸው። ሙከራ ከመጀመሩ በፊት ወሰኑንና ክፍያውን በጽሁፍ እንስማማለን።')}
         </p>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {PLANS.map((plan) => (
-            <div key={plan.name}
-              className={`rounded-2xl p-6 flex flex-col relative
-                ${plan.highlight
-                  ? 'bg-white border-2 border-[#8B2635] shadow-xl'
-                  : 'bg-white border border-[#2B1E1A]/10'}`}>
-              {plan.highlight && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#8B2635] text-white
-                                text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full">
-                  {t('Most Popular', 'በብዛት የሚመረጥ')}
-                </div>
-              )}
-              <div className="font-bold text-lg text-[#2B1E1A]">
-                {plan.name} <span className="text-[#9b7b74] text-sm font-normal">/ {plan.nameAm}</span>
+            <div key={plan.name} className={`rounded-2xl p-6 flex flex-col bg-white ${plan.highlight ? 'border-2 border-[#8B2635] shadow-lg' : 'border border-[#2B1E1A]/10'}`}>
+              {plan.highlight && <span className="text-[10px] font-bold uppercase tracking-wider text-[#8B2635] mb-2">{t('Suggested', 'የተጠቆመ')}</span>}
+              <h3 className="font-bold text-lg text-[#2B1E1A]">{lang === 'am' ? plan.nameAm : plan.name}</h3>
+              <p className="text-[#5a3e38] text-xs leading-relaxed mt-2">{lang === 'am' ? plan.descAm : plan.desc}</p>
+              <div className="mt-4 border-b border-[#2B1E1A]/10 pb-4">
+                <span className="text-2xl font-['Playfair_Display',serif] font-bold">{lang === 'am' ? plan.priceAm : plan.price}</span>
+                <span className="block text-xs text-[#9b7b74] mt-1">{lang === 'am' ? plan.periodAm : plan.period}</span>
               </div>
-              <div className="mt-2 flex items-baseline gap-1">
-                <span className="text-4xl font-['Playfair_Display',serif] font-bold">{plan.price}</span>
-                <span className="text-xs text-[#9b7b74]">ETB / {plan.period}</span>
-              </div>
-              <ul className="mt-4 space-y-2 flex-1">
-                {plan.features.map((f) => (
-                  <li key={f} className="flex items-center gap-2 text-xs text-[#5a3e38]">
-                    <CheckCircle className={`w-3.5 h-3.5 shrink-0 ${plan.highlight ? 'text-[#8B2635]' : 'text-[#E2A03F]'}`} />
-                    {f}
-                  </li>
-                ))}
-              </ul>
-              <Link href={plan.href as Route}
-                className={`mt-6 flex items-center justify-center gap-1.5 py-3.5 rounded-xl
-                            text-sm font-bold min-h-[52px] transition-all active:scale-95
-                  ${plan.highlight
-                    ? 'bg-[#8B2635] hover:bg-[#7a1f2d] text-white shadow-md'
-                    : 'border-2 border-[#2B1E1A]/15 hover:bg-[#F7F4EB] text-[#2B1E1A]'}`}>
-                {lang === 'am' ? plan.cta : plan.ctaEn}
-              </Link>
+              <p className="text-xs text-[#5a3e38] leading-relaxed mt-4 flex-1">{lang === 'am' ? plan.scopeAm : plan.scope}</p>
+              <PlanInquiryAction
+                planId={plan.id as PublicInquiryPlanId}
+                planName={lang === 'am' ? plan.nameAm : plan.name}
+                price={lang === 'am' ? plan.priceAm : plan.price}
+                lang={lang}
+                className={`flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold min-h-[48px] transition-colors ${plan.highlight ? 'bg-[#8B2635] hover:bg-[#7a1f2d] text-white' : 'border border-[#2B1E1A]/15 hover:bg-[#F7F4EB] text-[#2B1E1A]'}`}
+              />
             </div>
           ))}
         </div>
+        <p className="text-center text-[#9b7b74] text-xs leading-relaxed max-w-3xl mx-auto mt-7">
+          {t('These are proposed prices, not active subscriptions. Liyu does not currently process subscription payments or enforce plan limits. Pilot scope, support, and fees are confirmed directly before work begins.', 'እነዚህ የታሰቡ ዋጋዎች ናቸው፤ አሁን የሚከፈሉ የደንበኝነት እቅዶች አይደሉም። ሊዩ በአሁኑ ጊዜ የደንበኝነት ክፍያ አይቀበልም ወይም የእቅድ ገደቦችን አያስፈጽምም። የሙከራው ወሰን፣ ድጋፍና ክፍያ ከመጀመሩ በፊት በቀጥታ ይረጋገጣሉ።')}
+        </p>
       </section>
-
       {/* ─── FINAL CTA ─────────────────────────────────────────────────────── */}
       <section className="border-t border-[#2B1E1A]/10 bg-white py-12 px-4 text-center">
         <h2 className="text-xl sm:text-2xl font-['Playfair_Display',serif] font-bold tracking-tight max-w-sm mx-auto">
-          {t('Start tracking your business today', 'ዛሬ ንግድዎን መከታተል ይጀምሩ')}
+          {t('See how Liyu could fit your business', 'ሊዩ ለንግድዎ እንዴት እንደሚስማማ ይመልከቱ')}
         </h2>
         <p className="text-[#5a3e38] mt-2 text-xs max-w-xs mx-auto">
-          {t('Free to start. No installation. Just open on your phone and go.',
-             'ነፃ ይጀምሩ። ምንም ጭነት የለም። ስልክዎን ይክፈቱ እና ይጀምሩ።')}
+          {t('Request a guided demo with sample data. Pilot scope and any fee are agreed before you decide.',
+             'በሙከራ መረጃ የሚደረግ ማሳያ ይጠይቁ። ከመወሰንዎ በፊት የሙከራውና ክፍያ ካለ ውሎች ይስማማሉ።')}
         </p>
-        <Link href="/register"
+        <a href="#pricing"
           className="inline-flex items-center gap-2 mt-6 bg-[#8B2635] hover:bg-[#7a1f2d]
                      text-white font-bold px-7 py-4 rounded-xl shadow-md
                      hover:shadow-lg transition-all active:scale-95 min-h-[52px]">
-          {t('Create Free Account', 'ነፃ አካውንት ፍጠሩ')}
+          {t('Request a product demo', 'የምርት ማሳያ ይጠይቁ')}
           <ArrowRight className="w-4 h-4" />
-        </Link>
+        </a>
       </section>
 
       {/* ─── FOOTER ────────────────────────────────────────────────────────── */}

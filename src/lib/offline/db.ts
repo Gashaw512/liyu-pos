@@ -383,6 +383,9 @@ const DB_NAME = 'liyu-pos-core'
  */
 const DB_VERSION = 16
 
+let dbPromise: Promise<IDBPDatabase<LiyuPOSDBSchema>> | undefined
+let dbConnection: IDBPDatabase<LiyuPOSDBSchema> | undefined
+
 /* =========================================================
  * DATABASE INITIALIZATION
  * ========================================================= */
@@ -390,7 +393,9 @@ const DB_VERSION = 16
 export const getDB = (): Promise<
   IDBPDatabase<LiyuPOSDBSchema>
 > => {
-  return openDB<LiyuPOSDBSchema>(
+  if (dbPromise) return dbPromise
+
+  const opening = openDB<LiyuPOSDBSchema>(
     DB_NAME,
     DB_VERSION,
     {
@@ -679,8 +684,32 @@ export const getDB = (): Promise<
           '[DB] Liyu POS IndexedDB ready.'
         )
       },
+      blocked() {
+        console.warn('[DB] IndexedDB upgrade is waiting for another open app tab to close.')
+      },
+      blocking() {
+        // Release this connection so a newer app version can upgrade the DB.
+        dbPromise = undefined
+        dbConnection?.close()
+        dbConnection = undefined
+      },
+      terminated() {
+        // Mobile browsers may terminate IndexedDB connections under pressure.
+        // The next getDB() call will transparently open a fresh connection.
+        dbPromise = undefined
+        dbConnection = undefined
+      },
     }
   )
+
+  dbPromise = opening
+  void opening.then((db) => {
+    if (dbPromise === opening) dbConnection = db
+  }).catch(() => {
+    if (dbPromise === opening) dbPromise = undefined
+  })
+
+  return opening
 }
 
 /* =========================================================

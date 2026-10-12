@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminDatabaseClient, getAuthorizedProfile } from '@/lib/shift-reports/server'
+import { loadCustodyLedger } from '@/lib/kitchen/custody-ledger'
 
 export const dynamic = 'force-dynamic'
 
@@ -111,13 +112,13 @@ export async function GET() {
       status: string
       canReconcile: boolean
       reconciliationStatus: string | null
-      lines: Array<{ productId: string; productName: string; productNameAm: string | null; quantityIssued: number }>
+      lines: Array<{ productId: string; productName: string; productNameAm: string | null; quantityIssued: number; soldQuantity: number; remainingQuantity: number }>
       reconciliation: unknown
     } | null = null
-    if (canReceive && !canIssue) {
+    if (canReceive) {
       const { data: activeShift, error: activeShiftError } = await admin
         .from('custody_shifts')
-        .select('id,opened_at,status,close_reason')
+        .select('id,opened_at,closed_at,status,close_reason')
         .eq('business_id', profile.business_id)
         .eq('branch_id', profile.branch_id)
         .eq('user_id', auth.user!.id)
@@ -159,13 +160,14 @@ export async function GET() {
       }
 
       if (custodyShift) {
-        const { data: custodyEntries, error: custodyEntriesError } = await admin
-          .from('custody_shift_inventory')
-          .select('product_id,quantity_received')
-          .eq('business_id', profile.business_id)
-          .eq('branch_id', profile.branch_id)
-          .eq('custody_shift_id', custodyShift.id)
-        if (custodyEntriesError) throw custodyEntriesError
+        const custodyLedger = await loadCustodyLedger(admin, {
+          businessId: profile.business_id,
+          branchId: profile.branch_id,
+          custodyShiftId: custodyShift.id,
+          userId: auth.user!.id,
+          openedAt: custodyShift.opened_at,
+          closedAt: custodyShift.closed_at,
+        })
         if (!reconciliation) {
           const { data: report, error: reportError } = await admin
             .from('custody_shift_reconciliations')
@@ -175,16 +177,12 @@ export async function GET() {
           if (reportError) throw reportError
           reconciliation = report
         }
-        const custodyProductIds = [...new Set((custodyEntries ?? []).map((entry) => entry.product_id))]
+        const custodyProductIds = [...custodyLedger.issuedByProduct.keys()]
         const { data: custodyProducts, error: custodyProductsError } = custodyProductIds.length
           ? await admin.from('products').select('id,name,name_am').eq('business_id', profile.business_id).in('id', custodyProductIds)
           : { data: [], error: null }
         if (custodyProductsError) throw custodyProductsError
         const custodyProductMap = new Map((custodyProducts ?? []).map((product) => [product.id, product]))
-        const issuedByProduct = new Map<string, number>()
-        for (const entry of custodyEntries ?? []) {
-          issuedByProduct.set(entry.product_id, (issuedByProduct.get(entry.product_id) ?? 0) + Number(entry.quantity_received || 0))
-        }
         custody = {
           id: custodyShift.id,
           openedAt: custodyShift.opened_at,
@@ -192,13 +190,15 @@ export async function GET() {
           canReconcile: custodyShift.status === 'ACTIVE'
             || (custodyShift.close_reason === 'branch_report_close' && reconciliation?.status === 'not_submitted'),
           reconciliationStatus: reconciliation?.status ?? null,
-          lines: [...issuedByProduct].map(([productId, quantityIssued]) => {
+          lines: [...custodyLedger.issuedByProduct].map(([productId, quantityIssued]) => {
             const product = custodyProductMap.get(productId)
             return {
               productId,
               productName: product?.name ?? 'Product',
               productNameAm: product?.name_am ?? null,
               quantityIssued,
+              soldQuantity: custodyLedger.soldByProduct.get(productId) ?? 0,
+              remainingQuantity: quantityIssued - (custodyLedger.soldByProduct.get(productId) ?? 0),
             }
           }),
           reconciliation: reconciliation?.status === 'submitted'
@@ -226,6 +226,7 @@ export async function GET() {
 
     return NextResponse.json({
       canIssue,
+      canReceive,
       isStationRecipient: !canIssue && canReceive,
       recipients,
       handovers,

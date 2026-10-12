@@ -3,11 +3,18 @@
 import { getDB } from './db'
 import { isLegacyContextValue } from './shiftContext'
 import { toLocalHistoricalSale } from './saleHistory'
+import {
+  assertPaymentMethodsAvailable,
+  calculateAuthoritativeSale,
+  calculateLocalPaymentState,
+} from '@/lib/sales/authoritative-sale'
 import type { LocalOpenTab, PaymentMethod, PaymentSplit } from '@/types/models/pos-cart'
 
 export interface FinalizeSaleInput {
   splitPayments: PaymentSplit
   roomNumber?: string
+  customerName?: string
+  customerPhone?: string
 
   manualTip: string
 
@@ -30,6 +37,11 @@ export interface FinalizeSaleInput {
     price: number
     quantity: number
     price_proof?: string
+    tax_inclusive?: boolean
+    business_tax_rate?: number
+    is_inventory_tracked?: boolean | null
+    inventory_id?: string | null
+    inventory_quantity?: number | null
   }>
 
   totalBill: number
@@ -72,8 +84,20 @@ export async function finalizeSale(
   const parsedTip =
     Number(input.manualTip) || 0
 
-  const subtotal =
-    Number(input.totalBill) || 0
+  const localAmounts = calculateAuthoritativeSale({
+    items: input.cart.map((item) => ({
+      productId: item.id,
+      productName: item.name,
+      quantity: Number(item.quantity),
+      unitPrice: Number(item.price),
+      taxInclusive: item.tax_inclusive !== false,
+    })),
+    taxRatePercent: Number(input.cart[0]?.business_tax_rate) || 0,
+    requestedDiscount: 0,
+    tip: parsedTip,
+    discountAuthorized: false,
+  })
+  const subtotal = localAmounts.subtotal
 
   const safeBusinessId =
     input.activeShift?.business_id && !isLegacyContextValue(input.activeShift.business_id)
@@ -94,7 +118,16 @@ export async function finalizeSale(
     throw new Error('Missing a valid active-shift context for this sale.')
   }
 
-  const totalAmount = subtotal + parsedTip
+  const totalAmount = localAmounts.total
+  assertPaymentMethodsAvailable(
+    input.splitPayments,
+    typeof navigator === 'undefined' || navigator.onLine,
+  )
+  const creditAmount = Number(input.splitPayments.credit || 0)
+  if (creditAmount > 0 && (!input.customerName?.trim() || !input.customerPhone?.trim())) {
+    throw new Error('Credit sales require the customer name and phone number.')
+  }
+  const localPaymentState = calculateLocalPaymentState(totalAmount, input.splitPayments)
   const roomChargeAmount = Number(input.splitPayments.room_charge || 0)
   if (roomChargeAmount > 0) {
     const otherTenderTotal = Object.entries(input.splitPayments)
@@ -167,9 +200,9 @@ export async function finalizeSale(
       input.selectedTable?.name ??
       null,
 
-    customer_name: null,
+    customer_name: creditAmount > 0 ? input.customerName!.trim() : null,
 
-    customer_phone: null,
+    customer_phone: creditAmount > 0 ? input.customerPhone!.trim() : null,
 
     notes: null,
 
@@ -187,13 +220,14 @@ export async function finalizeSale(
       0,
 
     tax_amount:
-      0,
+      localAmounts.tax,
 
     status:
       'completed' as const,
 
-    payment_status:
-      'paid' as const,
+    payment_status: localPaymentState.status,
+    amount_paid: localPaymentState.amountPaid,
+    outstanding_amount: localPaymentState.outstanding,
 
     items:
       input.cart.map(
@@ -255,6 +289,7 @@ export async function finalizeSale(
 
   const quantityByProduct =
     new Map<string, number>()
+  const inventorySnapshotByProduct = new Map<string, FinalizeSaleInput['cart'][number]>()
 
   for (
     const item of input.cart
@@ -290,6 +325,7 @@ export async function finalizeSale(
         ) ?? 0
       ) + quantity,
     )
+    inventorySnapshotByProduct.set(productId, item)
   }
 
   /* =======================================================
@@ -401,9 +437,34 @@ export async function finalizeSale(
      * Nothing can be deducted locally.
      * ===================================================== */
 
-    if (
-      !inventoryRecords.length
-    ) {
+    if (!inventoryRecords.length) {
+      const snapshot = inventorySnapshotByProduct.get(productId)
+      const snapshotQuantity = snapshot?.inventory_quantity == null
+        ? null
+        : Number(snapshot.inventory_quantity)
+      if (
+        snapshot?.is_inventory_tracked === true &&
+        snapshotQuantity !== null &&
+        Number.isFinite(snapshotQuantity) &&
+        Number.isFinite(quantityToDeduct)
+      ) {
+        // The catalog may have reached the product grid before the inventory
+        // row was hydrated into IndexedDB. Seed the local projection from the
+        // already-cached branch snapshot, then apply this sale once. The
+        // server independently revalidates and persists the authoritative
+        // movement during sync.
+        const seededInventory = {
+          id: snapshot.inventory_id || crypto.randomUUID(),
+          business_id: safeBusinessId,
+          branch_id: safeBranchId,
+          product_id: productId,
+          quantity: snapshotQuantity - quantityToDeduct,
+          updated_at: new Date().toISOString(),
+        }
+        await inventoryStore.put(seededInventory)
+        continue
+      }
+
       inventoryWarnings.push({
         productId,
 

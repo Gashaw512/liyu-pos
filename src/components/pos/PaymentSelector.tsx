@@ -97,6 +97,7 @@ interface PaymentSelectorProps {
   onConfirmPayment: (
     split: PaymentSplit,
     roomNumber?: string,
+    debtor?: { name: string; phone: string },
   ) => void | Promise<void>
   isAm: boolean
   isSubmitting?: boolean
@@ -195,6 +196,8 @@ export default function PaymentSelector({
   const [cashReceivedOverride, setCashReceivedOverride] = useState<string | null>(null)
   const [roomNumber, setRoomNumber] = useState('')
   const [roomError, setRoomError] = useState('')
+  const [debtorName, setDebtorName] = useState('')
+  const [debtorPhone, setDebtorPhone] = useState('')
 
   /*
    * ============================================================
@@ -247,6 +250,7 @@ export default function PaymentSelector({
   const canSubmit = isBalanced && cashSettlement.isCovered
   const isRoomCharge = activeMethods.includes('room_charge')
   const canConfirmPayment = canSubmit && (!isRoomCharge || roomNumber.trim().length > 0)
+    && (Number(amounts.credit || 0) <= 0 || (debtorName.trim().length > 1 && debtorPhone.trim().length >= 7))
   const visibleRemaining = Math.max(remainingAmount, cashShortfall)
   const settlementStatus = cashShortfall > 0.009
     ? 'remaining'
@@ -701,6 +705,13 @@ export default function PaymentSelector({
         const result = await response.json() as { error?: string }
         if (!response.ok) throw new Error(result.error ?? 'This room has no active guest folio.')
       } catch (cause) {
+        if (typeof navigator !== 'undefined' && !navigator.onLine
+          || cause instanceof TypeError && /failed to fetch|networkerror|internet connection required/i.test(cause.message)) {
+          setRoomError(isAm
+            ? 'ክፍያውን ለመቀጠል ኢንተርኔት ያስፈልጋል።'
+            : 'Room charges need an internet connection. No sale was saved; reconnect and try again.')
+          return
+        }
         setRoomError(cause instanceof Error && cause.message !== 'Failed to fetch'
           ? cause.message
           : isAm ? 'ክፍሉን ማረጋገጥ አልተቻለም። ቁጥሩን እና ኢንተርኔትን ያረጋግጡ።' : 'Could not verify the room. Check the number and internet connection.')
@@ -716,7 +727,10 @@ export default function PaymentSelector({
       bank_transfer: roundMoney(Number(amounts.bank_transfer || 0)),
       credit: roundMoney(Number(amounts.credit || 0)),
       room_charge: roundMoney(Number(amounts.room_charge || 0)),
-    }, isRoomCharge ? roomNumber.trim() : undefined)
+    }, isRoomCharge ? roomNumber.trim() : undefined,
+    Number(amounts.credit || 0) > 0
+      ? { name: debtorName.trim(), phone: debtorPhone.trim() }
+      : undefined)
   }
 
   /*
@@ -1123,6 +1137,22 @@ export default function PaymentSelector({
           },
         )}
       </div>
+
+      {Number(amounts.credit || 0) > 0 && (
+        <div className="grid grid-cols-1 gap-2 rounded-lg border border-gold-200 bg-gold-50 p-2 sm:grid-cols-2">
+          <label className="text-[10px] font-bold text-coffee-600">
+            {isAm ? 'የተበዳሪ ሙሉ ስም' : 'Customer / debtor name'}
+            <input value={debtorName} onChange={(event) => setDebtorName(event.target.value)} autoComplete="name" required className="mt-1 h-10 w-full rounded-md border border-cream-300 bg-white px-2 text-sm text-coffee-700" />
+          </label>
+          <label className="text-[10px] font-bold text-coffee-600">
+            {isAm ? 'ስልክ ቁጥር' : 'Phone number'}
+            <input value={debtorPhone} onChange={(event) => setDebtorPhone(event.target.value)} inputMode="tel" autoComplete="tel" required className="mt-1 h-10 w-full rounded-md border border-cream-300 bg-white px-2 text-sm text-coffee-700" />
+          </label>
+          <p className="text-[10px] text-coffee-500 sm:col-span-2">
+            {isAm ? 'ያልተከፈለው የደንበኛ ቀሪ ሂሳብ ይመዘገባል።' : 'The unpaid amount will be recorded against this customer.'}
+          </p>
+        </div>
+      )}
 
       {isRoomCharge && (
         <div className="rounded-lg border border-cream-300 bg-cream-50 px-3 py-2">

@@ -7,7 +7,7 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "test": "node --experimental-strip-types --import ./tests/register-node-resolver.mjs --test tests/*.test.mjs",
     "encrypt:telegram-bot": "node --env-file=.env.local --experimental-strip-types scripts/encrypt-telegram-token.mjs"
   },
   "dependencies": {

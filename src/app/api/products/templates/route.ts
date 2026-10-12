@@ -247,6 +247,7 @@ export async function GET(request: Request) {
       productsRes,
       categoriesRes,
       inventoryRes,
+      businessRes,
     ] = await Promise.all([
       supabase
         .from('products')
@@ -321,6 +322,11 @@ export async function GET(request: Request) {
         .eq('business_id', businessId)
         .eq('branch_id', branchId)
         .order('product_id', { ascending: true }),
+      supabase
+        .from('businesses')
+        .select('tax_rate')
+        .eq('id', businessId)
+        .maybeSingle(),
     ])
 
     // ============================================================
@@ -362,11 +368,18 @@ export async function GET(request: Request) {
         { status: 500 },
       )
     }
+    if (businessRes.error || !businessRes.data) {
+      return NextResponse.json(
+        { error: 'Failed to load business tax settings' },
+        { status: 500 },
+      )
+    }
 
     // ============================================================
     // 6. BUILD RESPONSE
     // ============================================================
 
+    const businessTaxRate = Number(businessRes.data.tax_rate ?? 0)
     const products = (productsRes.data ?? []).map((product) => ({
       ...product,
       // The signature travels with the offline catalog entry and proves this
@@ -376,9 +389,12 @@ export async function GET(request: Request) {
         businessId,
         branchId,
         productId: product.id,
-        priceCents: Math.round(Number(product.retail_price) * 100),
-        kind: 'catalog',
+      priceCents: Math.round(Number(product.retail_price) * 100),
+      taxRateBps: Math.round(businessTaxRate * 100),
+      taxInclusive: product.tax_inclusive !== false,
+      kind: 'catalog',
       }),
+      business_tax_rate: businessTaxRate,
     }))
     const categories = categoriesRes.data ?? []
     const inventory = inventoryRes.data ?? []

@@ -24,6 +24,7 @@ import {
 } from '@/queries/useProductsQuery'
 
 import type { ProductListItem } from '@/queries/useProductsQuery'
+import { PreparationStationSelect, type ProductPreparationStation } from '@/components/management/PreparationStationSelect'
 
 /* ============================================================
    TYPES
@@ -70,6 +71,7 @@ export default function EditProductPage() {
     name: '',
     name_am: '',
     category_id: '',
+    preparation_station: '' as ProductPreparationStation,
     description: '',
     barcode: '',
     sku: '',
@@ -160,6 +162,7 @@ export default function EditProductPage() {
         name: productData.name ?? '',
         name_am: productData.name_am ?? '',
         category_id: productData.category_id ?? '',
+        preparation_station: productData.preparation_station ?? '',
         description: productData.description ?? '',
         barcode: productData.barcode ?? '',
         sku: productData.sku ?? '',
@@ -390,6 +393,7 @@ export default function EditProductPage() {
           name_am: form.name_am.trim(),
 
           category_id: form.category_id,
+          preparation_station: form.preparation_station || null,
 
           description:
             form.description.trim() || null,
@@ -553,6 +557,12 @@ export default function EditProductPage() {
           onSubmit={handleUpdate}
           className="mt-6 space-y-5"
         >
+          <PreparationStationSelect
+            value={form.preparation_station}
+            locale={locale}
+            allowInherit
+            onChange={(preparation_station) => updateField('preparation_station', preparation_station)}
+          />
 
           {/* BASIC INFORMATION */}
 

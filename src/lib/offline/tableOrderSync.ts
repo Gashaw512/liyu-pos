@@ -72,6 +72,25 @@ export function calculateTableOrderTotal(items: TableOrderLine[]): number {
   ) * 100) / 100
 }
 
+export function getCancellationBaseItems(
+  pendingOrders: Array<{
+    operation: 'save' | 'complete' | 'cancel'
+    createdAt: string
+    items: TableOrderLine[]
+  }>,
+  localItems: TableOrderLine[] | undefined,
+): TableOrderLine[] {
+  const latestSave = [...pendingOrders]
+    .filter((order) => order.operation === 'save')
+    .sort((first, second) => first.createdAt.localeCompare(second.createdAt))
+    .at(-1)
+
+  // A cancel must remove the latest desired local order snapshot. The base
+  // snapshot of an earlier save may be empty and cannot cancel a save that
+  // reached the server just before the network response was lost.
+  return latestSave?.items ?? localItems ?? []
+}
+
 const PERSISTED_TABLE_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 export function isPersistedTableId(value: unknown): value is string {

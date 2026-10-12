@@ -14,6 +14,7 @@ import { usePathname } from 'next/navigation'
 import { Route } from 'next'
 import {
   BarChart3,
+  ChefHat,
   ChevronLeft,
   ChevronUp,
   Home,
@@ -112,6 +113,7 @@ export default function BottomNav({
           'inventory_clerk',
           'waiter',
           'kitchen',
+          'barman',
         ],
       },
 
@@ -137,6 +139,19 @@ export default function BottomNav({
           'owner',
           'manager',
           'inventory_clerk',
+        ],
+      },
+
+      {
+        key: 'kitchen',
+        name: isAm ? 'ወጪ ምግብ' : roles.includes('barman') && !roles.includes('kitchen') ? 'Bar queue' : 'Kitchen queue',
+        path: `/${locale}/kitchen`,
+        icon: ChefHat,
+        roles: [
+          'owner',
+          'manager',
+          'kitchen',
+          'barman',
         ],
       },
 
@@ -189,7 +204,7 @@ export default function BottomNav({
         ],
       },
     ],
-    [isAm, locale, role],
+    [isAm, locale, role, roles],
   )
 
   /*
@@ -239,9 +254,24 @@ export default function BottomNav({
   const cashierFocused =
     assignedRoles.includes('cashier') &&
     !assignedRoles.some((assignedRole) => ['owner', 'manager'].includes(assignedRole))
+  const stationFocused =
+    assignedRoles.some((assignedRole) => ['kitchen', 'barman'].includes(assignedRole)) &&
+    !assignedRoles.some((assignedRole) => ['owner', 'manager', 'cashier', 'waiter', 'inventory_clerk'].includes(assignedRole))
+  const inventoryFocused =
+    assignedRoles.includes('inventory_clerk') &&
+    !assignedRoles.some((assignedRole) => ['owner', 'manager', 'cashier', 'waiter'].includes(assignedRole))
+  const waiterFocused =
+    assignedRoles.includes('waiter') &&
+    !assignedRoles.some((assignedRole) => ['owner', 'manager', 'cashier'].includes(assignedRole))
   const primaryKeys = cashierFocused
-    ? ['sales', 'dashboard']
-    : ['dashboard', 'sales', 'inventory', 'expenses']
+    ? ['sales', 'dashboard', 'stock-handover']
+    : stationFocused
+      ? ['kitchen', 'dashboard', 'stock-handover']
+      : inventoryFocused
+        ? ['dashboard', 'inventory', 'stock-handover']
+        : waiterFocused
+          ? ['sales', 'dashboard', 'stock-handover']
+          : ['dashboard', 'sales', 'inventory', 'expenses']
 
   const mobilePrimaryTabs = useMemo(() => {
     return primaryKeys

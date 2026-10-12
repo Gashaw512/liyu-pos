@@ -12,6 +12,7 @@ import {
 
 import { createCategory } from '@/queries/useCategoryQueries'
 import { getBusinessId } from '@/lib/auth/getBusinessId'
+import { PreparationStationSelect, type PreparationStation } from '@/components/management/PreparationStationSelect'
 
 const ICONS = [
   '📦',
@@ -51,6 +52,7 @@ export default function NewCategoryPage() {
     name_am: '',
     icon: '📦',
     color: '#8B2635',
+    preparation_station: 'kitchen' as PreparationStation,
   })
 
   const isValid = useMemo(() => {
@@ -78,6 +80,7 @@ export default function NewCategoryPage() {
         business_id: businessId,
         name: form.name.trim(),
         name_am: form.name_am.trim(),
+        preparation_station: form.preparation_station,
         icon: form.icon,
         color: form.color,
         sort_order: 0,
@@ -179,6 +182,12 @@ export default function NewCategoryPage() {
 
       {/* FORM */}
       <form onSubmit={handleSubmit} className="space-y-4">
+
+        <PreparationStationSelect
+          value={form.preparation_station}
+          locale={locale}
+          onChange={(preparation_station) => setForm((previous) => ({ ...previous, preparation_station: preparation_station as PreparationStation }))}
+        />
 
         {/* ENGLISH NAME */}
         <div className="rounded-2xl border bg-white p-4">

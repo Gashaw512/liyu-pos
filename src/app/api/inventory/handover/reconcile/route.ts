@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminDatabaseClient, getAuthorizedProfile } from '@/lib/shift-reports/server'
+import { buildCustodyCountLines } from '@/lib/kitchen/custody-stock'
+import { loadCustodyLedger } from '@/lib/kitchen/custody-ledger'
 
 export const dynamic = 'force-dynamic'
 
@@ -70,13 +72,87 @@ export async function POST(request: Request) {
   if (profileError) return NextResponse.json({ error: 'Could not verify your staff account.' }, { status: 500 })
   if (!activeProfile?.is_active) return NextResponse.json({ error: 'Your staff account is inactive.' }, { status: 403 })
 
+  const { data: activeShift, error: activeShiftError } = await admin
+    .from('custody_shifts')
+    .select('id,opened_at,closed_at')
+    .eq('business_id', profile.business_id)
+    .eq('branch_id', profile.branch_id)
+    .eq('user_id', auth.user!.id)
+    .eq('status', 'ACTIVE')
+    .order('opened_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (activeShiftError) return NextResponse.json({ error: 'Could not load your active stock custody.' }, { status: 500 })
+
+  let custodyShiftId = activeShift?.id ?? null
+  let custodyShiftOpenedAt = activeShift?.opened_at ?? null
+  let custodyShiftClosedAt = activeShift?.closed_at ?? null
+  if (!custodyShiftId) {
+    const { data: closedShifts, error: closedShiftsError } = await admin
+      .from('custody_shifts')
+      .select('id,opened_at,closed_at')
+      .eq('business_id', profile.business_id)
+      .eq('branch_id', profile.branch_id)
+      .eq('user_id', auth.user!.id)
+      .eq('status', 'CLOSED')
+      .eq('close_reason', 'branch_report_close')
+      .order('closed_at', { ascending: false })
+      .limit(20)
+    if (closedShiftsError) return NextResponse.json({ error: 'Could not load your pending stock count.' }, { status: 500 })
+    const shiftIds = (closedShifts ?? []).map((shift) => shift.id)
+    if (shiftIds.length) {
+      const { data: pendingCounts, error: pendingCountsError } = await admin
+        .from('custody_shift_reconciliations')
+        .select('custody_shift_id')
+        .in('custody_shift_id', shiftIds)
+        .eq('status', 'not_submitted')
+      if (pendingCountsError) return NextResponse.json({ error: 'Could not load your pending stock count.' }, { status: 500 })
+      const pendingIds = new Set((pendingCounts ?? []).map((row) => row.custody_shift_id))
+      const pendingShift = (closedShifts ?? []).find((shift) => pendingIds.has(shift.id))
+      custodyShiftId = pendingShift?.id ?? null
+      custodyShiftOpenedAt = pendingShift?.opened_at ?? null
+      custodyShiftClosedAt = pendingShift?.closed_at ?? null
+    }
+  }
+
+  const soldByProduct = new Map<string, number>()
+  const issuedByProduct = new Map<string, number>()
+  if (custodyShiftId && custodyShiftOpenedAt) {
+    try {
+      const ledger = await loadCustodyLedger(admin, {
+        businessId: profile.business_id,
+        branchId: profile.branch_id,
+        custodyShiftId,
+        userId: auth.user!.id,
+        openedAt: custodyShiftOpenedAt,
+        closedAt: custodyShiftClosedAt,
+      })
+      for (const [productId, quantity] of ledger.issuedByProduct) issuedByProduct.set(productId, quantity)
+      for (const [productId, quantity] of ledger.soldByProduct) soldByProduct.set(productId, quantity)
+    } catch (error) {
+      console.error('[STOCK HANDOVER] Could not load custody ledger for reconciliation:', error)
+      return NextResponse.json({ error: 'Could not load accepted stock and completed sales.' }, { status: 500 })
+    }
+  }
+
+  let countLines: ReturnType<typeof buildCustodyCountLines>
+  try {
+    countLines = buildCustodyCountLines(lines, soldByProduct, issuedByProduct)
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Stock use exceeds accepted stock.' }, { status: 400 })
+  }
+
   const { data, error } = await admin.rpc('submit_custody_stock_reconciliation', {
     p_request_id: body.requestId,
     p_business_id: profile.business_id,
     p_branch_id: profile.branch_id,
     p_actor_id: auth.user!.id,
-    p_lines: lines.map((line) => ({
+    // Sale quantities come from the server ledger and are sent separately
+    // from user-entered use. The RPC can record a shortage without trusting
+    // client-submitted sales or changing branch inventory.
+    p_lines: countLines.map((line) => ({
       product_id: line.productId,
+      sold_quantity: line.soldQuantity,
       used_quantity: line.usedQuantity,
       returned_quantity: line.returnedQuantity,
       wasted_quantity: line.wastedQuantity,
@@ -88,5 +164,5 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error.message }, { status: conflict ? 409 : 400 })
   }
 
-  return NextResponse.json({ success: true, reconciliation: data })
+  return NextResponse.json({ success: true, reconciliation: data, lines: countLines })
 }

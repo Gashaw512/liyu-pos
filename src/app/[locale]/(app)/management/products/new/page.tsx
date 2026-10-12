@@ -29,6 +29,7 @@ import { createProduct } from '@/queries/useProductsQuery'
 import { getBusinessId } from '@/lib/auth/getBusinessId'
 
 import type { UnitOfMeasure } from '@/types/enum'
+import { PreparationStationSelect, type ProductPreparationStation } from '@/components/management/PreparationStationSelect'
 
 /* ============================================================
    TYPES
@@ -128,6 +129,7 @@ export default function NewProductPage() {
     description: '',
 
     category_id: '',
+    preparation_station: '' as ProductPreparationStation,
 
     barcode: '',
     sku: '',
@@ -401,6 +403,7 @@ export default function NewProductPage() {
         business_id: businessId,
 
         category_id: form.category_id,
+        preparation_station: form.preparation_station || null,
 
         name,
         name_am: nameAm,
@@ -563,6 +566,12 @@ export default function NewProductPage() {
           onSubmit={handleSubmit}
           className="mt-5 space-y-4"
         >
+          <PreparationStationSelect
+            value={form.preparation_station}
+            locale={locale}
+            allowInherit
+            onChange={(preparation_station) => updateField('preparation_station', preparation_station)}
+          />
 
           {/* ====================================================
               1. BASIC INFORMATION

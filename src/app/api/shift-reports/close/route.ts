@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createShiftReportPdf } from '@/lib/shift-reports/pdf'
 import { processRecipientDeliveries } from '@/lib/shift-reports/delivery'
 import { createAdminDatabaseClient, getApplicationTelegramBotToken, getAuthorizedProfile, selectEnabledBusinessRecipients, telegramSendDocument } from '@/lib/shift-reports/server'
+import { calculateExpectedDrawerCash } from '@/lib/shift-reports/cash-reconciliation'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,7 +16,7 @@ export async function POST(request: Request) {
     const auth = await getAuthorizedProfile(client, ['owner', 'manager', 'cashier'])
     if (auth.error) return NextResponse.json({ error: auth.error }, { status: auth.error === 'Unauthorized' ? 401 : 403 })
     const body = await request.json() as { reportId?: unknown; branchId?: unknown; openedAt?: unknown; closedAt?: unknown; actualCash?: unknown }
-    if (typeof body.reportId !== 'string' || !UUID.test(body.reportId) || body.branchId !== auth.profile!.branch_id || typeof body.openedAt !== 'string' || typeof body.closedAt !== 'string') return NextResponse.json({ error: 'Invalid shift close details.' }, { status: 400 })
+    if (typeof body.reportId !== 'string' || !UUID.test(body.reportId) || body.branchId !== auth.profile!.branch_id || typeof body.openedAt !== 'string' || typeof body.closedAt !== 'string' || (body.actualCash != null && (typeof body.actualCash !== 'number' || !Number.isFinite(body.actualCash) || body.actualCash < 0))) return NextResponse.json({ error: 'Invalid shift close details.' }, { status: 400 })
     const openedAt = new Date(body.openedAt)
     const closedAt = new Date(body.closedAt)
     if (!Number.isFinite(openedAt.getTime()) || !Number.isFinite(closedAt.getTime()) || openedAt > closedAt || closedAt.getTime() > Date.now() + 5 * 60_000) return NextResponse.json({ error: 'Invalid shift time range.' }, { status: 400 })
@@ -53,7 +54,7 @@ export async function POST(request: Request) {
     // just because their timestamps overlap.
     const { data: persistedShift, error: persistedShiftError } = await admin
       .from('shifts')
-      .select('id,opening_cash')
+      .select('id,opening_cash,opened_at,status,closed_at,actual_cash_reported')
       .eq('id', body.reportId)
       .eq('business_id', auth.profile!.business_id)
       .eq('branch_id', auth.profile!.branch_id)
@@ -65,7 +66,7 @@ export async function POST(request: Request) {
       ? { data: null, error: null }
       : await admin
         .from('shifts')
-        .select('id,opening_cash')
+        .select('id,opening_cash,opened_at,status,closed_at,actual_cash_reported')
         .eq('business_id', auth.profile!.business_id)
         .eq('branch_id', auth.profile!.branch_id)
         .eq('cashier_id', auth.user!.id)
@@ -74,15 +75,24 @@ export async function POST(request: Request) {
     if (legacyShiftError) throw legacyShiftError
     const authoritativeShift = persistedShift ?? legacyShift
     if (!authoritativeShift) return NextResponse.json({ error: 'The active shift could not be found. Reopen the shift screen and try again.' }, { status: 404 })
+    if (new Date(authoritativeShift.opened_at).getTime() !== openedAt.getTime()) {
+      return NextResponse.json({ error: 'The shift opening time does not match the saved shift.' }, { status: 409 })
+    }
+    if (authoritativeShift.status === 'closed' && (
+      new Date(authoritativeShift.closed_at ?? '').getTime() !== closedAt.getTime()
+      || (authoritativeShift.actual_cash_reported == null ? body.actualCash != null : money(authoritativeShift.actual_cash_reported) !== money(body.actualCash))
+    )) {
+      return NextResponse.json({ error: 'This shift was already closed with different cash details.' }, { status: 409 })
+    }
     const shiftId = authoritativeShift.id
 
     const { data: sales, error: salesError } = await admin.from('sales').select('id,receipt_number,total_amount,subtotal,tax_amount,discount_amount,tip_amount,created_at').eq('business_id', auth.profile!.business_id).eq('branch_id', auth.profile!.branch_id).eq('cashier_id', auth.user!.id).eq('shift_id', shiftId).eq('status', 'completed').is('deleted_at', null).lte('created_at', closedAt.toISOString()).order('created_at')
     if (salesError) throw salesError
     const saleIds = (sales ?? []).map(sale => sale.id)
     const [paymentResult, itemsResult, expenseResult, inventoryResult] = await Promise.all([
-      admin.from('payments').select('method,amount').in('sale_id', saleIds).eq('status', 'completed'),
-      admin.from('sale_items').select('product_name,quantity,unit_price,cost_price,total_amount,sale_id').in('sale_id', saleIds),
-      admin.from('expenses').select('amount').eq('business_id', auth.profile!.business_id).eq('branch_id', auth.profile!.branch_id).eq('recorded_by', auth.user!.id).eq('shift_id', shiftId).is('deleted_at', null),
+      admin.from('payments').select('method,amount,status').in('sale_id', saleIds).in('status', ['completed', 'refunded']),
+      admin.from('sale_items').select('product_name,quantity,unit_price,cost_price,cost_total,total_amount,sale_id').in('sale_id', saleIds),
+      admin.from('expenses').select('amount,payment_method').eq('business_id', auth.profile!.business_id).eq('branch_id', auth.profile!.branch_id).eq('recorded_by', auth.user!.id).eq('shift_id', shiftId).is('deleted_at', null),
       admin.from('inventory').select('quantity,product:products!inventory_product_id_fkey(name,name_am,low_stock_alert,track_inventory,is_active,deleted_at)').eq('business_id', auth.profile!.business_id).eq('branch_id', auth.profile!.branch_id),
     ])
     if (paymentResult.error) throw paymentResult.error
@@ -91,7 +101,7 @@ export async function POST(request: Request) {
     if (inventoryResult.error) throw inventoryResult.error
     const revenue = (sales ?? []).reduce((sum, sale) => sum + money(sale.total_amount), 0)
     const tips = (sales ?? []).reduce((sum, sale) => sum + money(sale.tip_amount), 0)
-    const cogs = (itemsResult.data ?? []).reduce((sum, item) => sum + money(item.quantity) * money(item.cost_price), 0)
+    const cogs = (itemsResult.data ?? []).reduce((sum, item) => sum + money(item.cost_total), 0)
     const expenseTotal = (expenseResult.data ?? []).reduce((sum, expense) => sum + money(expense.amount), 0)
     const products = new Map<string, { quantity: number; amount: number }>()
     for (const item of itemsResult.data ?? []) {
@@ -110,12 +120,19 @@ export async function POST(request: Request) {
       return [{ product_name: product.name_am || product.name || 'Product', current_stock: quantity, minimum_threshold: alertLevel }]
     }).sort((first, second) => first.current_stock - second.current_stock)
     const payments = new Map<string, number>()
-    for (const payment of paymentResult.data ?? []) payments.set(payment.method, (payments.get(payment.method) ?? 0) + money(payment.amount))
+    for (const payment of paymentResult.data ?? []) {
+      if (payment.status !== 'completed') continue
+      payments.set(payment.method, (payments.get(payment.method) ?? 0) + money(payment.amount))
+    }
     // The opening float is sourced only from the authenticated cashier's
     // persisted shift. Client-supplied opening amounts are ignored.
     const openingCash = money(authoritativeShift.opening_cash)
     const actualCash = body.actualCash == null ? null : money(body.actualCash)
-    const expectedCash = openingCash + (payments.get('cash') ?? 0)
+    const expectedCash = calculateExpectedDrawerCash(
+      openingCash,
+      (paymentResult.data ?? []).map((payment) => ({ method: payment.method, amount: money(payment.amount), status: payment.status })),
+      (expenseResult.data ?? []).map((expense) => ({ amount: money(expense.amount), payment_method: expense.payment_method })),
+    )
     const grossProfit = itemRevenue - cogs
     const netProfit = grossProfit - expenseTotal
 
@@ -134,18 +151,20 @@ export async function POST(request: Request) {
       total_transactions: sales?.length ?? 0,
       difference: actualCashReported == null ? null : actualCashReported - expectedCash,
     }
-    const { data: closedShift, error: closeShiftError } = await admin
-      .from('shifts')
-      .update(shiftValues)
-      .eq('id', shiftId)
-      .eq('business_id', auth.profile!.business_id)
-      .eq('branch_id', auth.profile!.branch_id)
-      .eq('cashier_id', auth.user!.id)
-      .select('id')
-      .maybeSingle()
-    if (closeShiftError) throw closeShiftError
-
-    if (!closedShift) return NextResponse.json({ error: 'The persisted shift could not be updated.' }, { status: 409 })
+    if (authoritativeShift.status !== 'closed') {
+      const { data: closedShift, error: closeShiftError } = await admin
+        .from('shifts')
+        .update(shiftValues)
+        .eq('id', shiftId)
+        .eq('business_id', auth.profile!.business_id)
+        .eq('branch_id', auth.profile!.branch_id)
+        .eq('cashier_id', auth.user!.id)
+        .eq('status', 'open')
+        .select('id')
+        .maybeSingle()
+      if (closeShiftError) throw closeShiftError
+      if (!closedShift) return NextResponse.json({ error: 'The shift changed while it was closing. Refresh and try again.' }, { status: 409 })
+    }
 
     // Owner/manager report closure ends all physical custody windows for the
     // branch in one database update. This is separate from the cashier's cash
@@ -316,7 +335,16 @@ export async function POST(request: Request) {
               ? money(savedLine?.quantity_wasted)
               : 0
             const wastageQty = Math.max(recordedWastage, enteredWastage)
-            const expectedStock = item.quantity_received - soldQty - wastageQty
+            // The custody RPC stores server-allocated sales together with
+            // manually recorded use in quantity_used. Subtract sales only
+            // once, then include additional use and returned stock.
+            const usedQty = savedReport?.status === 'submitted'
+              ? Math.max(0, money(savedLine?.quantity_used) - soldQty)
+              : 0
+            const returnedQty = savedReport?.status === 'submitted'
+              ? money(savedLine?.quantity_returned)
+              : 0
+            const expectedStock = item.quantity_received - soldQty - usedQty - returnedQty - wastageQty
             const countLine = physicalLines.find(line => line.product_id === item.product_id)
             const actualCount = savedReport?.status === 'submitted' && countLine?.physical_count != null
               ? money(countLine.physical_count)

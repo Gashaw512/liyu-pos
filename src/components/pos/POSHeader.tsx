@@ -32,6 +32,7 @@ interface POSHeaderProps {
   savingTab: boolean
   onSaveOrder: () => Promise<void>
   todayReport: ReactNode
+  pendingSalesCount: number
 }
 
 const controlClass =
@@ -55,6 +56,7 @@ export default function POSHeader({
   savingTab,
   onSaveOrder,
   todayReport,
+  pendingSalesCount,
 }: POSHeaderProps) {
   const [showTodayReport, setShowTodayReport] = useState(false)
   const orderPlace = selectedTable?.name ?? (isAm ? 'ቀጥታ ሽያጭ' : 'Walk-in')
@@ -71,6 +73,12 @@ export default function POSHeader({
             {orderPlace}
           </span>
         </div>
+
+        {pendingSalesCount > 0 && (
+          <span className="shrink-0 rounded-lg bg-gold-100 px-2 py-1 text-[10px] font-black text-gold-800" role="status" title={isAm ? 'ለማመሳሰል የሚጠብቁ ሽያጮች' : 'Sales waiting to sync'}>
+            {isAm ? `የሚጠብቅ ${pendingSalesCount}` : `Pending ${pendingSalesCount}`}
+          </span>
+        )}
 
         {hasUnsavedTableOrder && (
           <button

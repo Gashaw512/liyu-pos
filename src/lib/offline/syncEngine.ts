@@ -897,11 +897,29 @@ export class SyncEngine {
 
           payment_status:
             sale.payment_status ??
-            'paid',
+            'unpaid',
+
+          amount_paid:
+            this.toNumber(sale.amount_paid),
+
+          outstanding_amount:
+            this.toNumber(sale.outstanding_amount),
+
+          customer_name:
+            sale.customer_name ?? null,
+
+          customer_phone:
+            sale.customer_phone ?? null,
 
           table_number:
             sale.table_number ??
             null,
+
+          table_id:
+            sale.table_id ?? null,
+
+          table_name:
+            sale.table_name ?? null,
 
           items:
             Array.isArray(

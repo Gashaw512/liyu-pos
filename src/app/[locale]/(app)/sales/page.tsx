@@ -7,13 +7,17 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { CheckCircle2, Clock3, Coins, LayoutGrid, Loader2, Search, Send, WifiOff, X } from 'lucide-react'
 
 import { getDB } from '../../../../lib/offline/db'
 import type { Shift } from '../../../../types/database/operations'
+import type { LocalOpenTab } from '@/types/models/pos-cart'
 import { finalizeSale } from '@/lib/offline/saleService'
+import { localSaleFailureMessage } from '@/lib/sales/checkout-errors'
+import { getCancellationBaseItems } from '@/lib/offline/tableOrderSync'
 import {
   sanitizeActiveShiftContext,
   isSameOpenShiftInstance,
@@ -71,6 +75,20 @@ interface ClosedShiftFeedback {
   status: ShiftReportDeliveryStatus
 }
 
+type POSCustodyBalance = { contextKey: string; quantities: Record<string, number> }
+
+function subscribeToOnlineStatus(onChange: () => void) {
+  window.addEventListener('online', onChange)
+  window.addEventListener('offline', onChange)
+  return () => {
+    window.removeEventListener('online', onChange)
+    window.removeEventListener('offline', onChange)
+  }
+}
+
+const getOnlineStatus = () => navigator.onLine
+const getServerOnlineStatus = () => true
+
 // ============================================================
 // PAGE
 // ============================================================
@@ -88,6 +106,7 @@ export default function SalesPage() {
   const canCheckout = hasRole(['owner', 'manager', 'cashier', 'barman'])
   const isWaiter = hasRole(['waiter']) && !canCheckout
   const canViewSalesReport = hasRole(['owner', 'manager', 'cashier', 'barman'])
+  const canViewCustody = hasRole(['waiter', 'cashier', 'barman', 'kitchen'])
 
   const {
     businessId,
@@ -96,12 +115,16 @@ export default function SalesPage() {
     loading: businessContextLoading,
     error: businessContextError,
   } = useBusinessContext()
+  const custodyContextKey = `${businessId ?? ''}:${branchId ?? ''}:${userId ?? ''}:${canViewCustody}`
 
   // ==========================================================
   // STATE
   // ==========================================================
 
   const [loading, setLoading] = useState(true)
+  const online = useSyncExternalStore(subscribeToOnlineStatus, getOnlineStatus, getServerOnlineStatus)
+  const [pendingSalesCount, setPendingSalesCount] = useState(0)
+  const [custodyBalances, setCustodyBalances] = useState<POSCustodyBalance | null>(null)
   const [products, setProducts] = useState<POSProduct[]>([])
   const [categories, setCategories] = useState<POSCategory[]>([])
   const [tables, setTables] = useState<POSTable[]>([])
@@ -126,6 +149,62 @@ export default function SalesPage() {
   const [closedShiftFeedback, setClosedShiftFeedback] = useState<ClosedShiftFeedback | null>(null)
   const [closeShiftDialogOpen, setCloseShiftDialogOpen] = useState(false)
   const [actualCashCount, setActualCashCount] = useState('')
+
+  const refreshPendingSalesCount = useCallback(async () => {
+    try {
+      const db = await getDB()
+      setPendingSalesCount(db.objectStoreNames.contains('pending_sales')
+        ? (await db.getAll('pending_sales')).length
+        : 0)
+    } catch (error) {
+      console.warn('[POS] Could not read the local pending-sale count.', error)
+    }
+  }, [])
+
+  const refreshCustodyBalances = useCallback(async () => {
+    if (!canViewCustody || !businessId || !branchId || !navigator.onLine) return
+    try {
+      const response = await fetch('/api/inventory/handover', {
+        cache: 'no-store',
+        credentials: 'same-origin',
+      })
+      if (!response.ok) return
+      const result = await response.json() as {
+        custody?: { lines?: Array<{ productId: string; remainingQuantity: number }> } | null
+      }
+      const balances: Record<string, number> = {}
+      for (const line of result.custody?.lines ?? []) {
+        const remaining = Number(line.remainingQuantity)
+        if (Number.isFinite(remaining)) balances[line.productId] = remaining
+      }
+      setCustodyBalances({ contextKey: custodyContextKey, quantities: balances })
+    } catch {
+      // Keep the last confirmed value; branch stock remains the POS stock source.
+    }
+  }, [businessId, branchId, canViewCustody, custodyContextKey])
+
+  useEffect(() => {
+    const refresh = () => void refreshCustodyBalances()
+    const initialLoad = window.setTimeout(refresh, 0)
+    window.addEventListener('online', refresh)
+    window.addEventListener('liyu:sync-complete', refresh)
+    return () => {
+      window.clearTimeout(initialLoad)
+      window.removeEventListener('online', refresh)
+      window.removeEventListener('liyu:sync-complete', refresh)
+    }
+  }, [refreshCustodyBalances])
+
+  useEffect(() => {
+    const initialRefresh = window.setTimeout(() => void refreshPendingSalesCount(), 0)
+    window.addEventListener('liyu:sync-complete', refreshPendingSalesCount)
+    window.addEventListener('liyu:sale-sync-status', refreshPendingSalesCount)
+    return () => {
+      window.clearTimeout(initialRefresh)
+      window.removeEventListener('liyu:sync-complete', refreshPendingSalesCount)
+      window.removeEventListener('liyu:sale-sync-status', refreshPendingSalesCount)
+    }
+  }, [refreshPendingSalesCount])
 
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean
@@ -569,7 +648,7 @@ export default function SalesPage() {
   // ==========================================================
 
   useEffect(() => {
-    if (!selectedTable || !cartHasItems) {
+    if (!selectedTable) {
       setHasUnsavedChanges(false)
       return
     }
@@ -579,7 +658,6 @@ export default function SalesPage() {
     )
   }, [
     cart,
-    cartHasItems,
     selectedTable,
     savedCartSnapshot,
   ])
@@ -611,7 +689,7 @@ export default function SalesPage() {
 
         const allTabs = await db.getAll('open_tabs')
 
-        const existingTab = allTabs.find((tab: any) =>
+        const existingTab = allTabs.find((tab: LocalOpenTab) =>
           tabBelongsToTable(tab, table),
         )
 
@@ -861,6 +939,35 @@ export default function SalesPage() {
     }
 
     try {
+      const db = await getDB()
+      const pendingClosures = await db.getAll('pending_shift_closures')
+      const previousShiftPending = pendingClosures.some((closure) =>
+        closure.businessId === businessId &&
+        closure.branchId === branchId &&
+        closure.cashierId === userId,
+      )
+
+      if (previousShiftPending) {
+        toast(
+          isAm
+            ? 'የቀድሞው ፈረቃ እስካሁን አልተመሳሰለም። ሌላ ፈረቃ ከመክፈትዎ በፊት ማመሳሰሉ እስኪጠናቀቅ ይጠብቁ።'
+            : 'The previous shift is still waiting to sync. Let it finish before opening another shift.',
+          'warning',
+        )
+        return
+      }
+    } catch (error) {
+      console.error('[POS] Could not check for a pending previous shift.', error)
+      toast(
+        isAm
+          ? 'የቀድሞ ፈረቃ ሁኔታን ማረጋገጥ አልተቻለም። እንደገና ይሞክሩ።'
+          : 'Could not check the previous shift status. Please try again.',
+        'error',
+      )
+      return
+    }
+
+    try {
       const sharedOpenShift = await resolveExistingOpenShift()
       if (sharedOpenShift) {
         setActiveShift(sharedOpenShift)
@@ -1076,19 +1183,60 @@ export default function SalesPage() {
     try {
       const db = await getDB()
 
-      if (activeShift) {
+      // Push queued sales first. A final cash reconciliation must not use a
+      // server snapshot that is missing sales still waiting on this device.
+      const { syncEngine } = await import('@/lib/offline/syncEngine')
+      await syncEngine.syncAll()
+      let shiftToClose = activeShift
+      const syncedActiveShift = await db.get('active_shift', 'current')
+      if (syncedActiveShift) {
+        shiftToClose = syncedActiveShift
+        closingShiftInstanceRef.current = syncedActiveShift
+      }
+      const pendingShiftOpenings = await db.getAll('pending_shift_openings')
+      if (
+        navigator.onLine &&
+        pendingShiftOpenings.some((opening) => opening.reportId === shiftToClose?.report_id)
+      ) {
+        toast(
+          isAm
+            ? 'ፈረቃው ገና ከሰርቨሩ ጋር አልተመሳሰለም። ኢንተርኔት ሲኖር እንደገና ይሞክሩ።'
+            : 'This shift has not synced to the server yet. Keep it open and try again when connected.',
+          'warning',
+        )
+        return
+      }
+      const pendingSalesBeforeClose = await db.getAll('pending_sales')
+      const shiftIds = new Set([
+        shiftToClose?.real_database_id,
+        shiftToClose?.report_id,
+      ].filter((id): id is string => Boolean(id)))
+      if (
+        navigator.onLine &&
+        pendingSalesBeforeClose.some((sale) => shiftIds.has(sale.shift_id ?? ''))
+      ) {
+        toast(
+          isAm
+            ? 'አንዳንድ ሽያጮች ገና አልተላኩም። ፈረቃውን ክፍት ያቆዩና ኢንተርኔት ሲመለስ እንደገና ይሞክሩ።'
+            : 'Some sales are still waiting to sync. Keep this shift open and try again when sync finishes.',
+          'warning',
+        )
+        return
+      }
+
+      if (shiftToClose) {
         const pendingClosures = await db.getAll('pending_shift_closures')
         const existingQueuedClosure = pendingClosures.find((closure) =>
-          isDuplicateShiftClosure(closure, activeShift),
+          isDuplicateShiftClosure(closure, shiftToClose!),
         )
 
         if (existingQueuedClosure) {
           console.warn('[POS] Prevented duplicate shift-close report for the same shared shift.', {
             reportId: existingQueuedClosure.reportId,
-            businessId: activeShift.business_id,
-            branchId: activeShift.branch_id,
-            cashierId: activeShift.cashier_id,
-            openedAt: activeShift.opened_at,
+            businessId: shiftToClose.business_id,
+            branchId: shiftToClose.branch_id,
+            cashierId: shiftToClose.cashier_id,
+            openedAt: shiftToClose.opened_at,
           })
 
           await db.delete('active_shift', 'current')
@@ -1118,15 +1266,15 @@ export default function SalesPage() {
           return
         }
 
-        const reportId = activeShift.report_id || activeShift.real_database_id || crypto.randomUUID()
+        const reportId = shiftToClose.report_id || shiftToClose.real_database_id || crypto.randomUUID()
         await db.put('pending_shift_closures', {
           reportId,
-          businessId: activeShift.business_id,
-          branchId: activeShift.branch_id,
-          cashierId: activeShift.cashier_id,
-          openedAt: activeShift.opened_at,
+          businessId: shiftToClose.business_id,
+          branchId: shiftToClose.branch_id,
+          cashierId: shiftToClose.cashier_id,
+          openedAt: shiftToClose.opened_at,
           closedAt: new Date().toISOString(),
-          openingCash: Number(activeShift.opening_cash) || 0,
+          openingCash: Number(shiftToClose.opening_cash) || 0,
           actualCash: countedCash,
           attempts: 0,
         })
@@ -1149,7 +1297,9 @@ export default function SalesPage() {
       toast(
         isAm
           ? 'ፈረቃው ተዘግቷል'
-          : 'Shift closed. Sales are saved; check the report status on this screen.',
+          : navigator.onLine
+            ? 'Shift closure saved and syncing. Check the report status on this screen.'
+            : 'Shift closure saved on this device. It will be finalized when sync completes.',
         'success',
       )
 
@@ -1204,8 +1354,7 @@ export default function SalesPage() {
       const queuedForTable = queuedOrders
         .filter((order) => order.tableId === table.id)
         .sort((first, second) => first.createdAt.localeCompare(second.createdAt))
-      const firstSave = queuedForTable.find((order) => order.operation === 'save')
-      const baseItems = firstSave?.baseItems ?? tableTabs[0]?.items ?? []
+      const baseItems = getCancellationBaseItems(queuedForTable, tableTabs[0]?.items)
       const transaction = db.transaction(['open_tabs', 'pending_table_orders'], 'readwrite')
       const orderStore = transaction.objectStore('pending_table_orders')
 
@@ -1286,10 +1435,25 @@ export default function SalesPage() {
   const handleSaveTab = async () => {
     if (
       !selectedTable ||
-      !cartHasItems ||
       !hasUnsavedChanges ||
       savingTab
     ) {
+      return
+    }
+
+    // Saving an empty table cart means the waiter removed every remaining
+    // line. Queue the existing cancel operation so the deletion survives
+    // refresh/offline use and syncs through the normal outbox.
+    if (!cartHasItems) {
+      setSavingTab(true)
+      try {
+        await clearCurrentOrder()
+      } catch (error) {
+        console.error('[POS] Failed to save the empty table order:', error)
+        toast(isAm ? 'á‰µá‹•á‹›á‹™áŠ• áˆ›áˆµá‰€áˆáŒ¥ áŠ áˆá‰°á‰»áˆˆáˆ' : 'Could not save the removed items.', 'error')
+      } finally {
+        setSavingTab(false)
+      }
       return
     }
 
@@ -1371,6 +1535,7 @@ export default function SalesPage() {
   const handleFinalizeSale = async (
     splitPayments: PaymentSplit,
     roomNumber?: string,
+    debtor?: { name: string; phone: string },
   ) => {
     if (!canCheckout) return
     if (finalizingSaleRef.current || !activeShift || cart.length === 0) return
@@ -1394,6 +1559,8 @@ export default function SalesPage() {
       const sale = await finalizeSale({
         splitPayments,
         roomNumber,
+        customerName: debtor?.name,
+        customerPhone: debtor?.phone,
         manualTip,
         activeShift: safeShift,
         selectedTable,
@@ -1401,9 +1568,28 @@ export default function SalesPage() {
         totalBill,
       })
 
-      notifyInventoryUpdated(sale.localId)
+      try {
+        notifyInventoryUpdated(sale.localId)
+      } catch (error) {
+        console.warn('[POS] Sale is saved; local inventory views will refresh on next load.', error)
+      }
 
-      await loadPOSData()
+      // Local IndexedDB commit is the checkout boundary. Refreshes must not
+      // leave a committed sale in the cart or report it as failed.
+      void refreshPendingSalesCount().catch((error) =>
+        console.warn('[POS] Sale is saved; pending count refresh will retry.', error),
+      )
+      void loadPOSData().catch((error) =>
+        console.warn('[POS] Sale is saved; POS data refresh will retry.', error),
+      )
+
+      // The sale is already safe in the atomic local outbox. Start server sync
+      // immediately while leaving the receipt and cashier flow responsive.
+      if (typeof navigator !== 'undefined' && navigator.onLine) {
+        void import('@/lib/offline/syncEngine')
+          .then(({ syncEngine }) => syncEngine.syncAll())
+          .catch((error) => console.warn('[POS] Sale queued; immediate sync will retry.', error))
+      }
 
       setCart([])
       setSelectedTable(null)
@@ -1419,12 +1605,12 @@ export default function SalesPage() {
 
       toast(
         isAm
-          ? typeof navigator !== 'undefined' && !navigator.onLine
-            ? 'ሽያጩ በዚህ መሣሪያ ተቀምጧል። ኢንተርኔት ሲመለስ ይላካል።'
-            : 'ሽያጩ ተቀምጧል።'
-          : typeof navigator !== 'undefined' && !navigator.onLine
-            ? 'Sale saved on this device. It will sync when you are online.'
-            : 'Sale saved.',
+          ? online
+            ? 'ሽያጩ በዚህ መሣሪያ ተቀምጧል። አሁን ከሰርቨሩ ጋር እየተመሳሰለ ነው።'
+            : 'ሽያጩ በዚህ መሣሪያ ተቀምጧል። ኢንተርኔት ሲመለስ ይመሳሰላል።'
+          : online
+            ? 'Sale saved on this device. Syncing with the server…'
+            : 'Sale saved on this device. It will sync when you are online.',
         'success',
       )
 
@@ -1457,7 +1643,7 @@ export default function SalesPage() {
       toast(
         isAm
           ? 'ሽያጩን ማስቀመጥ አልተሳካም'
-          : 'Unable to save the sale locally.',
+          : localSaleFailureMessage(error),
         'error',
       )
     } finally {
@@ -1652,7 +1838,7 @@ export default function SalesPage() {
             setBillOpen(false)
           }}
           hasUnsavedTableOrder={Boolean(
-            selectedTable && cartHasItems && hasUnsavedChanges,
+            selectedTable && hasUnsavedChanges,
           )}
           savingTab={savingTab}
           onSaveOrder={handleSaveTab}
@@ -1666,6 +1852,7 @@ export default function SalesPage() {
               initiallyExpanded
             />
           )}
+          pendingSalesCount={pendingSalesCount}
         />
 
         {/* CURRENT BILL */}
@@ -1822,6 +2009,7 @@ export default function SalesPage() {
                 <POSProductGrid
                   products={filteredProducts}
                   cartQuantities={cartQuantities}
+                  custodyBalances={custodyBalances?.contextKey === custodyContextKey ? custodyBalances.quantities : {}}
                   onAddProduct={addToCart}
                   onIncreaseQuantity={(id) =>
                     increaseQuantity(id)

@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { createAdminDatabaseClient, getAuthorizedProfile } from '@/lib/shift-reports/server'
 import { createClient } from '@/lib/supabase/server'
 import { signPriceProof, verifyPriceProof } from '@/lib/security/price-proof'
+import { ensureTicketLines } from '@/lib/kitchen/ensureTicketLines'
 import {
   calculateTableOrderTotal,
   mergeTableOrderChanges,
@@ -15,42 +16,6 @@ export const dynamic = 'force-dynamic'
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 class TableOrderValidationError extends Error {}
-
-async function ensureTicketLines(
-  admin: ReturnType<typeof createAdminDatabaseClient>,
-  order: { id: string; business_id: string; branch_id: string; revision: number },
-) {
-  const { data: tickets, error } = await admin
-    .from('kitchen_order_tickets')
-    .select('id,item_payload')
-    .eq('order_id', order.id)
-    .eq('business_id', order.business_id)
-    .eq('branch_id', order.branch_id)
-    .eq('order_revision', order.revision)
-  if (error) throw error
-
-  const lines = (tickets ?? []).flatMap((ticket) =>
-    (Array.isArray(ticket.item_payload) ? ticket.item_payload : []).flatMap((value) => {
-      if (!value || typeof value !== 'object') return []
-      const item = value as Record<string, unknown>
-      const productId = typeof item.product_id === 'string' ? item.product_id : ''
-      const quantity = Number(item.quantity)
-      if (!UUID.test(productId) || !Number.isFinite(quantity) || quantity <= 0) return []
-      return [{
-        business_id: order.business_id,
-        branch_id: order.branch_id,
-        ticket_id: ticket.id,
-        product_id: productId,
-        product_name: typeof item.name === 'string' ? item.name.slice(0, 200) : 'Item',
-        quantity,
-      }]
-    }),
-  )
-  if (!lines.length) return
-  const { error: insertError } = await admin.from('kitchen_order_ticket_lines')
-    .upsert(lines, { onConflict: 'ticket_id,product_id', ignoreDuplicates: true })
-  if (insertError) throw insertError
-}
 
 function isTableOrdersMigrationMissing(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false
@@ -159,24 +124,25 @@ export async function GET() {
       return NextResponse.json({ error: 'No business branch is assigned to this account.' }, { status: 403 })
     }
 
-    const { data: configuredTables, error: configuredTablesError } = await client
-      .from('restaurant_tables')
-      .select('id,name')
-      .eq('business_id', auth.profile!.business_id)
-      .eq('branch_id', auth.profile!.branch_id)
-      .eq('is_active', true)
-      .is('deleted_at', null)
-      .order('name', { ascending: true })
-    if (configuredTablesError) throw configuredTablesError
-
-    const { data, error } = await client
-      .from('open_table_orders')
-      .select('id,business_id,branch_id,table_id,cashier_id,items,total_amount,revision,updated_at')
-      .eq('business_id', auth.profile!.business_id)
-      .eq('branch_id', auth.profile!.branch_id)
-      .eq('status', 'open')
-      .order('updated_at', { ascending: false })
-    if (error) throw error
+    const [tablesResult, ordersResult] = await Promise.all([
+      client.from('restaurant_tables')
+        .select('id,name')
+        .eq('business_id', auth.profile!.business_id)
+        .eq('branch_id', auth.profile!.branch_id)
+        .eq('is_active', true)
+        .is('deleted_at', null)
+        .order('name', { ascending: true }),
+      client.from('open_table_orders')
+        .select('id,business_id,branch_id,table_id,cashier_id,items,total_amount,revision,updated_at')
+        .eq('business_id', auth.profile!.business_id)
+        .eq('branch_id', auth.profile!.branch_id)
+        .eq('status', 'open')
+        .order('updated_at', { ascending: false }),
+    ])
+    if (tablesResult.error) throw tablesResult.error
+    if (ordersResult.error) throw ordersResult.error
+    const configuredTables = tablesResult.data
+    const data = ordersResult.data
 
     const tableNames = new Map((configuredTables ?? []).map((table) => [table.id, table.name]))
 

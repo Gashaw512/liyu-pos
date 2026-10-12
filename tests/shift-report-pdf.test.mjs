@@ -6,6 +6,22 @@ import { processRecipientDeliveries } from '../src/lib/shift-reports/delivery.ts
 import { isAllowedNotificationRole, selectEnabledBusinessRecipients } from '../src/lib/shift-reports/routing.ts'
 import { telegramSendDocument, telegramSendMessage } from '../src/lib/shift-reports/telegram.ts'
 import { signPriceProof, verifyPriceProof } from '../src/lib/security/price-proof.ts'
+import { calculateExpectedDrawerCash } from '../src/lib/shift-reports/cash-reconciliation.ts'
+import { assertPaymentMethodsAvailable, calculateAuthoritativeSale, calculateLocalPaymentState } from '../src/lib/sales/authoritative-sale.ts'
+import { localSaleFailureMessage } from '../src/lib/sales/checkout-errors.ts'
+
+test('cash reconciliation uses persisted opening float, cash payments, cash refunds, and cash expenses only', () => {
+  const expected = calculateExpectedDrawerCash(500, [
+    { method: 'cash', amount: 400, status: 'completed' },
+    { method: 'cash', amount: 50, status: 'refunded' },
+    { method: 'telebirr', amount: 300, status: 'completed' },
+    { method: 'cash', amount: 900, status: 'pending' },
+  ], [
+    { amount: 25, payment_method: 'cash' },
+    { amount: 75, payment_method: 'telebirr' },
+  ])
+  assert.equal(expected, 825)
+})
 
 test('price proofs are bound to tenant, branch, product, and exact price', () => {
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-server-only-secret'
@@ -22,6 +38,128 @@ test('price proofs are bound to tenant, branch, product, and exact price', () =>
   assert.equal(verifyPriceProof(proof, { ...claims, businessId: 'business-b' }), null)
   assert.equal(verifyPriceProof(proof, { ...claims, priceCents: 1 }), null)
   assert.equal(verifyPriceProof(`${proof}tampered`, claims), null)
+})
+
+test('catalog price proof binds the cached tax snapshot used by offline checkout', () => {
+  process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-server-only-secret'
+  const claims = {
+    version: 1,
+    businessId: 'business-a',
+    branchId: 'branch-a',
+    productId: 'product-a',
+    priceCents: 2500,
+    taxRateBps: 1500,
+    taxInclusive: false,
+    kind: 'catalog',
+  }
+  const proof = signPriceProof(claims)
+  assert.deepEqual(verifyPriceProof(proof, claims), claims)
+  const signature = proof.split('.')[1]
+  const changedClaims = Buffer.from(JSON.stringify({ ...claims, taxRateBps: 0 })).toString('base64url')
+  assert.equal(verifyPriceProof(`${changedClaims}.${signature}`, claims), null)
+})
+
+test('sale amount is derived from verified price lines and business tax settings, not submitted totals', () => {
+  const result = calculateAuthoritativeSale({
+    items: [
+      { productId: 'p1', productName: 'Beer', quantity: 2, unitPrice: 100, taxInclusive: false },
+    ],
+    taxRatePercent: 15,
+    requestedDiscount: 0,
+    tip: 0,
+    discountAuthorized: false,
+  })
+  assert.deepEqual({ subtotal: result.subtotal, tax: result.tax, total: result.total }, { subtotal: 200, tax: 30, total: 230 })
+  // Client-submitted subtotal/tax/total values are deliberately not inputs.
+  const tamperedClientFields = [
+    { subtotal: 1 },
+    { tax: 900 },
+    { total: 0 },
+    { discount: 200 },
+  ]
+  for (const clientValues of tamperedClientFields) {
+    const persisted = calculateAuthoritativeSale({
+      items: [{ productId: 'p1', productName: 'Beer', quantity: 2, unitPrice: 100, taxInclusive: false }],
+      taxRatePercent: 15,
+      requestedDiscount: 0,
+      tip: 0,
+      discountAuthorized: false,
+      ...clientValues,
+    })
+    assert.equal(persisted.total, 230)
+  }
+})
+
+test('sale amount calculator handles inclusive tax, authorized discounts, and rejects unauthorized discounts', () => {
+  const inclusive = calculateAuthoritativeSale({
+    items: [{ productId: 'p1', productName: 'Coffee', quantity: 1, unitPrice: 115, taxInclusive: true }],
+    taxRatePercent: 15,
+    requestedDiscount: 15,
+    tip: 0,
+    discountAuthorized: true,
+  })
+  assert.equal(inclusive.subtotal, 115)
+  assert.equal(inclusive.discount, 15)
+  assert.equal(inclusive.tax, 13.04)
+  assert.equal(inclusive.total, 100)
+  assert.throws(() => calculateAuthoritativeSale({
+    items: [{ productId: 'p1', productName: 'Coffee', quantity: 1, unitPrice: 100, taxInclusive: true }],
+    taxRatePercent: 0,
+    requestedDiscount: 1,
+    tip: 0,
+    discountAuthorized: false,
+  }), /Only a manager or owner/)
+})
+
+test('credit tender stays outstanding locally and rejects over-allocation', () => {
+  assert.deepEqual(calculateLocalPaymentState(500, { cash: 200, telebirr: 0, cbe_birr: 0, awash_bank: 0, bank_transfer: 0, credit: 300, room_charge: 0 }), {
+    amountPaid: 200,
+    outstanding: 300,
+    status: 'partial',
+  })
+  assert.deepEqual(calculateLocalPaymentState(500, { cash: 0, telebirr: 0, cbe_birr: 0, awash_bank: 0, bank_transfer: 0, credit: 500, room_charge: 0 }), {
+    amountPaid: 0,
+    outstanding: 500,
+    status: 'unpaid',
+  })
+  assert.throws(() => calculateLocalPaymentState(500, { cash: 501, credit: 0 }), /must equal/)
+})
+
+test('offline cash, manual digital tenders, and credit remain recordable', () => {
+  const tenders = (method, amount) => ({
+    cash: method === 'cash' ? amount : 0,
+    telebirr: method === 'telebirr' ? amount : 0,
+    cbe_birr: method === 'cbe_birr' ? amount : 0,
+    awash_bank: method === 'awash_bank' ? amount : 0,
+    bank_transfer: method === 'bank_transfer' ? amount : 0,
+    credit: method === 'credit' ? amount : 0,
+    room_charge: 0,
+  })
+
+  for (const method of ['cash', 'telebirr', 'cbe_birr', 'awash_bank', 'bank_transfer', 'credit']) {
+    assert.doesNotThrow(() => assertPaymentMethodsAvailable(tenders(method, 100), false), method)
+    assert.equal(calculateLocalPaymentState(100, tenders(method, 100)).status, method === 'credit' ? 'unpaid' : 'paid')
+  }
+})
+
+test('room charge is online-only while an online folio-validated charge remains allowed', () => {
+  const roomTender = { cash: 0, room_charge: 100 }
+  assert.throws(() => assertPaymentMethodsAvailable(roomTender, false), /internet connection.*active guest folio/i)
+  assert.doesNotThrow(() => assertPaymentMethodsAvailable(roomTender, true))
+})
+
+test('offline multiple tenders require a complete exact allocation', () => {
+  const split = { cash: 40, telebirr: 35, cbe_birr: 25, awash_bank: 0, bank_transfer: 0, credit: 0, room_charge: 0 }
+  assert.doesNotThrow(() => assertPaymentMethodsAvailable(split, false))
+  assert.equal(calculateLocalPaymentState(100, split).status, 'paid')
+  assert.throws(() => calculateLocalPaymentState(100, { ...split, cash: 39 }), /must equal/i)
+})
+
+test('checkout error messages distinguish shift, debtor, payment, and local storage failures', () => {
+  assert.match(localSaleFailureMessage(new Error('Missing a valid active-shift context for this sale.')), /Open a shift/)
+  assert.match(localSaleFailureMessage(new Error('Credit sales require the customer name and phone number.')), /debtor.*name and phone/i)
+  assert.match(localSaleFailureMessage(new Error('Payment amounts must equal the sale total.')), /do not match the bill/i)
+  assert.match(localSaleFailureMessage(new Error('IndexedDB unavailable')), /cart is still available/i)
 })
 
 test('creates a valid PDF with every product line over multiple pages', () => {

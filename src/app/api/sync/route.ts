@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminDatabaseClient, getAssignedProfileRoles } from '@/lib/shift-reports/server'
 import { verifyPriceProof } from '@/lib/security/price-proof'
+import { calculateAuthoritativeSale } from '@/lib/sales/authoritative-sale'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,13 +32,6 @@ interface SyncContext {
   operatorRoles: string[]
 }
 
-interface InventoryChange {
-  inventoryId: string
-  previousQuantity: number
-  newQuantity: number
-  movementId: string | null
-}
-
 interface SaleRecord {
   id: string
   offline_id: string
@@ -53,6 +47,8 @@ interface SaleRecord {
   total_amount: number
   table_name: string | null
   table_id: string | null
+  customer_name: string | null
+  customer_phone: string | null
   status: string
   is_offline_sync: boolean
   created_at: string
@@ -65,6 +61,7 @@ interface SaleItemRecord {
   quantity: number
   unit_price: number
   cost_price: number
+  discount: number
 }
 
 interface PaymentRecord {
@@ -652,11 +649,10 @@ async function buildSaleRecord(
 
     table_id: toValidUuid(payload.table_id),
 
-    status:
-      toStringValue(
-        payload.status,
-        'completed',
-      ),
+    customer_name: toNullableString(payload.customer_name),
+    customer_phone: toNullableString(payload.customer_phone),
+
+    status: 'completed',
 
     is_offline_sync: true,
 
@@ -718,6 +714,7 @@ function buildSaleItems(
         toNumber(
           item.cost_price,
         ),
+      discount: 0,
     }))
 }
 
@@ -762,7 +759,7 @@ function buildPayments(
 
       reference_no: toNullableString(payment.reference_no),
 
-      status: payment.status === 'pending' ? 'pending' : 'completed',
+      status: payment.method === 'credit' ? 'pending' : 'completed',
 
       created_at:
         timestamp,
@@ -813,315 +810,6 @@ async function hasSaleInventoryMovement(
 }
 
 /* ============================================================
-   ROLLBACK SALE INVENTORY
-============================================================ */
-
-async function rollbackSaleInventory(
-  supabase: SupabaseClient,
-  changes: InventoryChange[],
-): Promise<void> {
-  if (
-    changes.length === 0
-  ) {
-    return
-  }
-
-  /*
-   * Roll back in reverse order.
-   */
-  for (
-    const change of [
-      ...changes,
-    ].reverse()
-  ) {
-    try {
-      const {
-        error: restoreError,
-      } = await supabase
-        .from('inventory')
-        .update({
-          quantity:
-            change.previousQuantity,
-
-          updated_at:
-            new Date().toISOString(),
-        })
-        .eq(
-          'id',
-          change.inventoryId,
-        )
-
-      if (restoreError) {
-        console.error(
-          '[SYNC] Failed to restore inventory:',
-          restoreError,
-        )
-      }
-
-      if (
-        change.movementId
-      ) {
-        const {
-          error:
-            movementDeleteError,
-        } =
-          await supabase
-            .from(
-              'inventory_movements',
-            )
-            .delete()
-            .eq(
-              'id',
-              change.movementId,
-            )
-
-        if (
-          movementDeleteError
-        ) {
-          console.error(
-            '[SYNC] Failed to remove rollback movement:',
-            movementDeleteError,
-          )
-        }
-      }
-    } catch (error) {
-      console.error(
-        '[SYNC] Inventory rollback error:',
-        error,
-      )
-    }
-  }
-}
-
-/* ============================================================
-   INVENTORY DEDUCTION FOR SALE
-============================================================ */
-
-async function deductInventoryForSale(
-  supabase: SupabaseClient,
-  sale: SaleRecord,
-  items: SaleItemRecord[],
-  timestamp: string,
-  userId: string,
-): Promise<InventoryChange[]> {
-  const changes: InventoryChange[] =
-    []
-
-  try {
-    /*
-     * Final idempotency check.
-     */
-    const alreadyProcessed =
-      await hasSaleInventoryMovement(
-        supabase,
-        sale.id,
-        sale.business_id,
-        sale.branch_id,
-      )
-
-    if (
-      alreadyProcessed
-    ) {
-      return []
-    }
-
-    for (
-      const item of items
-    ) {
-      const quantitySold =
-        toNumber(
-          item.quantity,
-        )
-
-      if (
-        !item.product_id ||
-        quantitySold <= 0
-      ) {
-        continue
-      }
-
-      /*
-       * Re-check before every item.
-       */
-      const movementExists =
-        await hasSaleInventoryMovement(
-          supabase,
-          sale.id,
-          sale.business_id,
-          sale.branch_id,
-        )
-
-      if (movementExists) {
-        return changes
-      }
-
-      /*
-       * Load tenant-scoped inventory.
-       */
-      const {
-        data: inventory,
-        error:
-          inventoryError,
-      } = await supabase
-        .from('inventory')
-        .select(
-          'id, quantity',
-        )
-        .eq(
-          'business_id',
-          sale.business_id,
-        )
-        .eq(
-          'branch_id',
-          sale.branch_id,
-        )
-        .eq(
-          'product_id',
-          item.product_id,
-        )
-        .maybeSingle()
-
-      if (inventoryError) {
-        throw inventoryError
-      }
-
-      if (!inventory) {
-        throw new Error(
-          `Inventory record not found for product ${item.product_id}.`,
-        )
-      }
-
-      const currentQuantity =
-        toNumber(
-          inventory.quantity,
-        )
-
-      const newQuantity =
-        currentQuantity -
-        quantitySold
-
-      /*
-       * Keep the existing behavior:
-       * allow the inventory calculation to
-       * proceed exactly as before.
-       */
-      const {
-        error:
-          updateError,
-      } = await supabase
-        .from('inventory')
-        .update({
-          quantity:
-            newQuantity,
-
-          updated_at:
-            timestamp,
-        })
-        .eq(
-          'id',
-          inventory.id,
-        )
-        .eq(
-          'business_id',
-          sale.business_id,
-        )
-        .eq(
-          'branch_id',
-          sale.branch_id,
-        )
-
-      if (updateError) {
-        throw updateError
-      }
-
-      const change: InventoryChange =
-        {
-          inventoryId:
-            inventory.id,
-
-          previousQuantity:
-            currentQuantity,
-
-          newQuantity,
-
-          movementId:
-            null,
-        }
-
-      changes.push(change)
-
-      /*
-       * Record inventory movement.
-       */
-      const {
-        data: movement,
-        error:
-          movementError,
-      } = await supabase
-        .from(
-          'inventory_movements',
-        )
-        .insert({
-          business_id:
-            sale.business_id,
-
-          branch_id:
-            sale.branch_id,
-
-          product_id:
-            item.product_id,
-
-          user_id:
-            userId,
-
-          movement_type:
-            'sale',
-
-          quantity:
-            -quantitySold,
-
-          unit_cost:
-            toNumber(
-              item.cost_price,
-            ),
-
-          reference_id:
-            sale.id,
-
-          reference_type:
-            'sale',
-
-          notes:
-            `Sale ${sale.receipt_number}`,
-
-          created_at:
-            timestamp,
-        })
-        .select('id')
-        .maybeSingle()
-
-      if (movementError) {
-        throw movementError
-      }
-
-      if (movement?.id) {
-        change.movementId =
-          movement.id
-      }
-    }
-
-    return changes
-  } catch (error) {
-    await rollbackSaleInventory(
-      supabase,
-      changes,
-    )
-
-    throw error
-  }
-}
-
-/* ============================================================
    SYNC SALE
 ============================================================ */
 
@@ -1143,7 +831,7 @@ async function syncSale(
    * buildSaleRecord is async because
    * tenant/branch validation is async.
    */
-  const sale =
+  let sale =
     await buildSaleRecord(
       supabase,
       payload,
@@ -1154,33 +842,19 @@ async function syncSale(
   return withSaleLock(
     sale.id,
     async () => {
-      const items =
+      let items =
         buildSaleItems(
           payload.items,
           sale.id,
         )
 
-      const payments =
+      let payments =
         buildPayments(
           payload.payments,
           sale.id,
           sale.business_id,
           timestamp,
         )
-
-      const roomChargePayment = payments.find((payment) => payment.method === 'room_charge')
-      if (roomChargePayment) {
-        if (context.operatorRoles.length !== 1 || context.operatorRoles[0] !== 'cashier') {
-          throw new Error('Only a cashier can charge a guest room.')
-        }
-        const { data: business, error: businessError } = await supabase
-          .from('businesses')
-          .select('is_hotel_integrated')
-          .eq('id', sale.business_id)
-          .maybeSingle()
-        if (businessError) throw businessError
-        if (!business?.is_hotel_integrated) throw new Error('Room charges are not enabled for this business.')
-      }
 
       if (
         items.length === 0
@@ -1199,7 +873,7 @@ async function syncSale(
           existingSaleError,
       } = await supabase
         .from('sales')
-        .select('id')
+        .select('id,offline_id,branch_id,business_id,cashier_id,shift_id,receipt_number,subtotal,discount_amount,tax_amount,tip_amount,total_amount,table_name,table_id,customer_name,customer_phone,status,is_offline_sync,created_at')
         .eq(
           'id',
           sale.id,
@@ -1224,21 +898,48 @@ async function syncSale(
       if (existingSale) {
         const { data: savedLines, error: savedLinesError } = await supabase
           .from('sale_items')
-          .select('id')
+          .select('id,sale_id,product_id,product_name,quantity,unit_price,cost_price,discount')
           .eq('sale_id', sale.id)
-          .limit(1)
         if (savedLinesError) throw savedLinesError
-        needsPriceValidation = !savedLines?.length
+        const { data: savedPayments, error: savedPaymentsError } = await supabase
+          .from('payments')
+          .select('id,sale_id,business_id,amount,method,reference_no,status,created_at')
+          .eq('sale_id', sale.id)
+        if (savedPaymentsError) throw savedPaymentsError
+        const hasCompleteCommit = Boolean(savedLines?.length && savedPayments?.length)
+        needsPriceValidation = !hasCompleteCommit
+        if (hasCompleteCommit) {
+          sale = { ...sale, ...existingSale }
+          items = savedLines as SaleItemRecord[]
+          payments = savedPayments as PaymentRecord[]
+        }
+      }
+
+      const roomChargePayment = payments.find((payment) => payment.method === 'room_charge')
+      if (roomChargePayment) {
+        if (context.operatorRoles.length !== 1 || context.operatorRoles[0] !== 'cashier') {
+          throw new Error('Only a cashier can charge a guest room.')
+        }
+        const { data: business, error: businessError } = await supabase
+          .from('businesses')
+          .select('is_hotel_integrated')
+          .eq('id', sale.business_id)
+          .maybeSingle()
+        if (businessError) throw businessError
+        if (!business?.is_hotel_integrated) throw new Error('Room charges are not enabled for this business.')
       }
 
       if (needsPriceValidation) {
         const submittedItems = Array.isArray(payload.items) ? payload.items.map(asRecord) : []
         const productIds = [...new Set(submittedItems.map((item) => toValidUuid(item.product_id)).filter((id): id is string => Boolean(id)))]
-        if (submittedItems.some((item) => !toValidUuid(item.product_id))) throw new Error('Sale contains an invalid product reference.')
+        if (submittedItems.some((item) => !toValidUuid(item.product_id)
+          || !Number.isFinite(Number(item.quantity)) || Number(item.quantity) <= 0)) {
+          throw new Error('Sale contains an invalid product reference or quantity.')
+        }
 
         const { data: products, error: productsError } = await supabase
           .from('products')
-          .select('id,retail_price')
+          .select('id,name,retail_price,cost_price,tax_inclusive')
           .eq('business_id', sale.business_id)
           .in('id', productIds)
           .eq('is_active', true)
@@ -1247,8 +948,9 @@ async function syncSale(
         if (productsError) throw productsError
 
         const productById = new Map((products ?? []).map((product) => [product.id, product]))
+        const priceClaimsByProduct = new Map<string, ReturnType<typeof verifyPriceProof>>()
         const canOverride = context.operatorRoles.some((role) => role === 'owner' || role === 'manager')
-        for (const item of submittedItems) {
+        for (const [index, item] of submittedItems.entries()) {
           const productId = toValidUuid(item.product_id)
           if (!productId) throw new Error('Sale contains an invalid product reference.')
           const product = productById.get(productId)
@@ -1265,166 +967,104 @@ async function syncSale(
             productId,
             priceCents,
           })
+          if (signedPrice) priceClaimsByProduct.set(productId, signedPrice)
           if (priceCents !== currentPriceCents && !signedPrice && !canOverride) {
             throw new Error('Sale price does not match a verified catalog price. Refresh the catalog or ask a manager.')
           }
-        }
-      }
-
-      if (!existingSale) {
-        const {
-          error: saleError,
-        } = await supabase
-          .from('sales')
-          .insert(sale)
-
-        if (saleError) {
-          throw saleError
-        }
-      }
-
-      /*
-       * FIFO costing runs from a database trigger on sale_items and expects
-       * an inventory row for every sold product. Some older/catalog products
-       * can be sold before a branch inventory row exists. Create a zero-stock
-       * row first so the sale can sync and the existing negative-stock/FIFO
-       * fallback behavior can account for the sold quantity.
-       *
-       * Ignore conflicts to avoid overwriting a live inventory balance.
-       */
-      const productIds = [
-        ...new Set(
-          items
-            .map((item) => item.product_id)
-            .filter(Boolean),
-        ),
-      ]
-
-      if (productIds.length > 0) {
-        const {
-          data: validProducts,
-          error: productsError,
-        } = await supabase
-          .from('products')
-          .select('id')
-          .eq('business_id', sale.business_id)
-          .in('id', productIds)
-
-        if (productsError) {
-          throw productsError
+          if (items[index]) items[index].unit_price = priceCents / 100
         }
 
-        const validProductIds = new Set(
-          (validProducts ?? []).map((product) => product.id),
-        )
-        const missingInventoryRows = [...validProductIds].map((productId) => ({
-          business_id: sale.business_id,
-          branch_id: sale.branch_id,
-          product_id: productId,
-          quantity: 0,
+        const { data: businessTax, error: taxError } = await supabase
+          .from('businesses')
+          .select('tax_rate')
+          .eq('id', sale.business_id)
+          .maybeSingle()
+        if (taxError) throw taxError
+        if (!businessTax) throw new Error('Business tax configuration could not be loaded.')
+
+        const requestedDiscount = Number(payload.discount_amount ?? 0)
+        const tip = Number(payload.tip_amount ?? 0)
+        const signedTaxRates = submittedItems
+          .map((item) => {
+            const productId = toValidUuid(item.product_id)
+            const claims = productId ? priceClaimsByProduct.get(productId) : null
+            return claims?.taxRateBps == null ? null : claims.taxRateBps / 100
+          })
+          .filter((rate): rate is number => rate !== null)
+        const uniqueSignedTaxRates = [...new Set(signedTaxRates)]
+        const taxRatePercent = !canOverride && uniqueSignedTaxRates.length === 1
+          && signedTaxRates.length === submittedItems.length
+          ? uniqueSignedTaxRates[0]
+          : Number(businessTax.tax_rate ?? 0)
+
+        const authoritative = calculateAuthoritativeSale({
+          items: items.map((item) => {
+            const product = productById.get(item.product_id)
+            if (!product) throw new Error(`Product ${item.product_id} is not active in this branch.`)
+            return {
+              productId: item.product_id,
+              productName: toStringValue(product.name, item.product_name),
+              quantity: item.quantity,
+              unitPrice: item.unit_price,
+              taxInclusive: priceClaimsByProduct.get(item.product_id)?.taxInclusive
+                ?? product.tax_inclusive !== false,
+            }
+          }),
+          taxRatePercent,
+          requestedDiscount,
+          tip,
+          discountAuthorized: canOverride,
+        })
+
+        sale = {
+          ...sale,
+          subtotal: authoritative.subtotal,
+          discount_amount: authoritative.discount,
+          tax_amount: authoritative.tax,
+          tip_amount: authoritative.tip,
+          total_amount: authoritative.total,
+        }
+        items = items.map((item, index) => ({
+          ...item,
+          product_name: authoritative.items[index].productName,
+          cost_price: Number(productById.get(item.product_id)?.cost_price ?? 0),
+          discount: authoritative.items[index].discount,
         }))
 
-        if (missingInventoryRows.length > 0) {
-          const { error: inventorySeedError } = await supabase
-            .from('inventory')
-            .upsert(missingInventoryRows, {
-              onConflict: 'branch_id,product_id',
-              ignoreDuplicates: true,
-            })
-
-          if (inventorySeedError) {
-            throw inventorySeedError
-          }
+        const submittedPayments = Array.isArray(payload.payments) ? payload.payments.map(asRecord) : []
+        if (submittedPayments.some((payment) => !Number.isFinite(Number(payment.amount)) || Number(payment.amount) < 0)) {
+          throw new Error('Sale contains an invalid payment amount.')
+        }
+        const allocatedPaymentTotal = submittedPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0)
+        if (Math.abs(Math.round(allocatedPaymentTotal * 100) - Math.round(authoritative.total * 100)) > 0) {
+          throw new Error('Payment amounts must equal the server-calculated sale total.')
+        }
+        const creditAmount = payments.reduce((sum, payment) => sum + (payment.method === 'credit' ? payment.amount : 0), 0)
+        if (creditAmount > 0 && (!sale.customer_name?.trim() || !sale.customer_phone?.trim())) {
+          throw new Error('Credit sales require a customer name and phone number.')
         }
       }
 
-      /*
-       * Sale items.
-       */
-      if (
-        items.length > 0
-      ) {
-        const {
-          data: existingItems,
-          error:
-            existingItemsError,
-        } = await supabase
-          .from('sale_items')
-          .select('id')
-          .eq(
-            'sale_id',
-            sale.id,
-          )
-          .limit(1)
-
-        if (
-          existingItemsError
-        ) {
-          throw existingItemsError
-        }
-
-        if (
-          !existingItems?.length
-        ) {
-          const {
-            error: itemsError,
-          } = await supabase
-            .from('sale_items')
-            .insert(items)
-
-          if (itemsError) {
-            throw itemsError
-          }
-        }
-      }
-
-      /*
-       * Payments.
-       */
-      if (
-        payments.length > 0
-      ) {
-        const {
-          data:
-            existingPayments,
-          error:
-            existingPaymentsError,
-        } = await supabase
-          .from('payments')
-          .select('sale_id')
-          .eq(
-            'sale_id',
-            sale.id,
-          )
-          .limit(1)
-
-        if (
-          existingPaymentsError
-        ) {
-          throw existingPaymentsError
-        }
-
-        if (
-          !existingPayments?.length
-        ) {
-          const {
-            error:
-              paymentsError,
-          } = await supabase
-            .from('payments')
-            .insert(
-              payments,
-            )
-
-          if (paymentsError) {
-            throw paymentsError
-          }
-        }
-      }
+      // The DB function commits the sale, FIFO/branch inventory effects, and
+      // payments atomically. Room charges also post their folio ledger entry
+      // inside that same transaction.
+      const { error: commitError } = roomChargePayment
+        ? await supabase.rpc('commit_pos_sale_with_room_charge', {
+            p_sale: sale,
+            p_items: items,
+            p_payments: payments,
+            p_actor_id: context.operatorUserId,
+          })
+        : await supabase.rpc('commit_pos_sale', {
+            p_sale: sale,
+            p_items: items,
+            p_payments: payments,
+          })
+      if (commitError) throw commitError
 
       // The KOT custody ledger is a sub-ledger of the branch inventory ledger.
-      // Allocate only sold quantities to ready, worker-attributed KOT lines;
-      // the existing branch/FIFO deduction below still runs exactly once.
+      // Allocate sold quantities to ready, worker-attributed KOT lines.
+      // The sale_items trigger already performed the single branch/FIFO deduction.
       // The database transaction locks the sale and ticket lines, so retries
       // cannot allocate the same prepared quantity twice.
       if (sale.table_id) {
@@ -1437,62 +1077,10 @@ async function syncSale(
         if (allocationError) throw allocationError
       }
 
-      if (roomChargePayment) {
-        const { error: folioError } = await supabase.rpc('post_room_charge_for_sale', {
-          p_business_id: sale.business_id,
-          p_branch_id: sale.branch_id,
-          p_sale_id: sale.id,
-          p_actor_id: context.operatorUserId,
-        })
-        if (folioError) throw folioError
-      }
-
-      /*
-       * Second idempotency check.
-       */
-      const processedBeforeDeduction =
-        await hasSaleInventoryMovement(
-          supabase,
-          sale.id,
-          sale.business_id,
-          sale.branch_id,
-        )
-
-      if (
-        processedBeforeDeduction
-      ) {
-        return sale.id
-      }
-
-      /*
-       * Authoritative server inventory update.
-       */
-      await deductInventoryForSale(
-        supabase,
-        sale,
-        items,
-        timestamp,
-        context.operatorUserId,
+      const inventoryProcessed = await hasSaleInventoryMovement(
+        supabase, sale.id, sale.business_id, sale.branch_id,
       )
-
-      /*
-       * Final verification.
-       */
-      const processedAfterDeduction =
-        await hasSaleInventoryMovement(
-          supabase,
-          sale.id,
-          sale.business_id,
-          sale.branch_id,
-        )
-
-      if (
-        !processedAfterDeduction
-      ) {
-        throw new Error(
-          `Sale ${sale.id} inventory movement could not be confirmed.`,
-        )
-      }
+      if (!inventoryProcessed) throw new Error(`Sale ${sale.id} inventory movement could not be confirmed.`)
 
       return sale.id
     },

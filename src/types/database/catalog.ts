@@ -7,6 +7,7 @@ export interface Category {
   business_id: string
   name: string
   name_am: string | null
+  preparation_station: 'kitchen' | 'bar' | 'none'
   icon: string | null
   color: string | null
   sort_order: number
@@ -30,6 +31,8 @@ export interface Product {
   branch_id: string | null
 
   category_id: string | null
+  /** Null inherits the category station. */
+  preparation_station: 'kitchen' | 'bar' | 'none' | null
 
   name: string
   name_am: string | null

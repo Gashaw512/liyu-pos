@@ -20,6 +20,7 @@ export function PlanInquiryAction({ planId, planName, price, lang, className }: 
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null)
   const dialogRef = useRef<HTMLDialogElement>(null)
   const isEnglish = lang === 'en'
+  const isDemo = planId === 'demo'
 
   useEffect(() => {
     const dialog = dialogRef.current
@@ -70,7 +71,9 @@ export function PlanInquiryAction({ planId, planName, price, lang, className }: 
   return (
     <>
       <button type="button" onClick={() => { setFields(initialFields); setResult(null); setIsOpen(true) }} className={`${className} w-full`}>
-        {isEnglish ? 'Ask about this plan' : 'ስለዚህ እቅድ ይጠይቁ'}
+        {isDemo
+          ? (isEnglish ? 'Request a product demo' : 'የምርት ማሳያ ይጠይቁ')
+          : (isEnglish ? 'Ask about this plan' : 'ስለዚህ እቅድ ይጠይቁ')}
       </button>
 
       <dialog
@@ -84,10 +87,14 @@ export function PlanInquiryAction({ planId, planName, price, lang, className }: 
         <div className="flex items-start justify-between gap-4 border-b border-coffee-700/10 px-5 py-4 dark:border-white/10 sm:px-6">
           <div>
             <h2 id="plan-inquiry-title" className="font-serif text-xl font-bold">
-              {isEnglish ? 'Talk with us about Liyu' : 'ስለ ሊዩ ያነጋግሩን'}
+              {isDemo
+                ? (isEnglish ? 'Request a product demo' : 'የምርት ማሳያ ይጠይቁ')
+                : (isEnglish ? 'Talk with us about Liyu' : 'ስለ ሊዩ ያነጋግሩን')}
             </h2>
             <p className="mt-1 text-xs text-coffee-500 dark:text-zinc-400">
-              {isEnglish ? 'A few details will help us respond usefully.' : 'በተገቢው ለመመለስ ጥቂት መረጃ ይሙሉ።'}
+              {isDemo
+                ? (isEnglish ? 'Leave your contact details so we can arrange a short walkthrough.' : 'አጭር ማብራሪያ ለማዘጋጀት የመገኛ መረጃዎን ይተዉ።')
+                : (isEnglish ? 'A few details will help us respond usefully.' : 'በተገቢው ለመመለስ ጥቂት መረጃ ይሙሉ።')}
             </p>
           </div>
           <button type="button" onClick={closeDialog} disabled={isSubmitting} aria-label={isEnglish ? 'Close form' : 'ቅጹን ዝጋ'} className="rounded-lg px-3 py-2 text-sm font-semibold text-coffee-600 hover:bg-[#F7F4EB] disabled:opacity-50 dark:text-zinc-300 dark:hover:bg-zinc-800">

@@ -152,12 +152,16 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_OR_PUBLISHABLE_KEY
 SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVER_ONLY_SERVICE_ROLE_KEY
 MESSAGING_ENCRYPTION_KEY=YOUR_SERVER_ONLY_ENCRYPTION_KEY
 TELEGRAM_BOT_TOKEN_ENCRYPTED=YOUR_ENCRYPTED_TELEGRAM_BOT_TOKEN
+PILOT_INQUIRY_TELEGRAM_CHAT_ID=YOUR_OWNER_OR_SALES_CHAT_ID
 ```
 
 Important notes:
 
 - `NEXT_PUBLIC_*` values are public by design
 - Service-role credentials, Telegram tokens, and encryption keys are server-only
+- `PILOT_INQUIRY_TELEGRAM_CHAT_ID` is also server-only; it directs public website inquiries to the configured Liyu owner/sales Telegram chat
+- The public inquiry form uses the existing encrypted Telegram bot configuration. The recipient must have started the bot or belong to a group where the bot can post. If inquiry delivery is not configured or Telegram is unavailable, the form gives the visitor the published support email as a fallback
+- Configure and test this chat ID in each deployment before publishing the public inquiry form. Inquiry throttling in the route is process-local; production deployments should also apply their platform's request-rate controls
 - Never commit secrets or plaintext credentials to the repo
 
 ### Run

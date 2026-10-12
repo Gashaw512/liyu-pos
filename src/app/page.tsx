@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useState } from 'react'
 import { PlanInquiryAction } from '@/components/public/PlanInquiryAction'
+import type { PublicInquiryPlanId } from '@/lib/public-inquiry'
 import {
   WifiOff, TrendingUp, AlertTriangle, BarChart3,
   Shield, Zap, ArrowRight, CheckCircle,
@@ -29,11 +30,11 @@ const SEGMENTS = [
 ]
 
 const PLANS = [
-  { name: 'Product demo', nameAm: 'የምርት ማሳያ', price: 'No charge', priceAm: 'ክፍያ የለም', period: 'sample-data walkthrough', periodAm: 'የሙከራ መረጃ ማብራሪያ', desc: 'A guided introduction to the current product.', descAm: 'ስለአሁኑ ምርት በመመራት የሚሰጥ ማብራሪያ።', scope: 'Sample data only. No business records or payment required.', scopeAm: 'የሙከራ መረጃ ብቻ። የንግድ መዝገብ ወይም ክፍያ አያስፈልግም።', highlight: false },
-  { name: 'Starter', nameAm: 'ጀማሪ', price: 'ETB 499', priceAm: '499 ብር', period: 'per outlet / month', periodAm: 'ለአንድ ቦታ / በወር', desc: 'For one cafe, bar, or restaurant beginning with digital sales and stock records.', descAm: 'ዲጂታል ሽያጭና የክምችት መዝገብ ለሚጀምር አንድ ካፌ፣ ባር ወይም ሬስቶራንት።', scope: 'Proposed price. Staff access, support, and pilot scope are agreed in writing.', scopeAm: 'የታሰበ ዋጋ ነው። የሰራተኛ መዳረሻ፣ ድጋፍና የሙከራ ወሰን በጽሁፍ ይስማማሉ።', highlight: false },
-  { name: 'Professional', nameAm: 'ፕሮፌሽናል', price: 'ETB 999', priceAm: '999 ብር', period: 'per outlet / month', periodAm: 'ለአንድ ቦታ / በወር', desc: 'For one location using table orders, shifts, and configured Kitchen or Bar tickets.', descAm: 'የጠረጴዛ ትዕዛዝ፣ ሺፍትና የኩሽና ወይም ባር ትዕዛዝ ለሚጠቀም አንድ ቦታ።', scope: 'Proposed price. Availability depends on pilot verification and written scope.', scopeAm: 'የታሰበ ዋጋ ነው። መገኘቱ በሙከራ ማረጋገጫና በጽሁፍ ስምምነት ይወሰናል።', highlight: true },
-  { name: 'Business', nameAm: 'ቢዝነስ', price: 'ETB 2,499', priceAm: '2,499 ብር', period: 'per month', periodAm: 'በወር', desc: 'A proposed option for operators managing more than one outlet.', descAm: 'ከአንድ በላይ የንግድ ቦታ ለሚያስተዳድሩ የታሰበ አማራጭ።', scope: 'Multi-outlet availability and setup must be confirmed before an offer.', scopeAm: 'የብዙ ቦታ አገልግሎትና ማዋቀር ከቅናሽ በፊት መረጋገጥ አለበት።', highlight: false },
-  { name: 'Enterprise', nameAm: 'ኢንተርፕራይዝ', price: 'From ETB 7,500', priceAm: 'ከ 7,500 ብር ጀምሮ', period: 'per month', periodAm: 'በወር', desc: 'For larger teams with specific onboarding or support needs.', descAm: 'ልዩ የማስጀመር ወይም የድጋፍ ፍላጎት ላላቸው ትላልቅ ቡድኖች።', scope: 'A quote and service terms are discussed individually.', scopeAm: 'ዋጋና የአገልግሎት ውሎች በተናጠል ይወሰናሉ።', highlight: false },
+  { id: 'demo', name: 'Product demo', nameAm: 'የምርት ማሳያ', price: 'No charge', priceAm: 'ክፍያ የለም', period: 'sample-data walkthrough', periodAm: 'የሙከራ መረጃ ማብራሪያ', desc: 'A guided introduction to the current product.', descAm: 'ስለአሁኑ ምርት በመመራት የሚሰጥ ማብራሪያ።', scope: 'Sample data only. No business records or payment required.', scopeAm: 'የሙከራ መረጃ ብቻ። የንግድ መዝገብ ወይም ክፍያ አያስፈልግም።', highlight: false },
+  { id: 'starter', name: 'Starter', nameAm: 'ጀማሪ', price: 'ETB 499', priceAm: '499 ብር', period: 'per outlet / month', periodAm: 'ለአንድ ቦታ / በወር', desc: 'For one cafe, bar, or restaurant beginning with digital sales and stock records.', descAm: 'ዲጂታል ሽያጭና የክምችት መዝገብ ለሚጀምር አንድ ካፌ፣ ባር ወይም ሬስቶራንት።', scope: 'Proposed price. Staff access, support, and pilot scope are agreed in writing.', scopeAm: 'የታሰበ ዋጋ ነው። የሰራተኛ መዳረሻ፣ ድጋፍና የሙከራ ወሰን በጽሁፍ ይስማማሉ።', highlight: false },
+  { id: 'professional', name: 'Professional', nameAm: 'ፕሮፌሽናል', price: 'ETB 999', priceAm: '999 ብር', period: 'per outlet / month', periodAm: 'ለአንድ ቦታ / በወር', desc: 'For one location using table orders, shifts, and configured Kitchen or Bar tickets.', descAm: 'የጠረጴዛ ትዕዛዝ፣ ሺፍትና የኩሽና ወይም ባር ትዕዛዝ ለሚጠቀም አንድ ቦታ።', scope: 'Proposed price. Availability depends on pilot verification and written scope.', scopeAm: 'የታሰበ ዋጋ ነው። መገኘቱ በሙከራ ማረጋገጫና በጽሁፍ ስምምነት ይወሰናል።', highlight: true },
+  { id: 'business', name: 'Business', nameAm: 'ቢዝነስ', price: 'ETB 2,499', priceAm: '2,499 ብር', period: 'per month', periodAm: 'በወር', desc: 'A proposed option for operators managing more than one outlet.', descAm: 'ከአንድ በላይ የንግድ ቦታ ለሚያስተዳድሩ የታሰበ አማራጭ።', scope: 'Multi-outlet availability and setup must be confirmed before an offer.', scopeAm: 'የብዙ ቦታ አገልግሎትና ማዋቀር ከቅናሽ በፊት መረጋገጥ አለበት።', highlight: false },
+  { id: 'enterprise', name: 'Enterprise', nameAm: 'ኢንተርፕራይዝ', price: 'From ETB 7,500', priceAm: 'ከ 7,500 ብር ጀምሮ', period: 'per month', periodAm: 'በወር', desc: 'For larger teams with specific onboarding or support needs.', descAm: 'ልዩ የማስጀመር ወይም የድጋፍ ፍላጎት ላላቸው ትላልቅ ቡድኖች።', scope: 'A quote and service terms are discussed individually.', scopeAm: 'ዋጋና የአገልግሎት ውሎች በተናጠል ይወሰናሉ።', highlight: false },
 ]
 /* ─── Mock live-preview data matching HTML prototype ─────────────────────── */
 const MOCK_TRANSACTIONS = [
@@ -344,6 +345,7 @@ export default function LandingPage() {
               </div>
               <p className="text-xs text-[#5a3e38] leading-relaxed mt-4 flex-1">{lang === 'am' ? plan.scopeAm : plan.scope}</p>
               <PlanInquiryAction
+                planId={plan.id as PublicInquiryPlanId}
                 planName={lang === 'am' ? plan.nameAm : plan.name}
                 price={lang === 'am' ? plan.priceAm : plan.price}
                 lang={lang}

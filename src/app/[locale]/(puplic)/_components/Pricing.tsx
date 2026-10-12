@@ -2,9 +2,11 @@
 
 import { CheckCircle } from 'lucide-react'
 import { PlanInquiryAction } from '@/components/public/PlanInquiryAction'
+import type { PublicInquiryPlanId } from '@/lib/public-inquiry'
 
 const PLANS = (lang: 'en' | 'am') => [
   {
+    id: 'demo',
     name: lang === 'en' ? 'Product demo' : 'የምርት ማሳያ',
     price: '0',
     period: lang === 'en' ? 'sample-data walkthrough' : 'የሙከራ መረጃ ማብራሪያ',
@@ -13,6 +15,7 @@ const PLANS = (lang: 'en' | 'am') => [
     highlight: false,
   },
   {
+    id: 'starter',
     name: lang === 'en' ? 'Starter' : 'ጀማሪ',
     price: '499',
     period: lang === 'en' ? 'per outlet / month' : 'ለአንድ የንግድ ቦታ / በወር',
@@ -21,6 +24,7 @@ const PLANS = (lang: 'en' | 'am') => [
     highlight: false,
   },
   {
+    id: 'professional',
     name: lang === 'en' ? 'Professional' : 'ፕሮፌሽናል',
     price: '999',
     period: lang === 'en' ? 'per outlet / month' : 'ለአንድ የንግድ ቦታ / በወር',
@@ -29,6 +33,7 @@ const PLANS = (lang: 'en' | 'am') => [
     highlight: true,
   },
   {
+    id: 'business',
     name: lang === 'en' ? 'Business' : 'ቢዝነስ',
     price: '2,499',
     period: lang === 'en' ? 'per month' : 'በወር',
@@ -37,6 +42,7 @@ const PLANS = (lang: 'en' | 'am') => [
     highlight: false,
   },
   {
+    id: 'enterprise',
     name: lang === 'en' ? 'Enterprise' : 'ኢንተርፕራይዝ',
     price: lang === 'en' ? 'From ETB 7,500' : 'ከ 7,500 ብር ጀምሮ',
     period: lang === 'en' ? 'per month' : 'በወር',
@@ -94,6 +100,7 @@ export function Pricing({ lang }: { lang: 'en' | 'am' }) {
             </div>
 
             <PlanInquiryAction
+              planId={plan.id as PublicInquiryPlanId}
               planName={plan.name}
               price={plan.price === '0' ? (lang === 'en' ? 'No charge for the sample-data demo' : 'የሙከራ መረጃ ማሳያ ክፍያ የለውም') : `ETB ${plan.price} ${plan.period}`}
               lang={lang}

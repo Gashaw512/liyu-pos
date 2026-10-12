@@ -27,6 +27,13 @@ const withPWA = nextPWA({
 const nextConfig: NextConfig = {
   typedRoutes: true,
 
+  // Keep failed App Router soft navigations pending while offline and retry
+  // them when connectivity returns. Local POS work continues through its
+  // existing IndexedDB queue; this does not make protected routes public.
+  experimental: {
+    useOffline: true,
+  },
+
   images: {
     formats: ["image/webp"],
   },

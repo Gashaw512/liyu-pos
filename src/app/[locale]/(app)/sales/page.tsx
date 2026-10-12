@@ -939,6 +939,35 @@ export default function SalesPage() {
     }
 
     try {
+      const db = await getDB()
+      const pendingClosures = await db.getAll('pending_shift_closures')
+      const previousShiftPending = pendingClosures.some((closure) =>
+        closure.businessId === businessId &&
+        closure.branchId === branchId &&
+        closure.cashierId === userId,
+      )
+
+      if (previousShiftPending) {
+        toast(
+          isAm
+            ? 'የቀድሞው ፈረቃ እስካሁን አልተመሳሰለም። ሌላ ፈረቃ ከመክፈትዎ በፊት ማመሳሰሉ እስኪጠናቀቅ ይጠብቁ።'
+            : 'The previous shift is still waiting to sync. Let it finish before opening another shift.',
+          'warning',
+        )
+        return
+      }
+    } catch (error) {
+      console.error('[POS] Could not check for a pending previous shift.', error)
+      toast(
+        isAm
+          ? 'የቀድሞ ፈረቃ ሁኔታን ማረጋገጥ አልተቻለም። እንደገና ይሞክሩ።'
+          : 'Could not check the previous shift status. Please try again.',
+        'error',
+      )
+      return
+    }
+
+    try {
       const sharedOpenShift = await resolveExistingOpenShift()
       if (sharedOpenShift) {
         setActiveShift(sharedOpenShift)
@@ -1148,16 +1177,6 @@ export default function SalesPage() {
   const closeShift = async (countedCash: number | null) => {
     if (closingShift) return
 
-    if (typeof navigator === 'undefined' || !navigator.onLine) {
-      toast(
-        isAm
-          ? 'áˆáˆ¨á‰ƒáŠ• áˆˆáˆ˜á‹áŒ‹á‰µ áŠ¢áŠ•á‰°áˆ­áŠ”á‰µ áŠ á‹«áˆµáˆáˆá¢ áˆ½á‹«áŒ®á‰½áŠ• áˆáŒ áˆáˆ á‹­áŒ á‰¥á‰'
-          : 'Connect to the internet and sync sales before closing this shift.',
-        'warning',
-      )
-      return
-    }
-
     closingShiftInstanceRef.current = activeShift
     setClosingShift(true)
 
@@ -1175,7 +1194,10 @@ export default function SalesPage() {
         closingShiftInstanceRef.current = syncedActiveShift
       }
       const pendingShiftOpenings = await db.getAll('pending_shift_openings')
-      if (pendingShiftOpenings.some((opening) => opening.reportId === shiftToClose?.report_id)) {
+      if (
+        navigator.onLine &&
+        pendingShiftOpenings.some((opening) => opening.reportId === shiftToClose?.report_id)
+      ) {
         toast(
           isAm
             ? 'ፈረቃው ገና ከሰርቨሩ ጋር አልተመሳሰለም። ኢንተርኔት ሲኖር እንደገና ይሞክሩ።'
@@ -1189,7 +1211,10 @@ export default function SalesPage() {
         shiftToClose?.real_database_id,
         shiftToClose?.report_id,
       ].filter((id): id is string => Boolean(id)))
-      if (pendingSalesBeforeClose.some((sale) => shiftIds.has(sale.shift_id ?? ''))) {
+      if (
+        navigator.onLine &&
+        pendingSalesBeforeClose.some((sale) => shiftIds.has(sale.shift_id ?? ''))
+      ) {
         toast(
           isAm
             ? 'አንዳንድ ሽያጮች ገና አልተላኩም። ፈረቃውን ክፍት ያቆዩና ኢንተርኔት ሲመለስ እንደገና ይሞክሩ።'
@@ -1272,7 +1297,9 @@ export default function SalesPage() {
       toast(
         isAm
           ? 'ፈረቃው ተዘግቷል'
-          : 'Shift closed. Sales are saved; check the report status on this screen.',
+          : navigator.onLine
+            ? 'Shift closure saved and syncing. Check the report status on this screen.'
+            : 'Shift closure saved on this device. It will be finalized when sync completes.',
         'success',
       )
 

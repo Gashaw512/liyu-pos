@@ -1,105 +1,20 @@
-// src/app/[locale]/(app)/layout.tsx
-
 import { ReactNode } from 'react'
-import { redirect } from 'next/navigation'
-import { createClient } from '../../../lib/supabase/server'
-import AppShell from '../../../components/layout/AppShell'
-import OfflineAwareAppShell from '../../../components/layout/OfflineAwareAppShell'
-import { ToastProvider } from '../../../components/ui/ToastProvider'
-import { getAssignedProfileRoles } from '../../../lib/shift-reports/server'
+import AuthenticatedGroupClient from './AuthenticatedGroupClient'
 
 interface AuthenticatedGroupLayoutProps {
   children: ReactNode
   params: Promise<{ locale: string }>
 }
 
-interface ProfileBusiness {
-  name: string
-}
-
-export const dynamic = 'force-dynamic'
-
 export default async function AuthenticatedGroupLayout({
   children,
   params,
 }: AuthenticatedGroupLayoutProps) {
   const { locale } = await params
-  const supabase = await createClient()
-
-  // ============================================================
-  // 1. AUTHENTICATION
-  // ============================================================
-
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser()
-
-  if (authError || !user) {
-    redirect(`/${locale}/login` as any)
-  }
-
-  // ============================================================
-  // 2. PROFILE + BUSINESS
-  // ============================================================
-
-  const { data: profile, error: profileError } = await supabase
-    .from('profiles')
-    .select(`
-      full_name,
-      role,
-      onboarding_completed,
-      businesses (name)
-    `)
-    .eq('id', user.id)
-    .single()
-
-  if (profileError || !profile) {
-    redirect(`/${locale}/login` as any)
-  }
-
-  const roles = await getAssignedProfileRoles(supabase, user.id, profile.role)
-
-  // ============================================================
-  // 3. ONBOARDING
-  // ============================================================
-
-  if (!profile.onboarding_completed) {
-    redirect(`/${locale}/onboarding`)
-  }
-
-  // ============================================================
-  // 4. BUSINESS NAME
-  // ============================================================
-
-  const businessRaw = profile.businesses
-
-  const businessData = Array.isArray(businessRaw)
-    ? (businessRaw[0] as unknown as ProfileBusiness | null)
-    : (businessRaw as unknown as ProfileBusiness | null)
-
-  // ============================================================
-  // 5. APPLICATION SHELL
-  // ============================================================
 
   return (
-    <ToastProvider>
-      <OfflineAwareAppShell
-        locale={locale}
-        role={profile.role}
-        fullName={profile.full_name}
-        businessName={businessData?.name || 'LIYU POS'}
-      >
-        <AppShell
-          locale={locale}
-          role={profile.role}
-          roles={roles}
-          fullName={profile.full_name}
-          businessName={businessData?.name || 'LIYU POS'}
-        >
-          {children}
-        </AppShell>
-      </OfflineAwareAppShell>
-    </ToastProvider>
+    <AuthenticatedGroupClient locale={locale}>
+      {children}
+    </AuthenticatedGroupClient>
   )
 }

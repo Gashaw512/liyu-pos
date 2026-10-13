@@ -1,5 +1,22 @@
 import type { NextConfig } from "next";
+import type { RuntimeCaching } from "workbox-build";
 import nextPWA from "next-pwa";
+
+// Keep next-pwa's built-in cache strategies unchanged, while using Workbox's
+// precache fallback plugin instead of next-pwa's separately imported fallback
+// worker script.
+const runtimeCaching = (require("next-pwa/cache") as RuntimeCaching[]).map(
+  (entry) =>
+    entry.options?.cacheName === "others"
+      ? {
+          ...entry,
+          options: {
+            ...entry.options,
+            precacheFallback: { fallbackURL: "/offline.html" },
+          },
+        }
+      : entry
+);
 
 const withPWA = nextPWA({
   dest: "public",
@@ -10,15 +27,10 @@ const withPWA = nextPWA({
 
   register: true,
   skipWaiting: true,
+  inlineWorkboxRuntime: true,
+  runtimeCaching,
   // Cache rendered documents reached through Next's client-side navigation.
   cacheOnFrontEndNav: true,
-  fallbacks: {
-    document: '/offline.html',
-    image: '',
-    audio: '',
-    video: '',
-    font: '',
-  },
 
   // Keep old caches from interfering with the latest deployment.
   cleanupOutdatedCaches: true,

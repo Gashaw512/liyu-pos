@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import ServiceWorkerRegistration from "@/components/pwa/ServiceWorkerRegistration";
 import "../design/globals.css";
 import "./globals.css";
 
@@ -17,6 +18,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full antialiased">
       <body className="min-h-screen bg-cream-100 text-coffee-700">
+        <ServiceWorkerRegistration />
         {children}
       </body>
     </html>

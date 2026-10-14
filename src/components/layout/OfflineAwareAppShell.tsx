@@ -5,6 +5,8 @@ import { usePathname } from 'next/navigation'
 import { writeLastVisitedRoute } from '@/lib/offline/sessionFallback'
 import type { ReactNode } from 'react'
 
+const CORE_DOCUMENT_ROUTES = ['/sales', '/inventory', '/dashboard', '/shifts'] as const
+
 interface OfflineAwareAppShellProps {
   children: ReactNode
   locale: string
@@ -32,12 +34,16 @@ export default function OfflineAwareAppShell({
     const warmCoreRoutes = async () => {
       try {
         const cache = await caches.open('others')
-        await Promise.all(['/sales', '/inventory'].map(async (route) => {
+        await Promise.all(CORE_DOCUMENT_ROUTES.map(async (route) => {
           const url = new URL(`/${locale}${route}`, window.location.origin)
           try {
-            // Refresh previously cached documents as well, so offline launches
-            // do not keep pointing at a stale route after a deployment.
-            const response = await fetch(url.href, { credentials: 'same-origin' })
+            // Request the HTML document directly; router prefetches only cache
+            // RSC payloads and cannot serve a full offline navigation.
+            const response = await fetch(url.href, {
+              credentials: 'same-origin',
+              headers: { Accept: 'text/html' },
+              cache: 'no-cache',
+            })
             if (
               response.ok &&
               !response.redirected &&

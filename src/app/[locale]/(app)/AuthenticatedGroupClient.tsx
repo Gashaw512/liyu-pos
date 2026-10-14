@@ -8,6 +8,10 @@ import OfflineAwareAppShell from '../../../components/layout/OfflineAwareAppShel
 import { ToastProvider } from '../../../components/ui/ToastProvider'
 import createClient from '../../../lib/supabase/client'
 import {
+  getAuthGuardRecoveryAction,
+  isExplicitSessionRejection,
+} from '../../../lib/offline/authGuardRecovery'
+import {
   clearShellProfileCache,
   readShellProfileCache,
   writeShellProfileCache,
@@ -41,6 +45,7 @@ export default function AuthenticatedGroupClient({
   const router = useRouter()
   const [profile, setProfile] = useState<ShellProfile | null>(null)
   const [ready, setReady] = useState(false)
+  const [verificationUnavailable, setVerificationUnavailable] = useState(false)
   const supabase = createClient()
 
   const goToLogin = useCallback(() => {
@@ -52,6 +57,41 @@ export default function AuthenticatedGroupClient({
     router.replace(`/${locale}/onboarding` as Route)
   }, [locale, router])
 
+  const restoreOfflineShell = useCallback(async (expectedUserId?: string) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const cached = readShellProfileCache()
+      const recoveryAction = getAuthGuardRecoveryAction(
+        undefined,
+        session?.user.id,
+        cached,
+        expectedUserId,
+      )
+
+      if (recoveryAction === 'redirect') {
+        goToLogin()
+        return
+      }
+
+      if (recoveryAction === 'unavailable' || !cached) {
+        setVerificationUnavailable(true)
+        setReady(true)
+        return
+      }
+
+      if (!cached.onboardingCompleted) {
+        goToOnboarding()
+        return
+      }
+
+      setProfile({ ...cached, fullName: '' })
+      setVerificationUnavailable(false)
+      setReady(true)
+    } catch {
+      goToLogin()
+    }
+  }, [goToLogin, goToOnboarding, supabase])
+
   const verifyOnline = useCallback(async () => {
     try {
       const {
@@ -59,12 +99,25 @@ export default function AuthenticatedGroupClient({
         error: authError,
       } = await supabase.auth.getUser()
 
-      if (authError || !user) {
+      if (authError && isExplicitSessionRejection(authError.status)) {
         goToLogin()
         return
       }
 
-      const { data: userProfile, error: profileError } = await supabase
+      if (authError) {
+        // A verification failure that did not reject the session may be a
+        // network outage. The cached profile only renders the shell; APIs
+        // continue to enforce the session and permissions on the server.
+        await restoreOfflineShell(user?.id)
+        return
+      }
+
+      if (!user) {
+        goToLogin()
+        return
+      }
+
+      const { data: userProfile, error: profileError, status: profileStatus } = await supabase
         .from('profiles')
         .select(`
           full_name,
@@ -75,19 +128,34 @@ export default function AuthenticatedGroupClient({
         .eq('id', user.id)
         .single()
 
-      if (profileError || !userProfile) {
+      if (isExplicitSessionRejection(profileStatus)) {
         goToLogin()
         return
       }
 
-      const { data: assignedRoles, error: rolesError } = await supabase
+      if (profileError || !userProfile) {
+        await restoreOfflineShell(user.id)
+        return
+      }
+
+      const { data: assignedRoles, error: rolesError, status: rolesStatus } = await supabase
         .from('profile_roles')
         .select('role_name')
         .eq('profile_id', user.id)
 
+      if (isExplicitSessionRejection(rolesStatus)) {
+        goToLogin()
+        return
+      }
+
+      if (rolesError) {
+        await restoreOfflineShell(user.id)
+        return
+      }
+
       const roles = Array.from(new Set([
         userProfile.role,
-        ...(!rolesError && assignedRoles
+        ...(assignedRoles
           ? assignedRoles.map((assignedRole: { role_name: string }) => assignedRole.role_name)
           : []),
       ].filter((role): role is string => typeof role === 'string' && role.length > 0)))
@@ -115,35 +183,25 @@ export default function AuthenticatedGroupClient({
       }
 
       setProfile(shellProfile)
+      setVerificationUnavailable(false)
       setReady(true)
-    } catch {
-      // Match the existing server guard: an online auth/profile check that
-      // cannot be completed returns the user to login.
-      goToLogin()
-    }
-  }, [goToLogin, goToOnboarding, supabase])
-
-  const restoreOfflineShell = useCallback(async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const cached = readShellProfileCache()
-
-      if (!session?.user || !cached || cached.userId !== session.user.id) {
+    } catch (error) {
+      if (isExplicitSessionRejection((error as { status?: unknown } | null)?.status)) {
         goToLogin()
         return
       }
 
-      if (!cached.onboardingCompleted) {
-        goToOnboarding()
-        return
-      }
-
-      setProfile({ ...cached, fullName: '' })
-      setReady(true)
-    } catch {
-      goToLogin()
+      // Verification could not reach a conclusive rejection. Restore only
+      // when the local Supabase session matches the cached shell profile.
+      void restoreOfflineShell()
     }
-  }, [goToLogin, goToOnboarding, supabase])
+  }, [goToLogin, goToOnboarding, restoreOfflineShell, supabase])
+
+  const retryVerification = useCallback(() => {
+    setVerificationUnavailable(false)
+    setReady(false)
+    void verifyOnline()
+  }, [verifyOnline])
 
   useEffect(() => {
     const start = async () => {
@@ -170,6 +228,24 @@ export default function AuthenticatedGroupClient({
       subscription.unsubscribe()
     }
   }, [goToLogin, restoreOfflineShell, supabase, verifyOnline])
+
+  if (verificationUnavailable) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center gap-3 bg-cream-50 px-4 text-center text-coffee-700">
+        <h1 className="text-lg font-semibold">Workspace unavailable offline</h1>
+        <p className="max-w-sm text-sm text-coffee-600">
+          Connect to the internet to verify this workspace, then try again.
+        </p>
+        <button
+          type="button"
+          onClick={retryVerification}
+          className="min-h-11 rounded-lg bg-[#8B2635] px-5 text-sm font-semibold text-white"
+        >
+          Try again
+        </button>
+      </main>
+    )
+  }
 
   if (!ready || !profile) {
     return (

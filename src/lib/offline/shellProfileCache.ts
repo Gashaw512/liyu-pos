@@ -6,6 +6,8 @@ export interface ShellProfileCache {
   roles: string[]
   businessName: string
   onboardingCompleted: boolean
+  businessId?: string | null
+  branchId?: string | null
 }
 
 export function readShellProfileCache(): ShellProfileCache | null {
@@ -25,7 +27,11 @@ export function readShellProfileCache(): ShellProfileCache | null {
       typeof cache.onboardingCompleted !== 'boolean'
     ) return null
 
-    return cache as ShellProfileCache
+    return {
+      ...cache,
+      businessId: typeof cache.businessId === 'string' ? cache.businessId : cache.businessId === null ? null : undefined,
+      branchId: typeof cache.branchId === 'string' ? cache.branchId : cache.branchId === null ? null : undefined,
+    } as ShellProfileCache
   } catch {
     return null
   }

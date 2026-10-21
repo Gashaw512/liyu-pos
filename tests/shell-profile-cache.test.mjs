@@ -35,18 +35,38 @@ test('persists only the fields needed to render the authenticated shell', () => 
       roles: ['cashier', 'waiter'],
       businessName: 'Demo Cafe',
       onboardingCompleted: true,
+      businessId: 'business-1',
+      branchId: 'branch-1',
     }
 
     writeShellProfileCache(shellProfile)
 
     assert.deepEqual(readShellProfileCache(), shellProfile)
     assert.deepEqual(Object.keys(JSON.parse(values.get(cacheKey))).sort(), [
+      'branchId',
+      'businessId',
       'businessName',
       'onboardingCompleted',
       'role',
       'roles',
       'userId',
     ])
+  })
+})
+
+test('continues to read shell profiles written before business and branch IDs were cached', () => {
+  withLocalStorage((values) => {
+    values.set(cacheKey, JSON.stringify({
+      userId: 'user-1',
+      role: 'cashier',
+      roles: ['cashier'],
+      businessName: 'Demo Cafe',
+      onboardingCompleted: true,
+    }))
+
+    const cached = readShellProfileCache()
+    assert.equal(cached?.businessId, undefined)
+    assert.equal(cached?.branchId, undefined)
   })
 })
 

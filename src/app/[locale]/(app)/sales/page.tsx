@@ -137,6 +137,7 @@ export default function SalesPage() {
   const [cart, setCart] = useState<POSCartItem[]>([])
   const [activeShift, setActiveShift] = useState<Shift | null>(null)
   const closingShiftInstanceRef = useRef<Shift | null>(null)
+  const openShiftRequestRef = useRef<Promise<Shift | null> | null>(null)
 
   const [showCheckout, setShowCheckout] = useState(false)
   const [roomChargeConfiguration, setRoomChargeConfiguration] = useState<{ businessId: string; enabled: boolean } | null>(null)
@@ -372,47 +373,55 @@ export default function SalesPage() {
         return null
       }
 
-      try {
-        const supabase = createClient()
-        const { data, error } = await supabase
-          .from('shifts')
-          .select('*')
-          .eq('business_id', businessId)
-          .eq('branch_id', branchId)
-          .eq('cashier_id', userId)
-          .eq('status', 'open')
-          .order('opened_at', { ascending: false })
-          .limit(1)
+      if (openShiftRequestRef.current) return openShiftRequestRef.current
 
-        if (error) {
-          console.warn('[POS] Failed to resolve remote open shift:', error)
+      // Coalesce concurrent lookups only; clear the shared promise when this request settles.
+      const request = Promise.resolve().then(async (): Promise<Shift | null> => {
+        try {
+          const supabase = createClient()
+          const { data, error } = await supabase
+            .from('shifts')
+            .select('*')
+            .eq('business_id', businessId)
+            .eq('branch_id', branchId)
+            .eq('cashier_id', userId)
+            .eq('status', 'open')
+            .order('opened_at', { ascending: false })
+            .limit(1)
+
+          if (error) {
+            console.warn('[POS] Failed to resolve remote open shift:', error)
+            return null
+          }
+
+          const remoteShift = Array.isArray(data) && data.length > 0 ? data[0] : null
+          if (!remoteShift) return null
+
+          const normalized = sanitizeActiveShiftContext(remoteShift, {
+            businessId,
+            branchId,
+            userId,
+          })
+
+          if (!normalized) return null
+
+          const db = await getDB()
+          const localShift = toLocalActiveShift(normalized)
+          await db.put('active_shift', localShift)
+
+          return localShift
+        } catch (error) {
+          console.warn('[POS] Shared shift lookup failed:', error)
           return null
+        } finally {
+          if (openShiftRequestRef.current === request) {
+            openShiftRequestRef.current = null
+          }
         }
+      })
 
-        const remoteShift = Array.isArray(data) && data.length > 0 ? data[0] : null
-        if (!remoteShift) {
-          return null
-        }
-
-        const normalized = sanitizeActiveShiftContext(remoteShift, {
-          businessId,
-          branchId,
-          userId,
-        })
-
-        if (!normalized) {
-          return null
-        }
-
-        const db = await getDB()
-        const localShift = toLocalActiveShift(normalized)
-        await db.put('active_shift', localShift)
-
-        return localShift
-      } catch (error) {
-        console.warn('[POS] Shared shift lookup failed:', error)
-        return null
-      }
+      openShiftRequestRef.current = request
+      return request
     },
     [businessId, branchId, userId],
   )

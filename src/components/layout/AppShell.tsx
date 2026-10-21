@@ -21,15 +21,23 @@ interface AppShellProps {
   roles?: string[]
   fullName: string
   businessName: string
+  userId: string
+  businessId?: string | null
+  branchId?: string | null
+  onboardingCompleted: boolean
   noScroll?: boolean
 }
 
-interface ErpStateContextType {
+export interface ErpStateContextType {
   locale: string
   role: string
   roles: string[]
   fullName: string
   businessName: string
+  userId: string
+  businessId?: string | null
+  branchId?: string | null
+  onboardingCompleted: boolean
   isSystemLocked: boolean
   setSystemLocked: (locked: boolean) => void
   isCollapsed: boolean
@@ -50,6 +58,10 @@ export function useErp() {
   }
 
   return context
+}
+
+export function useOptionalErp() {
+  return useContext(ErpContext)
 }
 
 class ErpErrorBoundary extends React.Component<
@@ -128,6 +140,10 @@ export default function AppShell({
   roles = [role],
   fullName,
   businessName,
+  userId,
+  businessId,
+  branchId,
+  onboardingCompleted,
   noScroll = false,
 }: AppShellProps) {
   const pathname = usePathname()
@@ -174,6 +190,10 @@ const isPOSPage =
         roles,
         fullName,
         businessName,
+        userId,
+        businessId,
+        branchId,
+        onboardingCompleted,
         isSystemLocked,
         setSystemLocked,
         isCollapsed,

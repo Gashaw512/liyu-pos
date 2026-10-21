@@ -122,6 +122,8 @@ export default function AuthenticatedGroupClient({
         .select(`
           full_name,
           role,
+          business_id,
+          branch_id,
           onboarding_completed,
           businesses (name)
         `)
@@ -166,6 +168,8 @@ export default function AuthenticatedGroupClient({
         roles,
         businessName: getBusinessName(userProfile.businesses),
         onboardingCompleted: userProfile.onboarding_completed,
+        businessId: userProfile.business_id ?? null,
+        branchId: userProfile.branch_id ?? null,
         fullName: userProfile.full_name || '',
       }
 
@@ -175,6 +179,8 @@ export default function AuthenticatedGroupClient({
         roles: shellProfile.roles,
         businessName: shellProfile.businessName,
         onboardingCompleted: shellProfile.onboardingCompleted,
+        businessId: shellProfile.businessId,
+        branchId: shellProfile.branchId,
       })
 
       if (!shellProfile.onboardingCompleted) {
@@ -269,6 +275,10 @@ export default function AuthenticatedGroupClient({
           roles={profile.roles}
           fullName={profile.fullName}
           businessName={profile.businessName}
+          userId={profile.userId}
+          businessId={profile.businessId}
+          branchId={profile.branchId}
+          onboardingCompleted={profile.onboardingCompleted}
         >
           {children}
         </AppShell>

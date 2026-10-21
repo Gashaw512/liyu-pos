@@ -8,6 +8,7 @@ import {
 } from 'react'
 
 import createClient from '@/lib/supabase/client'
+import { useOptionalErp } from '@/components/layout/AppShell'
 
 export interface BusinessContext {
   businessId: string | null
@@ -115,6 +116,7 @@ function writeCachedContext(
  * so the POS can continue working offline.
  */
 export function useBusinessContext(): BusinessContext {
+  const erpContext = useOptionalErp()
   const cachedContext =
     useState<CachedBusinessContext | null>(
       () => readCachedContext(),
@@ -145,6 +147,29 @@ export function useBusinessContext(): BusinessContext {
 
   const loadContext =
     useCallback(async () => {
+      // The authenticated route guard has already verified this context.
+      // Reuse it instead of repeating auth/profile requests on page mount.
+      // Older offline shell cache entries may not include the IDs yet; those
+      // continue through the existing cached/offline fallback below.
+      if (
+        erpContext?.userId &&
+        erpContext.businessId !== undefined &&
+        erpContext.branchId !== undefined
+      ) {
+        const trustedContext: CachedBusinessContext = {
+          userId: erpContext.userId,
+          businessId: erpContext.businessId,
+          branchId: erpContext.branchId,
+        }
+        setUserId(trustedContext.userId)
+        setBusinessId(trustedContext.businessId)
+        setBranchId(trustedContext.branchId)
+        setError(null)
+        writeCachedContext(trustedContext)
+        setLoading(false)
+        return
+      }
+
       // Keep using the last known context while offline. The browser client
       // will load a fresh context again once connectivity returns.
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
@@ -276,7 +301,7 @@ export function useBusinessContext(): BusinessContext {
       } finally {
         setLoading(false)
       }
-    }, [])
+    }, [erpContext?.userId, erpContext?.businessId, erpContext?.branchId])
 
   useEffect(() => {
     void loadContext()
